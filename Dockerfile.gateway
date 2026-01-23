@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 시스템 의존성
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 의존성 복사
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 소스 코드 복사
+COPY src/ src/
+
+# API Gateway용 기본 파일
+RUN mkdir -p services/api-gateway
+RUN echo "from fastapi import FastAPI\n\
+app = FastAPI()\n\
+@app.get(\"/\")\n\
+def read_root():\n\
+    return {\"status\": \"API Gateway Ready\"}" > services/api-gateway/main.py
+
+# 실행 사용자
+EXPOSE 8000
+CMD ["uvicorn", "services.api-gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]

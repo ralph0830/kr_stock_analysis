@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # PostgreSQL + TimescaleDB
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: kr_stock_db
+    environment:
+      POSTGRES_DB: kr_stock
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/home/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kr_stock_network
+
+  # Redis (Cache + Message Broker)
+  redis:
+    image: redis:7-alpine
+    container_name: kr_stock_redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - kr_stock_network
+
+  # API Gateway (FastAPI)
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: kr_stock_api_gateway
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    networks:
+      - kr_stock_network
+    command: uvicorn src.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # VCP Scanner Service
+  vcp-scanner:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    container_name: kr_stock_vcp_scanner
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      REDIS_URL: redis://redis:6379/0
+      SERVICE_NAME: vcp-scanner
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    networks:
+      - kr_stock_network
+    command: uvicorn src.vcp_scanner.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker (Background Tasks)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    container_name: kr_stock_celery_worker
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    networks:
+      - kr_stock_network
+    command: celery -A src.celery_app worker --loglevel=info
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    container_name: kr_stock_celery_beat
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+      - celery-worker
+    volumes:
+      - ./src:/app/src
+    networks:
+      - kr_stock_network
+    command: celery -A src.celery_app beat --loglevel=info
+
+  # Flower (Celery Monitoring)
+  flower:
+    image: mher/flower:latest
+    container_name: kr_stock_flower
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    networks:
+      - kr_stock_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  kr_stock_network:
+    driver: bridge
