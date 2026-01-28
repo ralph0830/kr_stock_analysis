@@ -13,6 +13,7 @@ from src.database.session import get_db_session
 from src.database.models import DailyPrice, Signal
 from src.repositories.stock_repository import StockRepository
 from src.repositories.signal_repository import SignalRepository
+from src.health.health_checker import get_health_checker, init_health_checker
 from services.api_gateway.schemas import (
     DataStatusResponse,
     DataStatusItem,
@@ -26,6 +27,9 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 # 애플리케이션 시작 시간
 _START_TIME = time.time()
 
+# 헬스체커 초기화
+init_health_checker(_START_TIME)
+
 
 def get_uptime_seconds() -> float:
     """애플리케이션 실행 시간 (초)"""
@@ -34,7 +38,7 @@ def get_uptime_seconds() -> float:
 
 def check_database_health(session: Session) -> str:
     """
-    데이터베이스 헬스 체크
+    데이터베이스 헬스 체크 (동기, 레거시 호환)
 
     Args:
         session: DB 세션
@@ -52,7 +56,7 @@ def check_database_health(session: Session) -> str:
 
 def check_redis_health() -> str:
     """
-    Redis 헬스 체크
+    Redis 헬스 체크 (동기, 레거시 호환)
 
     Returns:
         상태 문자열 (up, down)
@@ -68,7 +72,7 @@ def check_redis_health() -> str:
 
 def check_celery_health() -> Optional[str]:
     """
-    Celery 헬스 체크
+    Celery 헬스 체크 (동기, 레거시 호환)
 
     Returns:
         상태 문자열 (up, down) 또는 None (미설정)
@@ -296,6 +300,124 @@ def get_system_health(
         redis_status=redis_status,
         celery_status=celery_status,
     )
+
+
+@router.get(
+    "/health-v2",
+    summary="향상된 시스템 헬스 체크 (V2)",
+    description="비동기 헬스체크로 각 서비스의 응답 시간과 상세 정보를 제공합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        503: {"description": "서비스 불가"},
+    },
+)
+async def get_system_health_v2(
+    session: Session = Depends(get_db_session),
+):
+    """
+    향상된 시스템 헬스 체크 (V2)
+
+    ## 설명
+    비동기 헬스체크로 각 서비스의 응답 시간과 상세 정보를 제공합니다.
+
+    ## 반환 데이터
+    - **status**: 전체 상태 (healthy, degraded, unhealthy, unknown)
+    - **services**: 개별 서비스 상세 정보
+        - **status**: 서비스 상태
+        - **response_time_ms**: 응답 시간 (밀리초)
+        - **message**: 상태 메시지
+        - **details**: 추가 정보 (메모리 사용량 등)
+    - **uptime_seconds**: 서버 실행 시간
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/system/health-v2"
+    ```
+    """
+    health_checker = get_health_checker()
+    if health_checker is None:
+        return {"error": "Health checker not initialized"}
+
+    # 비동기 세션 변환
+
+    # 동기 세션을 사용하는 경우, 비동기 체크는 별도 수행
+    system_health = await health_checker.check_all(session=None)
+
+    # 추가 서비스 체크 (VCP Scanner, Signal Engine)
+    try:
+        from services.api_gateway.service_registry import get_registry
+        registry = get_registry()
+
+        # VCP Scanner
+        vcp_service = registry.get_service("vcp-scanner")
+        if vcp_service:
+            vcp_health = await health_checker.check_vcp_scanner(vcp_service["url"])
+            system_health.services["vcp_scanner"] = vcp_health
+
+        # Signal Engine
+        signal_service = registry.get_service("signal-engine")
+        if signal_service:
+            signal_health = await health_checker.check_signal_engine(signal_service["url"])
+            system_health.services["signal_engine"] = signal_health
+
+        # Market Analyzer
+        market_service = registry.get_service("market-analyzer")
+        if market_service:
+            market_health = await health_checker.check_market_analyzer(market_service["url"])
+            system_health.services["market_analyzer"] = market_health
+
+    except Exception:
+        # 서비스 레지스트리 실패 시 무시
+        pass
+
+    # 전체 상태 재계산
+    from src.health.health_checker import HealthStatus
+    down_services = sum(
+        1 for s in system_health.services.values()
+        if s.status in (HealthStatus.UNHEALTHY, HealthStatus.UNKNOWN)
+    )
+    total_services = len(system_health.services)
+
+    if down_services == 0:
+        system_health.status = HealthStatus.HEALTHY
+    elif down_services <= total_services // 2:
+        system_health.status = HealthStatus.DEGRADED
+    else:
+        system_health.status = HealthStatus.UNHEALTHY
+
+    return system_health.to_dict()
+
+
+@router.get(
+    "/health/{service_name}",
+    summary="단일 서비스 헬스 체크",
+    description="특정 서비스의 헬스 상태만 조회합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        404: {"description": "서비스를 찾을 수 없음"},
+    },
+)
+async def check_single_service(service_name: str):
+    """
+    단일 서비스 헬스 체크
+
+    ## 설명
+    특정 서비스의 헬스 상태만 빠르게 조회합니다.
+
+    ## Parameters
+    - **service_name**: 서비스 이름 (database, redis, vcp_scanner, signal_engine, etc.)
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/system/health/database"
+    ```
+    """
+    health_checker = get_health_checker()
+    if health_checker is None:
+        return {"error": "Health checker not initialized"}
+
+    service_health = await health_checker.check_service(service_name)
+    return service_health.to_dict()
 
 
 @router.post(
