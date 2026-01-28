@@ -11,7 +11,7 @@
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # 프로젝트 루트 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,7 +28,7 @@ async def test_token_issuance():
 
     try:
         config = KiwoomConfig.from_env()
-        print(f"✅ 설정 로드 성공")
+        print("✅ 설정 로드 성공")
         print(f"   - Base URL: {config.base_url}")
         print(f"   - App Key: {config.app_key[:20]}...{config.app_key[-10:]}")
         print(f"   - Use Mock: {config.use_mock}")
@@ -41,7 +41,7 @@ async def test_token_issuance():
         result = await api.issue_token()
 
         if result:
-            print(f"✅ 토큰 발급 성공!")
+            print("✅ 토큰 발급 성공!")
             print(f"   - Access Token: {api._access_token[:30]}...")
             print(f"   - 만료 시간: {datetime.fromtimestamp(api._token_expires_at)}")
             print(f"   - 유효성: {api.is_token_valid()}")
@@ -70,7 +70,7 @@ async def test_current_price(api):
         price = await api.get_current_price("005930")
 
         if price:
-            print(f"✅ 현재가 조회 성공!")
+            print("✅ 현재가 조회 성공!")
             print(f"   - 티커: {price.ticker}")
             print(f"   - 가격: {price.price:,}원")
             print(f"   - 전일비: {price.change:,}원")
@@ -105,13 +105,13 @@ async def test_investor_chart(api):
 
         if chart_data and chart_data.get("data"):
             data_list = chart_data["data"]
-            print(f"✅ 차트 데이터 조회 성공!")
+            print("✅ 차트 데이터 조회 성공!")
             print(f"   - 데이터 개수: {len(data_list)}")
 
             # 첫 번째 데이터 출력
             if data_list:
                 first = data_list[0]
-                print(f"\n첫 번째 데이터:")
+                print("\n첫 번째 데이터:")
                 print(f"   - 일자: {first.get('dt')}")
                 print(f"   - 현재가: {first.get('cur_prc')}")
                 print(f"   - 거래량: {first.get('acc_trde_prica')}")
@@ -140,7 +140,7 @@ async def test_daily_prices(api):
         )
 
         if prices:
-            print(f"✅ 일별 가격 데이터 수집 성공!")
+            print("✅ 일별 가격 데이터 수집 성공!")
             print(f"   - 데이터 개수: {len(prices)}")
 
             print("\n수집된 데이터:")

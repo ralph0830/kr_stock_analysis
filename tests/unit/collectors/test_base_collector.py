@@ -3,8 +3,7 @@ BaseCollector 추상 클래스 단위 테스트
 """
 
 import pytest
-from datetime import date, timedelta
-from unittest.mock import Mock
+from datetime import date
 import pandas as pd
 
 from src.collectors.base import BaseCollector

@@ -532,7 +532,7 @@ class KiwoomRestAPI:
         except HTTPStatusError as e:
             # Rate Limiting (429) 처리 - 재시도 로직
             if e.response.status_code == 429:
-                logger.warning(f"Rate limited, retrying after 2 seconds...")
+                logger.warning("Rate limited, retrying after 2 seconds...")
                 await asyncio.sleep(2)
                 # 한 번 더 재시도
                 try:

@@ -4,7 +4,6 @@ Circuit Breaker 테스트
 
 import pytest
 import time
-from httpx import HTTPError, RequestError
 
 from src.utils.circuit_breaker import (
     CircuitBreaker,
@@ -12,7 +11,6 @@ from src.utils.circuit_breaker import (
     CircuitBreakerError,
     CircuitBreakerRegistry,
     with_circuit_breaker,
-    circuit_breaker_registry,
 )
 from src.utils.httpx_circuit_breaker import (
     CircuitBreakerTransport,

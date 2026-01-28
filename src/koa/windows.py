@@ -5,9 +5,7 @@ pywin32를 통해 Windows COM으로 키움 OpenAPI와 통신합니다.
 Windows 환경에서만 작동합니다.
 """
 
-import logging
-from typing import Optional, List, Dict, Any, Callable
-from datetime import datetime, timezone
+from typing import Optional, List, Dict, Any
 
 try:
     import win32com.client as win32_client
@@ -21,10 +19,7 @@ except ImportError:
 
 from src.koa.base import (
     KOABaseBridge,
-    KOAEventType,
-    RealtimePrice,
-    OrderBook,
-    DEFAULT_REALTIME_FIDS
+    KOAEventType
 )
 from src.utils.logging_config import get_logger
 

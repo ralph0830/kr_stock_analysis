@@ -5,9 +5,7 @@ TDD RED 단계: 테스트를 먼저 작성하고, 실패를 확인합니다.
 """
 
 import pytest
-from unittest.mock import Mock, patch
-from dataclasses import asdict
-from datetime import datetime, timezone
+from unittest.mock import patch
 
 from src.kiwoom.base import (
     RealtimePrice,

@@ -3,14 +3,11 @@ VCP Scanner + SmartMoney Integration Tests
 VCP 패턴 분석과 SmartMoney 수급 분석 통합 테스트
 """
 
-import pytest
 from datetime import date, timedelta
 import numpy as np
 
 from src.analysis.vcp_analyzer_improved import (
     calculate_vcp_score,
-    calculate_bollinger_bands,
-    calculate_rsi,
 )
 from src.analysis.smartmoney_analyzer import (
     analyze_smartmoney,

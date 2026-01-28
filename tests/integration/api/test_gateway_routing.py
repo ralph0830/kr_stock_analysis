@@ -7,7 +7,6 @@ Test Suite: API Gateway (GREEN Phase)
 import pytest
 from httpx import AsyncClient, ASGITransport
 from unittest.mock import Mock, patch
-import asyncio
 
 from services.api_gateway.main import app
 from services.api_gateway.service_registry import ServiceRegistry, get_registry

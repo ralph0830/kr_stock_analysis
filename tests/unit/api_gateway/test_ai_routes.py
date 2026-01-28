@@ -5,7 +5,7 @@ TDD GREEN Phase - Tests should pass with implementation
 
 import pytest
 from unittest.mock import Mock, patch
-from datetime import date, datetime
+from datetime import date
 from fastapi import HTTPException
 
 from src.analysis.sentiment_analyzer import SentimentResult, Sentiment
@@ -96,7 +96,6 @@ class TestAIRoutesUnit:
     def test_get_ai_summary_no_analysis(self):
         """AI 종목 요약 조회 - 분석 없음"""
         from services.api_gateway.routes.ai import get_ai_summary
-        from services.api_gateway.routes.ai import AIAnalysisResponse
 
         mock_session = Mock()
         mock_stock = Mock()
@@ -195,7 +194,6 @@ class TestAIRoutesUnit:
     def test_trigger_ai_analysis(self):
         """AI 분석 트리거"""
         from services.api_gateway.routes.ai import trigger_ai_analysis
-        from services.api_gateway.routes.ai import get_recommendation
 
         mock_session = Mock()
         mock_stock = Mock()

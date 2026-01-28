@@ -2,11 +2,7 @@
 API 인증 및 Rate Limiting 테스트
 """
 
-import pytest
 import time
-from fastapi import Request, HTTPException
-from fastapi.testclient import TestClient
-from starlette.applications import Starlette
 
 from src.utils.api_auth import (
     APIKeyManager,
@@ -18,7 +14,6 @@ from src.utils.rate_limiter import (
     RateLimiter,
     RateLimiterRegistry,
     RateLimitExceeded,
-    rate_limiter_registry,
 )
 
 

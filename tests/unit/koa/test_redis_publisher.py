@@ -4,7 +4,7 @@ Redis Pub/Sub 발행자 테스트
 
 import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import patch
 
 from src.koa.redis_publisher import RedisPublisher, MockRedisPublisher
 from src.koa.base import RealtimePrice

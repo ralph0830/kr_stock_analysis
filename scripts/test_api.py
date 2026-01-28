@@ -5,8 +5,6 @@ API 테스트 스크립트
 """
 
 import requests
-import json
-from typing import Dict, Any
 from datetime import datetime
 
 # API Gateway URL
@@ -67,7 +65,7 @@ def test_get_signals():
 
             if isinstance(data, list) and len(data) > 0:
                 print(f"   총 {len(data)}개 시그널 수신")
-                print(f"\n   상위 3개 시그널:")
+                print("\n   상위 3개 시그널:")
                 for i, signal in enumerate(data[:3], 1):
                     print(f"   {i}. {signal.get('ticker')} - {signal.get('name')}")
                     print(f"      등급: {signal.get('grade')}, 점수: {signal.get('score')}")
@@ -115,7 +113,7 @@ def test_jongga_v2():
 
             if isinstance(data, list) and len(data) > 0:
                 print(f"   총 {len(data)}개 시그널 수신")
-                print(f"\n   상위 3개 시그널:")
+                print("\n   상위 3개 시그널:")
                 for i, signal in enumerate(data[:3], 1):
                     print(f"   {i}. {signal.get('ticker')} - {signal.get('name')}")
                     print(f"      등급: {signal.get('grade')}, 점수: {signal.get('score')}")

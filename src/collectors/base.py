@@ -5,7 +5,7 @@ Base Collector Interface
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
-from datetime import date, datetime
+from datetime import date
 import pandas as pd
 
 

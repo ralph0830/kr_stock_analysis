@@ -3,10 +3,8 @@ Kiwoom WebSocket Bridge
 Kiwoom Pipeline의 실시간 데이터를 WebSocket 클라이언트에게 전달합니다.
 """
 
-import asyncio
 import logging
-from typing import Optional, Set, Dict, Any, Callable
-from datetime import datetime, timezone
+from typing import Optional, Set, Dict, Any
 
 from src.kiwoom.base import KiwoomEventType, RealtimePrice
 from src.websocket.server import connection_manager

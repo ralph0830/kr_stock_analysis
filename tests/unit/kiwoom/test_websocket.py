@@ -7,10 +7,10 @@ TDD RED 단계: 테스트를 먼저 작성하고, 실패를 확인합니다.
 import pytest
 import asyncio
 import json
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 
-from src.kiwoom.base import KiwoomEventType, RealtimePrice, OrderBook, KiwoomConfig
+from src.kiwoom.base import KiwoomEventType, RealtimePrice, KiwoomConfig
 
 
 class TestKiwoomWebSocket:

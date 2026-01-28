@@ -2,7 +2,6 @@
 API Gateway Rate Limiting 통합 테스트
 """
 
-import pytest
 import time
 from fastapi.testclient import TestClient
 

@@ -6,7 +6,6 @@ Test Suite: BacktestRepository (RED Phase)
 
 import pytest
 from datetime import date, datetime
-from decimal import Decimal
 from unittest.mock import MagicMock, Mock
 from sqlalchemy.orm import Session
 

@@ -5,7 +5,7 @@ VCP 패턴 감지 및 SmartMoney 분석
 
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
-from datetime import date, datetime
+from datetime import date
 import logging
 
 logger = logging.getLogger(__name__)

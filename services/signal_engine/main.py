@@ -7,10 +7,10 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-from typing import List, Optional, Dict, Any
+from typing import Optional
 import logging
 
-from services.signal_engine.scorer import SignalScorer, JonggaSignal
+from services.signal_engine.scorer import SignalScorer
 
 logger = logging.getLogger(__name__)
 

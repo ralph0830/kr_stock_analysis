@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 
-from src.kiwoom.base import KiwoomConfig, KiwoomEventType, RealtimePrice
+from src.kiwoom.base import RealtimePrice
 
 
 # 통합 테스트: 긴 timeout (60초) - API 연동 포함

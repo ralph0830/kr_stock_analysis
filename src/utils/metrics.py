@@ -4,9 +4,7 @@ Prometheus 스타일 메트릭 수집
 """
 
 import time
-from typing import Dict, List, Optional, Callable
-from collections import defaultdict
-from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
 

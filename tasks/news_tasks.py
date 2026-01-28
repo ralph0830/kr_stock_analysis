@@ -4,7 +4,7 @@ Celery News Tasks
 """
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import List, Dict, Any
 
 from celery import shared_task

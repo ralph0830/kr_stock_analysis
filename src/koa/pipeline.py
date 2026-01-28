@@ -6,8 +6,6 @@ KOA → Redis → WebSocket → 프론트엔드 흐름을 통합 관리합니다
 
 import asyncio
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
-import logging
 
 from src.koa.service import RealtimeDataService, RealtimeDataSubscriber
 from src.koa.base import RealtimePrice

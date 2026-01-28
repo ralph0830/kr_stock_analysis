@@ -4,9 +4,7 @@ Redis 캐싱 및 성능 최적화 테스트
 """
 
 import pytest
-import asyncio
-from datetime import timedelta
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 
 from services.cache.redis_cache import (
     RedisCache,

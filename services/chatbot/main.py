@@ -1,0 +1,351 @@
+"""
+Chatbot Service - FastAPI Main
+RAG 기반 주식 분석 AI 챗봇 서비스
+"""
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+from typing import List, Dict, Any
+import logging
+
+from services.chatbot.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ContextResponse,
+    HealthCheckResponse,
+)
+from services.chatbot.session_manager import get_session_manager
+from services.chatbot.retriever import get_retriever
+from services.chatbot.prompts import build_rag_prompt
+from services.chatbot.llm_client import get_llm_client
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Lifespan Manager
+# ============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """애플리케이션 라이프사이클 관리"""
+    # Startup
+    logger.info("🚀 Chatbot Service Starting...")
+    logger.info("✅ Chatbot Service ready")
+
+    yield
+
+    # Shutdown
+    logger.info("🛑 Chatbot Service Shutting down...")
+
+
+# ============================================================================
+# FastAPI App
+# ============================================================================
+
+app = FastAPI(
+    title="Chatbot Service",
+    description="RAG-based Stock Analysis Chatbot",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
+)
+
+
+# ============================================================================
+# Health Check
+# ============================================================================
+
+@app.get(
+    "/health",
+    tags=["health"],
+    response_model=HealthCheckResponse,
+    responses={
+        200: {
+            "description": "서비스 정상",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "healthy",
+                        "service": "chatbot",
+                        "version": "1.0.0",
+                    }
+                }
+            }
+        }
+    },
+)
+async def health_check():
+    """
+    챗봇 서비스 헬스 체크
+
+    서비스가 정상 동작 중인지 확인합니다.
+    """
+    return HealthCheckResponse(
+        status="healthy",
+        service="chatbot",
+        version="1.0.0",
+    )
+
+
+# ============================================================================
+# Chat Endpoints
+# ============================================================================
+
+@app.post(
+    "/chat",
+    tags=["chat"],
+    response_model=ChatResponse,
+    responses={
+        200: {
+            "description": "채팅 응답 성공",
+        },
+        422: {
+            "description": "요청 데이터 유효성 검사 실패",
+        }
+    },
+)
+async def chat(request: ChatRequest):
+    """
+    채팅 요청 처리
+
+    사용자 메시지를 받고 AI 응답을 반환합니다.
+
+    - **message**: 사용자 메시지 (필수)
+    - **session_id**: 세션 ID (없으면 자동 생성)
+    """
+    try:
+        session_manager = get_session_manager()
+        retriever = get_retriever()
+        llm_client = get_llm_client()
+
+        # session_id가 없으면 생성
+        session_id = request.session_id or session_manager.create_session()
+
+        # 사용자 메시지 저장
+        session_manager.add_message(session_id, "user", request.message)
+
+        # RAG 컨텍스트 검색
+        context = retriever.retrieve_context(request.message)
+
+        # 대화 기록 조회
+        history = session_manager.get_history_formatted(session_id)
+
+        # LLM 프롬프트 빌드
+        prompt = build_rag_prompt(request.message, context, history)
+
+        # LLM 답변 생성 (Phase 4)
+        llm_response = llm_client.generate_reply(prompt, history)
+
+        # 어시스턴트 메시지 저장
+        session_manager.add_message(session_id, "assistant", llm_response.reply)
+
+        return ChatResponse(
+            reply=llm_response.reply,
+            suggestions=llm_response.suggestions,
+            session_id=session_id,
+        )
+
+    except Exception as e:
+        logger.error(f"채팅 처리 실패: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"채팅 처리 중 오류가 발생했습니다: {str(e)}"
+        )
+
+
+@app.get(
+    "/context",
+    tags=["chat"],
+    response_model=ContextResponse,
+    responses={
+        200: {
+            "description": "컨텍스트 조회 성공",
+        }
+    },
+)
+async def get_context(session_id: str):
+    """
+    대화 컨텍스트 조회
+
+    세션 ID에 해당하는 대화 기록을 반환합니다.
+
+    - **session_id**: 세션 ID
+    """
+    session_manager = get_session_manager()
+
+    # Redis에서 대화 기록 조회
+    history = session_manager.get_history_formatted(session_id)
+    message_count = session_manager.get_message_count(session_id)
+
+    return ContextResponse(
+        session_id=session_id,
+        history=history,
+        message_count=message_count,
+    )
+
+
+@app.delete(
+    "/context/{session_id}",
+    tags=["chat"],
+    responses={
+        200: {
+            "description": "세션 삭제 성공",
+        },
+        404: {
+            "description": "세션을 찾을 수 없음",
+        }
+    },
+)
+async def delete_context(session_id: str):
+    """
+    대화 컨텍스트 삭제
+
+    세션 ID에 해당하는 대화 기록을 삭제합니다.
+
+    - **session_id**: 세션 ID
+    """
+    session_manager = get_session_manager()
+
+    # 세션 삭제
+    success = session_manager.clear_session(session_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"세션을 찾을 수 없습니다: {session_id}"
+        )
+
+    return {"message": "세션이 삭제되었습니다", "session_id": session_id}
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def _generate_rag_reply(
+    message: str,
+    context: Dict[str, Any],
+    history: List[Dict]
+) -> str:
+    """
+    RAG 컨텍스트 기반 응답 생성 (Phase 3)
+    Phase 4에서 LLM으로 교체 예정
+
+    Args:
+        message: 사용자 메시지
+        context: 검색된 RAG 컨텍스트
+        history: 대화 기록
+
+    Returns:
+        생성된 응답
+    """
+    query_type = context.get("query_type", "general")
+
+    # 시장 관련 질문
+    if query_type == "market" and context.get("market_status"):
+        status = context["market_status"]
+        return (
+            f"현재 Market Gate 상태는 {status['status']} (레벨 {status['level']})입니다. "
+            f"KOSPI는 {status['kospi_status']}, KOSDAQ은 {status['kosdaq_status']} 상태입니다. "
+            "이 정보는 참고용이며 투자 결정은 신중하시기 바랍니다."
+        )
+
+    # 종목 추천 관련 질문
+    if query_type == "recommendation":
+        if context.get("signals"):
+            top_signals = sorted(
+                context["signals"],
+                key=lambda x: x.get("score", 0),
+                reverse=True
+            )[:3]
+
+            if top_signals:
+                reply = "현재 활성화된 시그널 기반 추천 종목입니다:\n"
+                for sig in top_signals:
+                    reply += f"\n- {sig['ticker']} ({sig['signal_type']} {sig['grade']}등급, {sig['score']}점)"
+                reply += "\n\n각 종목의 리스크를 충분히 고려하시기 바랍니다."
+                return reply
+
+        return "현재 추천할 만한 시그널이 없습니다. VCP 스캔을 실행해보세요."
+
+    # 특정 종목 관련 질문
+    if query_type == "stock" and context.get("stocks"):
+        stock = context["stocks"][0]
+        ticker = stock["ticker"]
+        name = stock["name"]
+
+        # 해당 종목 시그널 확인
+        stock_signals = [s for s in context.get("signals", []) if s["ticker"] == ticker]
+        if stock_signals:
+            sig = stock_signals[0]
+            return (
+                f"{name}({ticker})의 현재 시그널: {sig['signal_type']} {sig['grade']}등급 "
+                f"({sig['score']}점). "
+                "종가베팅 V2 scoring 기반 분석 결과입니다."
+            )
+
+        return f"{name}({ticker})에 대한 정보를 찾았습니다. 추가 분석을 원하시면 말씀해주세요."
+
+    # 일본 인사
+    if "안녕" in message or "hello" in message.lower():
+        return (
+            "안녕하세요! KR Stock 챗봇입니다. "
+            "VCP 패턴, 종가베팅 시그널, Market Gate 등에 대해 질문해주세요."
+        )
+
+    # 기본 응답
+    return "죄송합니다. 해당 내용에 대해 더 구체적인 질문을 해주시면 도와드리겠습니다."
+
+
+def _generate_basic_reply(message: str) -> str:
+    """기본 응답 생성 (레거시 호환용)"""
+    return _generate_rag_reply(message, {}, [])
+
+
+# ============================================================================
+# Error Handlers
+# ============================================================================
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc: HTTPException):
+    """HTTP 예외 처리"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "code": exc.status_code,
+            "detail": exc.detail,
+        }
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc: Exception):
+    """일반 예외 처리"""
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "code": 500,
+            "detail": str(exc),
+        }
+    )
+
+
+# ============================================================================
+# Main
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "services.chatbot.main:app",
+        host="0.0.0.0",
+        port=5114,
+        reload=True,
+    )

@@ -9,8 +9,7 @@ Unit Tests for NewsScorer
 - 0점: 중립 (긍정/부정 균형)
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import date
 
 from src.analysis.news_scorer import NewsScorer, NewsScoreResult

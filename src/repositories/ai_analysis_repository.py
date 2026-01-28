@@ -6,7 +6,7 @@ AI 종목 분석 결과 접근 계층
 from typing import List, Optional
 from datetime import date
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_, desc, func
+from sqlalchemy import select, and_, desc
 
 from src.repositories.base import BaseRepository
 from src.database.models import AIAnalysis

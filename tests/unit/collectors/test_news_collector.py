@@ -4,7 +4,7 @@ NewsCollector 단위 테스트
 
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from requests import Response
 
 from src.collectors.news_collector import NewsCollector, NewsArticle

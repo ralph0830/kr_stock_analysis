@@ -5,7 +5,6 @@ Test Suite: Signal Engine Service (GREEN Phase)
 
 import pytest
 from httpx import AsyncClient, ASGITransport
-from datetime import date
 
 from services.signal_engine.main import app
 from services.signal_engine.scorer import SignalScorer, Grade

@@ -5,7 +5,7 @@ TDD GREEN Phase - Tests should pass with implementation
 
 import pytest
 from httpx import AsyncClient, ASGITransport
-from datetime import date, datetime, timedelta
+from datetime import date
 from sqlalchemy.orm import Session
 
 from services.api_gateway.main import app

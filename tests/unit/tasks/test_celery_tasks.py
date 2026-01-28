@@ -3,8 +3,6 @@ Test Suite: Celery Async Processing (GREEN Phase)
 Celery 비동기 작업 테스트
 """
 
-import pytest
-from datetime import datetime, timedelta
 
 from tasks.celery_app import celery_app
 from tasks.scan_tasks import scan_vcp_patterns, scan_all_markets
@@ -89,7 +87,6 @@ class TestCeleryBeat:
 
     def test_schedule_configuration(self):
         """스케줄 설정 확인 테스트"""
-        from celery.schedules import schedule
 
         beat_schedule = celery_app.conf.beat_schedule
 

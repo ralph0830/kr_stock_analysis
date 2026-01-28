@@ -5,7 +5,6 @@ TDD GREEN Phase - Tests should pass with implementation
 
 import pytest
 from httpx import AsyncClient, ASGITransport
-from datetime import datetime
 
 from services.api_gateway.main import app
 from src.database.session import get_db_session

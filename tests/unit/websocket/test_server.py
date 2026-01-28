@@ -3,7 +3,6 @@ WebSocket 서버 테스트
 """
 
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 from src.websocket.server import ConnectionManager, PriceUpdateBroadcaster

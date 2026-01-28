@@ -7,10 +7,9 @@ TDD RED 단계: 재연결 로직 테스트를 먼저 작성하고, 실패를 확
 import pytest
 import asyncio
 import json
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
-from src.kiwoom.base import KiwoomEventType, RealtimePrice, KiwoomConfig
+from src.kiwoom.base import KiwoomEventType, KiwoomConfig
 
 
 class TestWebSocketAutoReconnect:

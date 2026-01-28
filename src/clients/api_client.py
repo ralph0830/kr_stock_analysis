@@ -6,7 +6,6 @@ API Gateway와 통신하기 위한 HTTP 클라이언트
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 import httpx
-from datetime import datetime
 
 
 @dataclass

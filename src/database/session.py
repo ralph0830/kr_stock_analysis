@@ -62,10 +62,6 @@ def init_db():
     - 테이블 생성
     - TimescaleDB 확장 설치
     """
-    from src.database.models import (
-        Stock, Signal, DailyPrice, InstitutionalFlow,
-        AIAnalysis, BacktestResult, MarketStatus
-    )
 
     # 테이블 생성
     Base.metadata.create_all(bind=engine)

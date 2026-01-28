@@ -7,9 +7,8 @@ TDD RED 단계: Pipeline 관리자 테스트를 먼저 작성합니다.
 import pytest
 import asyncio
 from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime, timezone
 
-from src.kiwoom.base import KiwoomConfig, KiwoomEventType, RealtimePrice
+from src.kiwoom.base import KiwoomConfig
 from src.kiwoom.pipeline import KiwoomPipelineManager
 
 

@@ -4,7 +4,7 @@ KRX(한국거래소) 데이터 수집 - pykrx 래퍼
 """
 
 from typing import List, Dict, Any, Optional
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import pandas as pd
 import logging
 

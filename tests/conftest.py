@@ -6,7 +6,6 @@ Pytest Configuration
 import pytest
 import sys
 from pathlib import Path
-from typing import Generator
 import os
 import asyncio
 
@@ -81,7 +80,7 @@ def database_setup():
     - 테스트 DB 초기화
     - 필요한 경우 마이그레이션 실행
     """
-    from src.database.session import init_db, engine, text
+    from src.database.session import init_db
     try:
         # 데이터베이스 초기화
         init_db()

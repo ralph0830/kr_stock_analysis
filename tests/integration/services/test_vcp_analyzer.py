@@ -2,7 +2,6 @@
 VCP 분석 개선 모듈 테스트
 """
 
-import pytest
 import numpy as np
 from src.analysis.vcp_analyzer_improved import (
     calculate_bollinger_bands,

@@ -445,3 +445,93 @@ export interface IBacktestKPI {
   vcp: IBacktestStatsItem;
   closing_bet: IBacktestStatsItem;
 }
+
+// ============================================================================
+// 챗봇 타입
+// ============================================================================
+
+/**
+ * 챗봇 메시지 인터페이스
+ */
+export interface IChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
+/**
+ * 챗봇 요청
+ */
+export interface IChatRequest {
+  message: string;
+  session_id?: string;
+}
+
+/**
+ * 챗봇 응답
+ */
+export interface IChatResponse {
+  reply: string;
+  suggestions: string[];
+  session_id: string;
+  timestamp: string;
+}
+
+/**
+ * 챗봇 컨텍스트
+ */
+export interface IChatContext {
+  query: string;
+  query_type: string;
+  stocks: Array<{
+    ticker: string;
+    name: string;
+    market: string;
+    sector: string;
+    realtime_price?: {
+      price: number;
+      change: number;
+      change_rate: number;
+    };
+  }>;
+  signals: Array<{
+    ticker: string;
+    signal_type: string;
+    score: number;
+    grade: string;
+  }>;
+  news: Array<{
+    ticker: string;
+    summary: string;
+    sentiment: string;
+  }>;
+  market_status?: {
+    status: string;
+    level: number;
+    kospi_status: string;
+    kosdaq_status: string;
+  };
+  timestamp: string;
+}
+
+/**
+ * 종목 추천 아이템
+ */
+export interface IRecommendationItem {
+  ticker: string;
+  name: string;
+  signal_type: string;
+  grade: string;
+  score: number;
+  position_size: number;
+}
+
+/**
+ * 세션 정보
+ */
+export interface IChatSession {
+  session_id: string;
+  messages: IChatMessage[];
+  created_at: string;
+  updated_at: string;
+}

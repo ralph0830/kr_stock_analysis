@@ -5,11 +5,8 @@ Test Suite: CSV to DB Migration
 
 import pytest
 import pandas as pd
-import tempfile
-import os
-from pathlib import Path
 from datetime import date
-from src.database.session import SessionLocal, text, engine
+from src.database.session import SessionLocal, text
 from scripts.migrate_csv_to_db import migrate_stock_list, migrate_daily_prices, migrate_signals
 
 

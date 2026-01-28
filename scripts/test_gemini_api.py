@@ -89,7 +89,7 @@ def test_gemini_api():
 
         result = json.loads(result_text)
         logger.info("✅ JSON 파싱 성공")
-        logger.info(f"📊 분석 결과:")
+        logger.info("📊 분석 결과:")
         logger.info(f"   - 감성: {result.get('sentiment')}")
         logger.info(f"   - 신뢰도: {result.get('confidence')}")
         logger.info(f"   - 키워드: {result.get('keywords')}")
@@ -113,7 +113,7 @@ def test_sentiment_analyzer():
     logger.info("=" * 60)
 
     try:
-        from src.analysis.sentiment_analyzer import SentimentAnalyzer, Sentiment
+        from src.analysis.sentiment_analyzer import SentimentAnalyzer
 
         analyzer = SentimentAnalyzer()
         logger.info("✅ SentimentAnalyzer 초기화 성공")

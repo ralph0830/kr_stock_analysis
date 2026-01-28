@@ -12,9 +12,7 @@ from datetime import datetime, timezone
 from src.koa.base import (
     KOABaseBridge,
     KOAEventType,
-    RealtimePrice,
-    OrderBook,
-    DEFAULT_REALTIME_FIDS
+    RealtimePrice
 )
 from src.utils.logging_config import get_logger
 

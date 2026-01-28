@@ -7,7 +7,6 @@ import logging
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 from src.utils.logging_config import (
     setup_logging,
@@ -39,35 +38,40 @@ class TestSetupLogging:
 
     def test_setup_logging_with_file(self):
         """파일 출력 테스트"""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
-            log_file = f.name
-
-        try:
-            setup_logging(level="INFO", log_file=log_file, json_output=True)
+        with tempfile.TemporaryDirectory() as log_dir:
+            setup_logging(level="INFO", log_dir=log_dir, json_output=True)
 
             logger = get_logger("test")
             logger.info("Test message")
+            logger.error("Error message")
 
-            # 파일 확인
-            with open(log_file, "r") as f:
+            # info.log 파일 확인
+            info_log_path = Path(log_dir) / "info.log"
+            assert info_log_path.exists()
+
+            with open(info_log_path, "r") as f:
                 content = f.read()
                 assert "Test message" in content
-        finally:
-            Path(log_file).unlink(missing_ok=True)
+
+            # error.log 파일 확인
+            error_log_path = Path(log_dir) / "error.log"
+            assert error_log_path.exists()
+
+            with open(error_log_path, "r") as f:
+                content = f.read()
+                assert "Error message" in content
 
     def test_setup_logging_json_output(self):
         """JSON 출력 테스트"""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
-            log_file = f.name
-
-        try:
-            setup_logging(level="INFO", log_file=log_file, json_output=True)
+        with tempfile.TemporaryDirectory() as log_dir:
+            setup_logging(level="INFO", log_dir=log_dir, json_output=True)
 
             logger = get_logger("test")
             logger.info("JSON test message")
 
             # JSON 형식 검증
-            with open(log_file, "r") as f:
+            info_log_path = Path(log_dir) / "info.log"
+            with open(info_log_path, "r") as f:
                 for line in f:
                     if "JSON test message" in line:
                         log_data = json.loads(line)
@@ -78,8 +82,6 @@ class TestSetupLogging:
                         break
                 else:
                     pytest.fail("Log message not found")
-        finally:
-            Path(log_file).unlink(missing_ok=True)
 
 
 class TestGetLogger:
@@ -146,7 +148,9 @@ class TestJSONFormatter:
         log_data = json.loads(formatted)
 
         assert "exception" in log_data
-        assert "ValueError" in log_data["exception"]
+        # formatException이 리스트를 반환하므로 문자열로 변환
+        exception_str = str(log_data["exception"]) if isinstance(log_data["exception"], list) else log_data["exception"]
+        assert "ValueError" in exception_str
 
 
 class TestColoredFormatter:
@@ -176,24 +180,20 @@ class TestLogContext:
 
     def test_log_context_manager(self):
         """컨텍스트 관리자 테스트"""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
-            log_file = f.name
-
-        try:
-            setup_logging(level="INFO", log_file=log_file, json_output=True)
+        with tempfile.TemporaryDirectory() as log_dir:
+            setup_logging(level="INFO", log_dir=log_dir, json_output=True)
             logger = get_logger("test_context")
 
             with LogContext(logger, user_id="123", request_id="abc"):
                 logger.info("Context test")
 
             # JSON에 extra 데이터 포함 확인
-            with open(log_file, "r") as f:
+            info_log_path = Path(log_dir) / "info.log"
+            with open(info_log_path, "r") as f:
                 content = f.read()
                 log_data = json.loads(content.strip().split("\n")[-1])
                 assert log_data["extra"]["user_id"] == "123"
                 assert log_data["extra"]["request_id"] == "abc"
-        finally:
-            Path(log_file).unlink(missing_ok=True)
 
 
 class TestLogExecutionTime:
@@ -201,11 +201,8 @@ class TestLogExecutionTime:
 
     def test_log_execution_time_success(self):
         """성공 실행 시간 로깅 테스트"""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
-            log_file = f.name
-
-        try:
-            setup_logging(level="INFO", log_file=log_file, json_output=True)
+        with tempfile.TemporaryDirectory() as log_dir:
+            setup_logging(level="INFO", log_dir=log_dir, json_output=True)
             logger = get_logger("test_timer")
 
             @log_execution_time(logger, "test_operation")
@@ -216,22 +213,18 @@ class TestLogExecutionTime:
             assert result == "result"
 
             # 로그 확인
-            with open(log_file, "r") as f:
+            info_log_path = Path(log_dir) / "info.log"
+            with open(info_log_path, "r") as f:
                 content = f.read()
                 log_data = json.loads(content.strip().split("\n")[-1])
                 assert "test_operation completed" in log_data["message"]
                 assert "execution_time" in log_data["extra"]
                 assert log_data["extra"]["operation"] == "test_operation"
-        finally:
-            Path(log_file).unlink(missing_ok=True)
 
     def test_log_execution_time_failure(self):
         """실패 실행 시간 로깅 테스트"""
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
-            log_file = f.name
-
-        try:
-            setup_logging(level="INFO", log_file=log_file, json_output=True)
+        with tempfile.TemporaryDirectory() as log_dir:
+            setup_logging(level="INFO", log_dir=log_dir, json_output=True)
             logger = get_logger("test_timer_error")
 
             @log_execution_time(logger, "failing_operation")
@@ -242,7 +235,8 @@ class TestLogExecutionTime:
                 failing_function()
 
             # 에러 로그 확인
-            with open(log_file, "r") as f:
+            error_log_path = Path(log_dir) / "error.log"
+            with open(error_log_path, "r") as f:
                 lines = f.readlines()
                 error_log = None
                 for line in reversed(lines):
@@ -253,8 +247,6 @@ class TestLogExecutionTime:
                 assert error_log is not None
                 assert error_log["level"] == "ERROR"
                 assert "execution_time" in error_log["extra"]
-        finally:
-            Path(log_file).unlink(missing_ok=True)
 
 
 class TestIntegrationWithServices:

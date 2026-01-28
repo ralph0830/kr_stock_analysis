@@ -6,8 +6,7 @@ VCP 패턴: 볼린저밴드 수축 + 거래량 감소
 52주 고가 근접: 현재가가 52주 고가의 95% 이상
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 from datetime import date, timedelta
 from dataclasses import dataclass
 

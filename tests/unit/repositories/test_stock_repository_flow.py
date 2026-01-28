@@ -5,7 +5,7 @@ TDD: 수급 데이터 조회 메서드를 위한 테스트
 
 import pytest
 from datetime import date, timedelta
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from sqlalchemy.orm import Session
 
 from src.repositories.stock_repository import StockRepository

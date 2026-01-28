@@ -3,8 +3,6 @@ API Gateway lifespan 및 브로드캐스터 통합 테스트
 """
 
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.api_gateway.main import app, lifespan
 

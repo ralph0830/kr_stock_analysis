@@ -3,11 +3,10 @@ Circuit Breaker Pattern Implementation
 서킷 브레이커 패턴으로 외부 서비스 장애 격리
 """
 
-import time
 import functools
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Callable, Optional, Any, Dict
+from typing import Callable, Optional, Dict
 from collections import deque
 
 

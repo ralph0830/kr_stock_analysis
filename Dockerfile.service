@@ -1,20 +1,84 @@
-FROM python:3.11-slim
+# ============================================================================
+# Multi-stage Build for Microservices
+# ============================================================================
 
-WORKDIR /app
+# Stage 1: Builder
+FROM python:3.11-slim as builder
 
-# 시스템 의존성
-RUN apt-get update && apt-get install -y \
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment and install dependencies
+WORKDIR /build
+COPY requirements.txt .
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Development (default target)
+FROM python:3.11-slim as development
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     postgresql-client \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 의존성 복사
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-# 소스 코드 복사
+WORKDIR /app
 COPY src/ src/
+COPY services/ services/
+COPY tasks/ tasks/
+COPY data/ data/
 
-# 실행 사용자
-CMD ["python", "-m", "celery", "-A", "src.celery_app", "worker"]
+CMD ["python", "-m", "uvicorn", "services.${SERVICE_NAME}.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Stage 3: Production Runtime
+FROM python:3.11-slim as production
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set up application directory
+WORKDIR /app
+RUN mkdir -p /app/logs /app/data && \
+    chown -R appuser:appuser /app
+
+# Copy application code
+COPY src/ src/
+COPY services/ services/
+COPY tasks/ tasks/
+COPY data/ data/
+
+# Change to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Run application
+CMD ["uvicorn", "services.${SERVICE_NAME}.main:app", "--host", "0.0.0.0", "--port", "8000"]

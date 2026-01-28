@@ -4,7 +4,7 @@ TDD RED Phase - All tests should fail initially
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from datetime import date
 
 from src.analysis.sentiment_analyzer import Sentiment, SentimentResult

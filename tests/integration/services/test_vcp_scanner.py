@@ -5,8 +5,6 @@ VCP Scanner 서비스 테스트
 
 import pytest
 from httpx import AsyncClient, ASGITransport
-from unittest.mock import Mock, patch, AsyncMock
-from datetime import date
 
 from services.vcp_scanner.main import app
 from services.vcp_scanner.vcp_analyzer import VCPAnalyzer

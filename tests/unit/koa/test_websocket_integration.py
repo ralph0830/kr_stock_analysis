@@ -6,10 +6,7 @@ KOA → Redis → WebSocket → 프론트엔드 흐름을 테스트합니다.
 
 import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
-from src.koa.pipeline import RealtimePipelineManager
-from src.koa.base import RealtimePrice
 from src.websocket.server import ConnectionManager
 
 

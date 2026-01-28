@@ -3,10 +3,6 @@ Trigger Routes Unit Tests
 TDD GREEN Phase - Tests should pass with implementation
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from datetime import datetime
-from fastapi import HTTPException
 
 
 class TestTriggerRoutesUnit:
@@ -55,7 +51,7 @@ class TestTriggerRoutesUnit:
 
     def test_vcp_scan_response_model(self):
         """VCPScanResponse 모델"""
-        from services.api_gateway.schemas import VCPScanResponse, VCPSignalItem
+        from services.api_gateway.schemas import VCPScanResponse
 
         response = VCPScanResponse(
             status="completed",

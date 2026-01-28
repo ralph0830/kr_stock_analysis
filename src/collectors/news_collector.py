@@ -3,11 +3,9 @@ News Collector
 뉴스 수집기 - 네이버/다음/연합뉴스 크롤링
 """
 
-import os
 import logging
-import asyncio
-from typing import List, Dict, Any, Optional
-from datetime import date, datetime, timedelta
+from typing import List, Dict, Any
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 import time
 

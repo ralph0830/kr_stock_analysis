@@ -5,16 +5,11 @@ TDD RED 단계: Mock 데이터 생성 및 동작 테스트를 먼저 작성합�
 """
 
 import pytest
-import asyncio
-from datetime import datetime, timezone
-from unittest.mock import Mock, patch
-from decimal import Decimal
+from unittest.mock import patch
 
 from src.kiwoom.base import (
     KiwoomConfig,
     KiwoomEventType,
-    RealtimePrice,
-    OrderBook,
 )
 from src.kiwoom.mock import MockKiwoomBridge
 

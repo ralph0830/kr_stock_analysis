@@ -27,6 +27,7 @@ from sqlalchemy import select, desc
 from src.websocket.routes import router as websocket_router
 from src.utils.metrics import metrics_registry
 from src.middleware.metrics_middleware import MetricsMiddleware
+from src.middleware.logging_middleware import RequestLoggingMiddleware
 
 # 대시보드
 from services.api_gateway.dashboard import router as dashboard_router
@@ -235,6 +236,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# 요청/응답 로깅 미들웨어 (CORS 다음, Metrics 이전)
+app.add_middleware(
+    RequestLoggingMiddleware,
+    skip_paths=["/health", "/metrics", "/readiness"],
+    log_body=False,  # 바디 로깅 비활성화 (성능 및 보안)
 )
 
 # 메트릭 수집 미들웨어

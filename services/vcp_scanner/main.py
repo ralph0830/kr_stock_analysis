@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 import logging
 
-from services.vcp_scanner.vcp_analyzer import VCPAnalyzer, VCPResult
+from services.vcp_scanner.vcp_analyzer import VCPAnalyzer
 
 logger = logging.getLogger(__name__)
 

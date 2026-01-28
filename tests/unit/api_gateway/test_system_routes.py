@@ -3,10 +3,8 @@ System Routes Unit Tests
 TDD GREEN Phase - Tests should pass with implementation
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from datetime import datetime
-from fastapi import HTTPException
 
 
 class TestSystemRoutesUnit:

@@ -3,7 +3,7 @@
 """
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 from fastapi import Request, Response
 from starlette.datastructures import Headers
 

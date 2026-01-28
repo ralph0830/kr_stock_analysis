@@ -11,7 +11,6 @@
     4. 본문 수집
 """
 
-import os
 import sys
 import logging
 from pathlib import Path

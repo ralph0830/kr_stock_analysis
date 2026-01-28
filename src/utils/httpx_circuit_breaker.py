@@ -4,8 +4,7 @@ httpx 클라이언트용 서킷 브레이커 래퍼
 """
 
 import httpx
-from typing import Optional
-from src.utils.circuit_breaker import CircuitBreaker, CircuitBreakerState, CircuitBreakerError, circuit_breaker_registry
+from src.utils.circuit_breaker import CircuitBreakerState, CircuitBreakerError, circuit_breaker_registry
 
 
 class CircuitBreakerClientWrapper:

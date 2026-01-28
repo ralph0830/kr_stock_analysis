@@ -3,9 +3,9 @@ Base Repository Pattern
 공통 CRUD 작업을 처리하는 기본 Repository
 """
 
-from typing import Generic, TypeVar, Type, List, Optional, Any
+from typing import Generic, TypeVar, Type, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update
 from src.database.session import Base
 
 ModelType = TypeVar("ModelType", bound=Base)

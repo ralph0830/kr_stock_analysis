@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
 from services.api_gateway.main import app
 from src.database.session import get_db_session

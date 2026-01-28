@@ -7,7 +7,7 @@ import asyncio
 import json
 from typing import Callable, Optional, Set, Dict, Any
 import websockets
-from websockets.exceptions import ConnectionClosed, ConnectionClosedError
+from websockets.exceptions import ConnectionClosedError
 import logging
 
 logger = logging.getLogger(__name__)

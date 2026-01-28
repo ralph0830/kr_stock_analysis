@@ -5,7 +5,7 @@ DB에서 실시간 가격 데이터 조회
 
 import asyncio
 from typing import Dict, List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from src.database.session import SessionLocal
 from src.database.models import DailyPrice

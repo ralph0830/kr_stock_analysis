@@ -5,7 +5,7 @@ Redis Pub/Sub 기반 이벤트 버스 테스트
 
 import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock
 
 from services.event_bus.event_bus import (
     EventBus,

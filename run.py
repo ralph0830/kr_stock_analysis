@@ -19,7 +19,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
-from rich import print as rprint
 
 # API Gateway URL
 API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:5111")
@@ -174,7 +173,7 @@ async def menu_vcp_scan(client: APIClient):
     with console.status("[bold yellow]VCP 스캔 실행 중...", spinner="dots"):
         try:
             result = await client.trigger_vcp_scan(market=market if market != "all" else None, min_score=min_score)
-            console.print(f"[green]✓ 스캔 완료![/green]")
+            console.print("[green]✓ 스캔 완료![/green]")
             console.print(f"  - 스캔된 종목: {result.get('scanned_count', 0)}개")
             console.print(f"  - 발견된 시그널: {result.get('found_signals', 0)}개")
             if result.get("signals"):
@@ -195,7 +194,7 @@ async def menu_signal_generation(client: APIClient):
     with console.status("[bold yellow]시그널 생성 중...", spinner="dots"):
         try:
             result = await client.trigger_signal_generation(tickers=tickers)
-            console.print(f"[green]✓ 시그널 생성 완료![/green]")
+            console.print("[green]✓ 시그널 생성 완료![/green]")
             console.print(f"  - 생성된 시그널: {result.get('generated_count', 0)}개")
         except Exception as e:
             console.print(f"[red]✗ 시그널 생성 실패: {e}[/red]")
@@ -327,7 +326,7 @@ async def menu_ai_analysis(client: APIClient):
     with console.status("[bold yellow]AI 분석 실행 중...", spinner="dots"):
         try:
             result = await client.trigger_ai_analysis(ticker)
-            console.print(f"[green]✓ 분석 완료![/green]")
+            console.print("[green]✓ 분석 완료![/green]")
             console.print(f"  - 종목: {result.get('name', ticker)}")
             console.print(f"  - 감성: {result.get('sentiment', 'N/A')}")
             console.print(f"  - 점수: {result.get('score', 'N/A')}")

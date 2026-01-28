@@ -2,7 +2,6 @@
 SmartMoney 수급 분석 테스트
 """
 
-import pytest
 from datetime import date, timedelta
 from src.analysis.smartmoney_analyzer import (
     FlowData,

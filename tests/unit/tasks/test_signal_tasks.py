@@ -3,9 +3,6 @@ Unit Tests for Signal Tasks
 종가베팅 V2 시그널 생성 태스크 테스트 (TDD)
 """
 
-import pytest
-from unittest.mock import Mock, patch
-from datetime import date
 
 from tasks.signal_tasks import generate_jongga_signals, analyze_single_stock
 

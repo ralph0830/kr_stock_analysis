@@ -8,9 +8,6 @@ config/settings.py 테스트 (RED Phase)
 """
 
 import pytest
-from dataclasses import dataclass
-from enum import Enum
-from typing import List
 
 
 # =============================================================================

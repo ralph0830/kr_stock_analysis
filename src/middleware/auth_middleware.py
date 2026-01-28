@@ -2,6 +2,8 @@
 FastAPI 인증 및 Rate Limiting 미들웨어
 """
 
+import time
+
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -9,7 +11,7 @@ from starlette.responses import Response
 from typing import Callable, Optional
 
 from src.utils.api_auth import api_key_manager, APIKey
-from src.utils.rate_limiter import rate_limiter_registry, RateLimitExceeded
+from src.utils.rate_limiter import rate_limiter_registry
 
 
 class APIKeyAuthMiddleware(BaseHTTPMiddleware):

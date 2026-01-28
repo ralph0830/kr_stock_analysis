@@ -4,9 +4,9 @@ Backtest Repository
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime
+from datetime import date
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_, desc, func
+from sqlalchemy import select, and_, desc
 from src.repositories.base import BaseRepository
 from src.database.models import BacktestResult
 

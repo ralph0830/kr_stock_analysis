@@ -4,7 +4,7 @@
 
 import pytest
 import asyncio
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, AsyncMock
 
 from src.koa.service import RealtimeDataService, RealtimeDataSubscriber
 from src.koa.base import RealtimePrice

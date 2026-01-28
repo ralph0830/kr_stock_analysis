@@ -154,7 +154,7 @@ def test_keyword_extraction():
 
     keywords = scorer.extract_keywords(test_articles)
 
-    print(f"\n추출된 키워드 (상위 10개):")
+    print("\n추출된 키워드 (상위 10개):")
     for i, keyword in enumerate(keywords, 1):
         print(f"  {i}. {keyword}")
 

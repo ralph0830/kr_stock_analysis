@@ -5,13 +5,12 @@ TDD GREEN 단계: REST API 호출 테스트
 """
 
 import pytest
-import asyncio
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 from httpx import HTTPStatusError, RequestError
 
-from src.kiwoom.base import KiwoomConfig, RealtimePrice
-from src.kiwoom.rest_api import KiwoomRestAPI, KiwoomAPIError
+from src.kiwoom.base import KiwoomConfig
+from src.kiwoom.rest_api import KiwoomRestAPI
 
 
 def create_mock_response(status_code: int = 200, json_data=None):

@@ -8,11 +8,10 @@ import asyncio
 import threading
 from typing import Optional, List, Dict, Any, Callable, Union
 from datetime import datetime, timezone
-import logging
 from queue import Queue
 
 from src.koa.base import IKOABridge, KOAEventType, RealtimePrice
-from src.koa.mock import MockKOABridge, AsyncMockKOABridge
+from src.koa.mock import MockKOABridge
 from src.koa.redis_publisher import RedisPublisher, MockRedisPublisher
 from src.utils.logging_config import get_logger
 

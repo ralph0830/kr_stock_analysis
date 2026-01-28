@@ -7,7 +7,6 @@
 
 import asyncio
 import json
-import logging
 from typing import Dict, Any, Optional, List, Callable, Set
 from datetime import datetime, timezone
 
@@ -18,7 +17,6 @@ from src.kiwoom.base import (
     KiwoomConfig,
     KiwoomEventType,
     RealtimePrice,
-    OrderBook,
     IKiwoomBridge
 )
 from src.utils.logging_config import get_logger

@@ -4,10 +4,7 @@ API Gateway Circuit Breaker 통합 테스트
 
 import pytest
 import time
-from unittest.mock import patch, AsyncMock
-from fastapi.testclient import TestClient
 
-from services.api_gateway.main import app
 from src.utils.circuit_breaker import (
     circuit_breaker_registry,
     CircuitBreakerState,

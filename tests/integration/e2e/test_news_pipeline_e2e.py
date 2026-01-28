@@ -3,9 +3,8 @@ E2E Tests for News Pipeline
 뉴스 수집 → 분석 → 점수화 전체 파이프라인 테스트
 """
 
-import pytest
-from datetime import date, datetime
-from unittest.mock import patch, MagicMock
+from datetime import date
+from unittest.mock import patch
 
 from src.collectors.news_collector import NewsCollector
 from src.analysis.sentiment_analyzer import SentimentAnalyzer
@@ -181,14 +180,14 @@ class TestNewsPipelineE2E:
                         content=article.get("content", ""),
                     )
                     results.append(result)
-                except Exception as e:
+                except Exception:
                     # 에러가 발생하면 neutral로 처리
                     pass
 
             # 적어도 일부는 처리되어야 함
             assert len(results) >= 0
 
-        except Exception as e:
+        except Exception:
             # 최상위 에러도 허용
             assert True
 

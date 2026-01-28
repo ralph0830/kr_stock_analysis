@@ -6,7 +6,6 @@ Test Suite: TimescaleDB 시계열 데이터
 import pytest
 from datetime import datetime, timedelta
 from src.database.session import engine, text
-from src.database.models import DailyPrice, InstitutionalFlow
 
 
 class TestTimescaleDBHypertable:

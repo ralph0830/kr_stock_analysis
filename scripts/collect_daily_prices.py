@@ -8,8 +8,8 @@ DB에 있는 종목들의 최근 30일치 데이터를 수집하여 DB에 저장
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from datetime import datetime
+from typing import Dict
 
 # 프로젝트 루트 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -200,7 +200,7 @@ async def show_db_status():
         price_count = session.execute(text("SELECT COUNT(*) FROM daily_prices")).scalar()
         flow_count = session.execute(text("SELECT COUNT(*) FROM institutional_flows")).scalar()
 
-        print(f"\n📊 현재 DB 상태:")
+        print("\n📊 현재 DB 상태:")
         print(f"   - stocks: {stock_count}개")
         print(f"   - daily_prices: {price_count}개")
         print(f"   - institutional_flows: {flow_count}개")
@@ -213,7 +213,7 @@ async def show_db_status():
                 GROUP BY ticker
                 ORDER BY ticker
             """))
-            print(f"\n📈 종목별 가격 데이터:")
+            print("\n📈 종목별 가격 데이터:")
             for row in result:
                 print(f"   - {row[0]}: {row[1]}개")
     finally:

@@ -5,7 +5,7 @@ WebSocket 클라이언트 단위 테스트
 import pytest
 import json
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
 from src.clients.websocket_client import (
     PriceUpdate,
     WebSocketClient,

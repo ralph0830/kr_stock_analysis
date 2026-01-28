@@ -3,12 +3,10 @@ WebSocket 서버
 실시간 가격 업데이트 및 이벤트 브로드캐스트
 """
 
-import json
 import asyncio
-from typing import Dict, Set, Optional, Any
-from fastapi import WebSocket, WebSocketDisconnect
+from typing import Dict, Set, Optional
+from fastapi import WebSocket
 from datetime import datetime, timezone
-import logging
 
 from src.utils.logging_config import get_logger
 

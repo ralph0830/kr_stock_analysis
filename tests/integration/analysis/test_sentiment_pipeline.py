@@ -11,7 +11,7 @@
 import pytest
 import os
 from datetime import datetime, date
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 from src.collectors.news_collector import NewsCollector, NewsArticle
 from src.analysis.sentiment_analyzer import SentimentAnalyzer, Sentiment, SentimentResult

@@ -5,9 +5,7 @@ Test Suite: Service Discovery (GREEN Phase)
 """
 
 import pytest
-from typing import Dict, List, Optional
-from unittest.mock import Mock, AsyncMock, patch
-import asyncio
+from unittest.mock import Mock, patch
 
 from services.api_gateway.service_registry import ServiceRegistry, ServiceInfo, get_registry
 

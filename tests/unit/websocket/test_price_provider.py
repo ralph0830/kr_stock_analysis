@@ -3,7 +3,7 @@
 """
 
 import pytest
-from datetime import date, datetime
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from src.websocket.price_provider import (

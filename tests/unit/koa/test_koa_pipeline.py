@@ -4,7 +4,7 @@
 
 import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import patch
 
 from src.koa.pipeline import (
     RealtimePipelineManager,
@@ -12,7 +12,6 @@ from src.koa.pipeline import (
     init_pipeline_manager,
     shutdown_pipeline_manager
 )
-from src.koa.base import RealtimePrice
 
 
 class TestRealtimePipelineManager:

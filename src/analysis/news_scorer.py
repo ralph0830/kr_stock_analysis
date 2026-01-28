@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 from datetime import date
 from dataclasses import dataclass
 
-from src.analysis.sentiment_analyzer import SentimentAnalyzer, SentimentResult, Sentiment
+from src.analysis.sentiment_analyzer import SentimentAnalyzer, Sentiment
 
 logger = logging.getLogger(__name__)
 

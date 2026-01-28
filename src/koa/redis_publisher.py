@@ -8,7 +8,6 @@ import json
 import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-import logging
 
 try:
     import redis.asyncio as aioredis

@@ -5,10 +5,10 @@ SQLAlchemy 2.0 기반 ORM 모델 정의
 
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, DateTime,
-    Date, Numeric, Text, ForeignKey, Index, BigInteger, JSON, UniqueConstraint
+    Date, Text, ForeignKey, Index, BigInteger, JSON
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime, date
+from datetime import datetime
 
 from src.database.session import Base
 

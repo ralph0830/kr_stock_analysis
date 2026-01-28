@@ -7,15 +7,13 @@ import os
 import sys
 import pandas as pd
 from pathlib import Path
-from datetime import datetime, date
-from typing import Optional
 from tqdm import tqdm
 
 # 상위 디렉토리 경로 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.database.session import SessionLocal, engine, init_db, text
-from src.database.models import Stock, Signal, DailyPrice, InstitutionalFlow
+from src.database.session import SessionLocal, init_db, text
+from src.database.models import Signal
 from src.repositories.stock_repository import StockRepository
 from src.repositories.signal_repository import SignalRepository
 

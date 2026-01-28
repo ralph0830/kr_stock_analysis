@@ -5,13 +5,8 @@ Test Suite: Repository Pattern (GREEN Phase)
 """
 
 import pytest
-from datetime import datetime, date
-from decimal import Decimal
 
-from src.repositories.stock_repository import StockRepository
-from src.repositories.signal_repository import SignalRepository
-from src.database.session import SessionLocal, init_db
-from src.database.models import Stock, Signal
+from src.database.models import Stock
 
 
 @pytest.fixture(scope="module")

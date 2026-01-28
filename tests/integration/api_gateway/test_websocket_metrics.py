@@ -3,7 +3,6 @@ API Gateway 통합 테스트
 WebSocket 및 메트릭 엔드포인트 테스트
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
 from services.api_gateway.main import app

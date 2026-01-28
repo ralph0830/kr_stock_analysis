@@ -4,7 +4,7 @@ Mock KOA Bridge 유닛 테스트
 
 import pytest
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from src.koa.mock import MockKOABridge, AsyncMockKOABridge
 from src.koa.base import KOAEventType, RealtimePrice
