@@ -14,9 +14,10 @@ from tqdm import tqdm
 # 상위 디렉토리 경로 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.database.session import SessionLocal, engine, init_db
+from src.database.session import SessionLocal, engine, init_db, text
 from src.database.models import Stock, Signal, DailyPrice, InstitutionalFlow
 from src.repositories.stock_repository import StockRepository
+from src.repositories.signal_repository import SignalRepository
 
 
 def migrate_stock_list(csv_path: str) -> int:
@@ -84,40 +85,50 @@ def migrate_daily_prices(csv_path: str) -> int:
     with SessionLocal() as session:
         count = 0
         batch_size = 1000
-        records = []
 
         for _, row in tqdm(df.iterrows(), total=len(df), desc="Daily Prices"):
             try:
-                record = DailyPrice(
-                    ticker=row["ticker"],
-                    date=row["date"],
-                    open_price=row.get("open", row.get("current_price")),
-                    high_price=row.get("high", row.get("current_price")),
-                    low_price=row.get("low", row.get("current_price")),
-                    close_price=row["current_price"],
-                    volume=row.get("volume", 0),
-                    foreign_net_buy=row.get("foreign_net_buy", 0),
-                    inst_net_buy=row.get("inst_net_buy", 0),
-                    foreign_net_buy_amount=row.get("foreign_net_buy_amount", 0),
-                    inst_net_buy_amount=row.get("inst_net_buy_amount", 0),
-                    trading_value=row.get("trading_value", 0),
-                )
-                records.append(record)
+                # Use ON CONFLICT for idempotency
+                session.execute(text("""
+                    INSERT INTO daily_prices (
+                        ticker, date, open_price, high_price, low_price, close_price, volume,
+                        foreign_net_buy, inst_net_buy, retail_net_buy,
+                        foreign_net_buy_amount, inst_net_buy_amount, trading_value
+                    ) VALUES (
+                        :ticker, :date, :open_price, :high_price, :low_price, :close_price, :volume,
+                        :foreign_net_buy, :inst_net_buy, 0,
+                        :foreign_net_buy_amount, :inst_net_buy_amount, :trading_value
+                    )
+                    ON CONFLICT (ticker, date) DO UPDATE SET
+                        close_price = EXCLUDED.close_price,
+                        volume = EXCLUDED.volume,
+                        foreign_net_buy = EXCLUDED.foreign_net_buy,
+                        inst_net_buy = EXCLUDED.inst_net_buy
+                """), {
+                    "ticker": row["ticker"],
+                    "date": row["date"],
+                    "open_price": row.get("open", row.get("current_price")),
+                    "high_price": row.get("high", row.get("current_price")),
+                    "low_price": row.get("low", row.get("current_price")),
+                    "close_price": row["current_price"],
+                    "volume": row.get("volume", 0),
+                    "foreign_net_buy": row.get("foreign_net_buy", 0),
+                    "inst_net_buy": row.get("inst_net_buy", 0),
+                    "foreign_net_buy_amount": row.get("foreign_net_buy_amount", 0),
+                    "inst_net_buy_amount": row.get("inst_net_buy_amount", 0),
+                    "trading_value": row.get("trading_value", 0),
+                })
                 count += 1
 
-                # Batch insert
-                if len(records) >= batch_size:
-                    session.bulk_save_objects(records)
+                # Batch commit
+                if count % batch_size == 0:
                     session.commit()
-                    records = []
 
             except Exception as e:
                 print(f"❌ Error inserting {row['ticker']} {row['date']}: {e}")
 
-        # 남은 레코드 삽입
-        if records:
-            session.bulk_save_objects(records)
-            session.commit()
+        # Final commit
+        session.commit()
 
     print(f"✅ Migrated {count} daily price records")
     return count
@@ -193,19 +204,19 @@ def verify_migration(csv_path: str, table_name: str) -> bool:
     """
     import csv
 
-    # CSV row count
+    # CSV row count (DictReader는 헤더를 자동으로 제외하므로 -1 불필요)
     with open(csv_path, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        csv_count = sum(1 for _ in reader) - 1  # 헤더 제외
+        csv_count = sum(1 for _ in reader)  # 데이터 행만 카운트
 
     # DB row count
     with SessionLocal() as session:
         if table_name == "stocks":
-            db_count = session.execute("SELECT COUNT(*) FROM stocks").scalar()
+            db_count = session.execute(text("SELECT COUNT(*) FROM stocks")).scalar()
         elif table_name == "daily_prices":
-            db_count = session.execute("SELECT COUNT(*) FROM daily_prices").scalar()
+            db_count = session.execute(text("SELECT COUNT(*) FROM daily_prices")).scalar()
         elif table_name == "signals":
-            db_count = session.execute("SELECT COUNT(*) FROM signals").scalar()
+            db_count = session.execute(text("SELECT COUNT(*) FROM signals")).scalar()
         else:
             print(f"⚠️  Unknown table: {table_name}")
             return False

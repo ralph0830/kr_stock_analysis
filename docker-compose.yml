@@ -10,10 +10,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Changed from 5432 to avoid conflict
     volumes:
       - postgres_data:/home/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -28,7 +27,7 @@ services:
     container_name: kr_stock_redis
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "6380:6379"  # Changed from 6379 to avoid conflict
     volumes:
       - redis_data:/data
     healthcheck:
@@ -48,19 +47,27 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
       REDIS_URL: redis://redis:6379/0
+      VCP_SCANNER_URL: http://vcp-scanner:8000
+      SIGNAL_ENGINE_URL: http://signal-engine:8000
+      MARKET_ANALYZER_URL: http://market-analyzer:8000
     ports:
-      - "8000:8000"
+      - "5111:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      vcp-scanner:
+        condition: service_started
+      signal-engine:
+        condition: service_started
     volumes:
+      - ./services:/app/services
       - ./src:/app/src
       - ./data:/app/data
     networks:
       - kr_stock_network
-    command: uvicorn src.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
 
   # VCP Scanner Service
   vcp-scanner:
@@ -73,18 +80,45 @@ services:
       REDIS_URL: redis://redis:6379/0
       SERVICE_NAME: vcp-scanner
     ports:
-      - "8001:8000"
+      - "5112:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
+      - ./services:/app/services
       - ./src:/app/src
       - ./data:/app/data
     networks:
       - kr_stock_network
-    command: uvicorn src.vcp_scanner.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn services.vcp_scanner.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Signal Engine Service
+  signal-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+    container_name: kr_stock_signal_engine
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      REDIS_URL: redis://redis:6379/0
+      SERVICE_NAME: signal-engine
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "5113:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services:/app/services
+      - ./src:/app/src
+      - ./data:/app/data
+    networks:
+      - kr_stock_network
+    command: uvicorn services.signal_engine.main:app --host 0.0.0.0 --port 8000 --reload
 
   # Celery Worker (Background Tasks)
   celery-worker:
@@ -102,11 +136,13 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      - ./services:/app/services
       - ./src:/app/src
+      - ./tasks:/app/tasks
       - ./data:/app/data
     networks:
       - kr_stock_network
-    command: celery -A src.celery_app worker --loglevel=info
+    command: celery -A tasks.celery_app worker --loglevel=info
 
   # Celery Beat (Scheduler)
   celery-beat:
@@ -123,10 +159,12 @@ services:
       - redis
       - celery-worker
     volumes:
+      - ./services:/app/services
       - ./src:/app/src
+      - ./tasks:/app/tasks
     networks:
       - kr_stock_network
-    command: celery -A src.celery_app beat --loglevel=info
+    command: celery -A tasks.celery_app beat --loglevel=info
 
   # Flower (Celery Monitoring)
   flower:

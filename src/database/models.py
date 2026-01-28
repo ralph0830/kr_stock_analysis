@@ -92,9 +92,9 @@ class DailyPrice(Base):
     """일봉 데이터 (TimescaleDB 하이퍼테이블)"""
     __tablename__ = "daily_prices"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(6), ForeignKey("stocks.ticker"), nullable=False, index=True)
-    date = Column(Date, nullable=False, index=True)
+    # Composite primary key for TimescaleDB: (ticker, date)
+    ticker = Column(String(6), ForeignKey("stocks.ticker"), primary_key=True, nullable=False)
+    date = Column(Date, primary_key=True, nullable=False)
 
     # OHLCV
     open_price = Column(Float, nullable=True)
@@ -120,12 +120,6 @@ class DailyPrice(Base):
     # Relationships
     stock = relationship("Stock", back_populates="daily_prices")
 
-    # Indexes (TimescaleDB에서 자동으로 시간에 따른 파티셔닝)
-    __table_args__ = (
-        Index("ix_daily_prices_ticker_date", "ticker", "date"),
-        UniqueConstraint("ticker", "date", name="uq_daily_prices_ticker_date"),
-    )
-
     def __repr__(self):
         return f"<DailyPrice(ticker={self.ticker}, date={self.date}, close={self.close_price})>"
 
@@ -134,9 +128,9 @@ class InstitutionalFlow(Base):
     """기관/외국인 수급 데이터 (TimescaleDB 하이퍼테이블)"""
     __tablename__ = "institutional_flows"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    ticker = Column(String(6), ForeignKey("stocks.ticker"), nullable=False, index=True)
-    date = Column(Date, nullable=False, index=True)
+    # Composite primary key for TimescaleDB: (ticker, date)
+    ticker = Column(String(6), ForeignKey("stocks.ticker"), primary_key=True, nullable=False)
+    date = Column(Date, primary_key=True, nullable=False)
 
     # 외국인
     foreign_net_buy = Column(Integer, default=0)
@@ -164,12 +158,6 @@ class InstitutionalFlow(Base):
     is_double_buy = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    # Indexes
-    __table_args__ = (
-        Index("ix_institutional_flows_ticker_date", "ticker", "date"),
-        UniqueConstraint("ticker", "date", name="uq_institutional_flows_ticker_date"),
-    )
 
     def __repr__(self):
         return f"<InstitutionalFlow(ticker={self.ticker}, date={self.date}, score={self.supply_demand_score})>"
@@ -204,3 +192,74 @@ class MarketStatus(Base):
 
     def __repr__(self):
         return f"<MarketStatus(date={self.date}, gate={self.gate}, score={self.gate_score})>"
+
+
+class BacktestResult(Base):
+    """백테스트 결과"""
+    __tablename__ = "backtest_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    config_name = Column(String(100), nullable=False, index=True)  # 백테스트 설정명 (예: vcp_conservative)
+    backtest_date = Column(Date, nullable=False, index=True)  # 백테스트 기준 날짜
+
+    # 거래 통계
+    total_trades = Column(Integer, nullable=False, default=0)  # 총 거래 횟수
+    winning_trades = Column(Integer, nullable=False, default=0)  # 수익 거래 수
+    losing_trades = Column(Integer, nullable=False, default=0)  # 손실 거래 수
+
+    # 수익률 지표
+    win_rate = Column(Float, nullable=True)  # 승률 (%)
+    total_return_pct = Column(Float, nullable=False)  # 총 수익률 (%)
+    max_drawdown_pct = Column(Float, nullable=True)  # 최대 낙폭 (%)
+    sharpe_ratio = Column(Float, nullable=True)  # 샤프 비율
+    avg_return_per_trade = Column(Float, nullable=True)  # 평균 수익률/거래 (%)
+    profit_factor = Column(Float, nullable=True)  # 프로핏 팩터 (총수익/총손실)
+
+    # 추가 메타데이터
+    extra_metadata = Column(JSON, nullable=True)  # 추가 정보 (JSON)
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Indexes
+    __table_args__ = (
+        Index("ix_backtest_config_date", "config_name", "backtest_date"),
+        Index("ix_backtest_created_at", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<BacktestResult(id={self.id}, config={self.config_name}, return={self.total_return_pct}%)"
+
+
+class AIAnalysis(Base):
+    """AI 종목 분석 결과"""
+    __tablename__ = "ai_analyses"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(6), ForeignKey("stocks.ticker"), nullable=False, index=True)
+    analysis_date = Column(Date, nullable=False, index=True)
+
+    # 감성 분석 결과
+    sentiment = Column(String(20), nullable=False)  # positive, negative, neutral
+    score = Column(Float, nullable=False)  # -1.0 ~ 1.0
+    confidence = Column(Float, default=0.5)  # 0 ~ 1
+
+    # 분석 내용
+    summary = Column(Text, nullable=True)  # 요약
+    keywords = Column(JSON, nullable=True)  # 키워드 리스트
+    recommendation = Column(String(20), nullable=True)  # BUY, SELL, HOLD
+
+    # 추가 정보
+    news_count = Column(Integer, default=0)  # 분석한 뉴스 수
+    model_version = Column(String(50), default="v1.0")  # 모델 버전
+
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Indexes
+    __table_args__ = (
+        Index("ix_ai_analysis_ticker_date", "ticker", "analysis_date"),
+        Index("ix_ai_analysis_date", "analysis_date"),
+    )
+
+    def __repr__(self):
+        return f"<AIAnalysis(id={self.id}, ticker={self.ticker}, sentiment={self.sentiment})>"

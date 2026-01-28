@@ -216,6 +216,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "services.vcp_scanner.main:app",
         host="0.0.0.0",
-        port=8001,
+        port=5112,
         reload=True,
     )

@@ -4,10 +4,11 @@ Stock Repository
 """
 
 from typing import List, Optional
+from datetime import date, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 from src.repositories.base import BaseRepository
-from src.database.models import Stock
+from src.database.models import Stock, InstitutionalFlow
 
 
 class StockRepository(BaseRepository[Stock]):
@@ -123,3 +124,36 @@ class StockRepository(BaseRepository[Stock]):
             self.session.commit()
             self.session.refresh(stock)
         return stock
+
+    def get_institutional_flow(
+        self, ticker: str, days: int = 20
+    ) -> List[InstitutionalFlow]:
+        """
+        종목 수급 데이터 조회 (기간별)
+
+        Args:
+            ticker: 종목 코드 (6자리)
+            days: 조회 기간 (일수, 기본 20일, 최대 60일)
+
+        Returns:
+            InstitutionalFlow 리스트 (날짜 오름차순)
+        """
+        # 최대 60일 제한
+        days = min(days, 60)
+
+        # 조회 기간 계산
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days)
+
+        # 쿼리 생성
+        query = select(InstitutionalFlow).where(
+            and_(
+                InstitutionalFlow.ticker == ticker,
+                InstitutionalFlow.date >= start_date,
+                InstitutionalFlow.date <= end_date,
+            )
+        ).order_by(InstitutionalFlow.date.asc())
+
+        # 실행
+        result = self.session.execute(query)
+        return list(result.scalars().all())

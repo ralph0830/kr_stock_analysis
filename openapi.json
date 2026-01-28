@@ -1,0 +1,954 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "KR Stock API Gateway",
+    "description": "\n    ## 한국 주식 분석 시스템 API Gateway\n\n    Open Architecture 기반 마이크로서비스 한국 주식 분석 시스템의 API Gateway입니다.\n\n    ## 주요 기능\n    - **VCP 패턴 스캐너**: 볼린저밴드 수축 패턴 탐지\n    - **종가베팅 V2 시그널**: 12점 scoring 기반 매매 시그널\n    - **실시간 가격 브로드캐스팅**: WebSocket 기반 실시간 가격 업데이트\n    - **SmartMoney 수급 분석**: 외국인/기관 수급 데이터 분석\n\n    ## 지원 서비스\n    - VCP Scanner (port 8001)\n    - Signal Engine (port 8003)\n    - Market Analyzer (port 8002)\n    - Real-time Price Broadcaster\n    ",
+    "contact": {
+      "name": "KR Stock Team",
+      "email": "support@krstock.example.com"
+    },
+    "license": {
+      "name": "MIT"
+    },
+    "version": "2.0.0"
+  },
+  "paths": {
+    "/ws/stats": {
+      "get": {
+        "tags": [
+          "WebSocket"
+        ],
+        "summary": "Websocket Stats",
+        "description": "WebSocket 연결 통계 엔드포인트\n\nReturns:\n    연결 수, 구독자 수 등의 통계 정보",
+        "operationId": "websocket_stats_ws_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/overview": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get System Overview",
+        "description": "시스템 상태 개요\n\nReturns:\n    SystemStatus: 전체 시스템 상태",
+        "operationId": "get_system_overview_api_dashboard_overview_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/metrics": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Metrics Data",
+        "description": "메트릭 데이터 조회\n\nArgs:\n    metric_type: 필터링할 메트릭 타입 (counter, gauge, histogram)\n    limit: 반환할 메트릭 수\n\nReturns:\n    메트릭 데이터 리스트",
+        "operationId": "get_metrics_data_api_dashboard_metrics_get",
+        "parameters": [
+          {
+            "name": "metric_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/connections": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Connection Info",
+        "description": "실시간 연결 상태\n\nReturns:\n    ConnectionInfo: 연결 정보",
+        "operationId": "get_connection_info_api_dashboard_connections_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/signals": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Get Signal Summary",
+        "description": "최신 시그널 요약\n\nArgs:\n    limit: 반환할 시그널 수\n    status: 필터링할 상태 (active, closed, all)\n\nReturns:\n    SignalSummary: 시그널 요약",
+        "operationId": "get_signal_summary_api_dashboard_signals_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/health": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Dashboard Health",
+        "description": "대시보드 헬스 체크\n\nReturns:\n    헬스 상태",
+        "operationId": "dashboard_health_api_dashboard_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Check",
+        "description": "API Gateway 헬스 체크\n\n서비스가 정상 동작 중인지 확인합니다.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "서비스 정상",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResponse"
+                },
+                "example": {
+                  "status": "healthy",
+                  "service": "api-gateway",
+                  "version": "2.0.0"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Root",
+        "description": "루트 엔드포인트\n\nAPI Gateway의 기본 정보와 문서 링크를 반환합니다.",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "루트 엔드포인트 정보",
+            "content": {
+              "application/json": {
+                "schema": {},
+                "example": {
+                  "message": "KR Stock API Gateway",
+                  "version": "2.0.0",
+                  "docs": "/docs",
+                  "status": "operational"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Prometheus Metrics",
+        "description": "Prometheus 메트릭 엔드포인트\n\nPrometheus 텍스트 형식으로 메트릭을 반환합니다.",
+        "operationId": "prometheus_metrics_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Prometheus 텍스트 형식 메트릭",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "text/plain": {
+                "example": "# HELP api_requests_total Total API requests\napi_requests_total 1250\n"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Json Metrics",
+        "description": "JSON 메트릭 엔드포인트\n\nJSON 형식으로 모든 메트릭을 반환합니다.\n\n- **metric_type**: 필터링할 메트릭 타입 (counter, gauge, histogram)\n- **limit**: 반환할 메트릭 수",
+        "operationId": "json_metrics_api_metrics_get",
+        "parameters": [
+          {
+            "name": "metric_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metric Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "JSON 형식 메트릭",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsResponse"
+                },
+                "example": {
+                  "metrics": [
+                    {
+                      "name": "api_requests_total",
+                      "type": "counter",
+                      "value": 1250,
+                      "help": "Total API requests"
+                    },
+                    {
+                      "name": "api_response_time_seconds",
+                      "type": "histogram",
+                      "value": {
+                        "count": 1200,
+                        "sum": 45.5,
+                        "buckets": {
+                          "0.005": 100,
+                          "0.01": 200,
+                          "+Inf": 1200
+                        }
+                      },
+                      "help": "API response time in seconds"
+                    }
+                  ],
+                  "total": 2,
+                  "filtered": 2
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metrics/reset": {
+      "post": {
+        "tags": [
+          "metrics"
+        ],
+        "summary": "Reset Metrics",
+        "description": "메트릭 리셋 엔드포인트 (개발/테스트용)\n\n모든 메트릭을 0으로 리셋합니다.",
+        "operationId": "reset_metrics_api_metrics_reset_post",
+        "responses": {
+          "200": {
+            "description": "메트릭 리셋 성공",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kr/signals": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "summary": "Get Kr Signals",
+        "description": "활성 VCP 시그널 조회\n\nVCP Scanner 서비스로 프록시하여 시그널 목록을 반환합니다.\n\n- **limit**: 반환할 최대 시그널 수 (1-100)",
+        "operationId": "get_kr_signals_api_kr_signals_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "반환할 시그널 수",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "반환할 시그널 수"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "시그널 목록 반환 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SignalResponse"
+                  },
+                  "title": "Response Get Kr Signals Api Kr Signals Get"
+                },
+                "example": [
+                  {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "signal_type": "VCP",
+                    "score": 85.5,
+                    "grade": "A",
+                    "entry_price": 80000,
+                    "target_price": 88000,
+                    "created_at": "2024-01-15T10:30:00"
+                  }
+                ]
+              }
+            }
+          },
+          "503": {
+            "description": "VCP Scanner 서비스 unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "status": "error",
+                  "code": 503,
+                  "detail": "VCP Scanner service not available",
+                  "path": "/api/kr/signals"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kr/market-gate": {
+      "get": {
+        "tags": [
+          "market"
+        ],
+        "summary": "Get Kr Market Gate",
+        "description": "Market Gate 상태 조회\n\nMarket Analyzer 서비스로 프록시하여 현재 시장 상태를 반환합니다.\n\n- **GREEN**: 매수 우위 (전체 매수)\n- **YELLOW**: 관망 (일부 매수)\n- **RED**: 매도 (현금 보유 현금 비중 ↑)",
+        "operationId": "get_kr_market_gate_api_kr_market_gate_get",
+        "responses": {
+          "200": {
+            "description": "Market Gate 상태 반환 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketGateStatus"
+                },
+                "example": {
+                  "status": "GREEN",
+                  "level": 1,
+                  "kospi_status": "GREEN",
+                  "kosdaq_status": "GREEN",
+                  "updated_at": "2024-01-15T10:30:00"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Market Analyzer 서비스 unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "status": "error",
+                  "code": 503,
+                  "detail": "VCP Scanner service not available",
+                  "path": "/api/kr/signals"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kr/jongga-v2/latest": {
+      "get": {
+        "tags": [
+          "signals"
+        ],
+        "summary": "Get Jongga V2 Latest",
+        "description": "최신 종가베팅 V2 시그널 조회\n\nSignal Engine 서비스로 프록시하여 최신 종가베팅 V2 시그널을 반환합니다.\n\n종가베팅 V2는 뉴스, 거래량, 차트, 캔들, 기간, 수급 등 12가지 항목으로 종목을 평가합니다.",
+        "operationId": "get_jongga_v2_latest_api_kr_jongga_v2_latest_get",
+        "responses": {
+          "200": {
+            "description": "최신 종가베팅 V2 시그널 반환 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SignalResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Get Jongga V2 Latest Api Kr Jongga V2 Latest Get"
+                },
+                "example": [
+                  {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "signal_type": "VCP",
+                    "score": 85.5,
+                    "grade": "A",
+                    "entry_price": 80000,
+                    "target_price": 88000,
+                    "created_at": "2024-01-15T10:30:00"
+                  }
+                ]
+              }
+            }
+          },
+          "503": {
+            "description": "Signal Engine 서비스 unavailable"
+          }
+        }
+      }
+    },
+    "/api/kr/realtime-prices": {
+      "post": {
+        "summary": "Get Kr Realtime Prices",
+        "description": "실시간 가격 일괄 조회 (이전 Flask 라우팅 호환)",
+        "operationId": "get_kr_realtime_prices_api_kr_realtime_prices_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RealtimePricesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/kr/stock-chart/{ticker}": {
+      "get": {
+        "summary": "Get Kr Stock Chart",
+        "description": "종목 차트 데이터 조회",
+        "operationId": "get_kr_stock_chart_api_kr_stock_chart__ticker__get",
+        "parameters": [
+          {
+            "name": "ticker",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Ticker"
+            }
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "6mo",
+              "title": "Period"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ConnectionInfo": {
+        "properties": {
+          "active_connections": {
+            "type": "integer",
+            "title": "Active Connections"
+          },
+          "subscriptions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Subscriptions"
+          },
+          "broadcaster_running": {
+            "type": "boolean",
+            "title": "Broadcaster Running"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_connections",
+          "subscriptions",
+          "broadcaster_running"
+        ],
+        "title": "ConnectionInfo",
+        "description": "연결 정보 모델"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthCheckResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "version"
+        ],
+        "title": "HealthCheckResponse",
+        "description": "헬스 체크 응답 모델"
+      },
+      "MarketGateStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "level": {
+            "type": "integer",
+            "title": "Level"
+          },
+          "kospi_status": {
+            "type": "string",
+            "title": "Kospi Status"
+          },
+          "kosdaq_status": {
+            "type": "string",
+            "title": "Kosdaq Status"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "level",
+          "kospi_status",
+          "kosdaq_status",
+          "updated_at"
+        ],
+        "title": "MarketGateStatus",
+        "description": "Market Gate 상태 모델"
+      },
+      "MetricsResponse": {
+        "properties": {
+          "metrics": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Metrics"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "filtered": {
+            "type": "integer",
+            "title": "Filtered"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metrics",
+          "total",
+          "filtered"
+        ],
+        "title": "MetricsResponse",
+        "description": "메트릭 응답 모델"
+      },
+      "RealtimePricesRequest": {
+        "properties": {
+          "tickers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tickers",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "RealtimePricesRequest",
+        "description": "실시간 가격 요청 모델"
+      },
+      "SignalResponse": {
+        "properties": {
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "signal_type": {
+            "type": "string",
+            "title": "Signal Type"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "grade": {
+            "type": "string",
+            "title": "Grade"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "target_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Price"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticker",
+          "name",
+          "signal_type",
+          "score",
+          "grade",
+          "created_at"
+        ],
+        "title": "SignalResponse",
+        "description": "VCP 시그널 응답 모델"
+      },
+      "SystemStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "uptime_seconds": {
+            "type": "number",
+            "title": "Uptime Seconds"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "services": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "uptime_seconds",
+          "timestamp",
+          "services"
+        ],
+        "title": "SystemStatus",
+        "description": "시스템 상태 모델"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": "헬스 체크 및 시스템 상태 확인"
+    },
+    {
+      "name": "signals",
+      "description": "VCP 및 종가베팅 시그널 조회"
+    },
+    {
+      "name": "market",
+      "description": "Market Gate 및 시장 상태"
+    },
+    {
+      "name": "realtime",
+      "description": "실시간 가격 정보"
+    },
+    {
+      "name": "metrics",
+      "description": "Prometheus 메트릭 및 모니터링"
+    },
+    {
+      "name": "dashboard",
+      "description": "모니터링 대시보드"
+    }
+  ]
+}

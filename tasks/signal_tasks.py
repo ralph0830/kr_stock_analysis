@@ -40,8 +40,10 @@ def generate_jongga_signals(self, capital: int = 10_000_000, top_n: int = 30):
         signals = []
         for ticker, name, price in mock_stocks:
             signal = scorer.calculate(ticker, name, price)
-            if signal and signal.score.total >= 6:
-                signals.append(signal.to_dict())
+            if signal:
+                score_total = signal.score.total if hasattr(signal.score, 'total') else 0
+                if score_total >= 6:
+                    signals.append(signal.to_dict())
 
         # 등급순 정렬
         grade_order = {"S": 0, "A": 1, "B": 2, "C": 3}

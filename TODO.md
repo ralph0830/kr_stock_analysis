@@ -1,389 +1,130 @@
 # KR Stock - TODO List
 
-> Open Architecture 마이그레이션 완료 후 남은 작업 목록
-> 생성일: 2026-01-23
+> **마지막 업데이트**: 2026-01-28
+
+## 📊 상태 요약
+
+| 우선순위 | 상태 | 진행률 |
+|----------|------|--------|
+| **P0** (핵심 기능) | ✅ 완료 | 3/3 |
+| **P1** (누락 API) | ✅ 완료 | 3/3 |
+| **P2** (추가 기능) | 🔄 진행 중 | 1/3 |
+| **P3** (품질 향상) | ⏳ 예정 | 0/3 |
+
+> **완료된 작업 상세**: `docs/migration/TODO_ARCHIVE.md` 참조
 
 ---
 
-## 🚀 긴급 우선순위 (P0)
+## 🟢 P2 - 추가 기능
 
-### 1. 인프라 설치 및 실행
-- [ ] Docker Desktop 설치 또는 로컬 인프라 설치
-  - [ ] PostgreSQL 14+ 설치
-  - [ ] TimescaleDB 확장 설치
-  - [ ] Redis 설치
-- [ ] 데이터베이스 생성 및 설정
-  - [ ] `kr_stock` 데이터베이스 생성
-  - [ ] `kr_stock_user` 사용자 생성
-  - [ ] TimescaleDB 확장 활성화
-- [ ] 환경 변수 설정 (.env 파일)
-- [ ] Docker Compose로 서비스 시작
-  ```bash
-  docker compose up -d postgres redis
-  ```
+### P2-1: Chatbot API
+- [ ] **`services/chatbot/main.py`** - FastAPI Chatbot Service
+  - [ ] `GET /health` - 서비스 상태
+  - [ ] `POST /chat` - 채팅 요청
+  - [ ] `GET /context` - 대화 맥락 조회
+- [ ] **`src/analysis/chatbot.py`**
+  - [ ] RAG 기반 질의응답
+  - [ ] 종목 추천 로직
+  - [ ] 대화 기록 저장
+- [ ] **`services/api_gateway/routes/chatbot.py`**
+  - [ ] `POST /api/kr/chatbot` - 챗봇 질의
+  - [ ] `GET /api/kr/chatbot/welcome` - 웰컴 메시지
+  - [ ] `GET/POST/DELETE /api/kr/chatbot/memory` - 메모리 관리
+  - [ ] `GET/DELETE /api/kr/chatbot/history` - 히스토리
+- **위치**: `services/chatbot/`, `src/analysis/`, `services/api_gateway/routes/`
+- **의존**: LLM API (Gemini/GPT)
+- **추정 시간**: 6시간
 
-### 2. 전체 테스트 실행 (인프라 기반)
-- [ ] 인프라 연결 확인
-- [ ] TimescaleDB 테스트 통과 (5개)
-- [ ] Migration 테스트 통과 (9개)
-- [ ] Celery 통합 테스트 통과 (1개)
-- [ ] 목표: **92개 전체 테스트 통과**
+### P2-2: CLI 진입점 ✅
+- [x] **`run.py`** - Rich 기반 CLI 메뉴 인터페이스
+  - [x] VCP 스캔, 시그널 생성, 조회
+  - [x] Market Gate, AI 분석, 시스템 헬스
+  - [x] 백테스트 KPI
+- [x] **`requirements.txt`** - rich==13.7.0 추가
+- **완료일**: 2026-01-28
 
-### 3. CSV 데이터 준비
-- [ ] `data/` 디렉토리 생성
-- [ ] CSV 파일 준비
-  - [ ] `korean_stocks_list.csv`: 종목 마스터
-  - [ ] `daily_prices_*.csv`: 일별 가격 데이터
-  - [ ] `institutional_flows_*.csv`: 수급 데이터
-  - [ ] `signals_log.csv`: 시그널 로그
-- [ ] 데이터 마이그레이션 실행
-  ```bash
-  python scripts/migrate_csv_to_db.py
-  ```
-
----
-
-## 🎯 핵심 기능 구현 (P1)
-
-### 4. 실제 시장 데이터 연동
-- [ ] **pykrx 라이브러리 연동**
-  - [ ] KRX 주식 종목 마스터 조회
-  - [ ] 일별 시세 데이터 수집
-  - [ ] 외국인/기관 수급 데이터 수집
-  - [ ] 배당 정보 수집
-- [ ] **FinanceDataReader 연동**
-  - [ ] Yahoo Finance 데이터 조회
-  - [ ] 재무 데이터 수집
-  - [ ] 주가 지표 계산 (PER, PBR, ROE 등)
-- [ ] **데이터 수집 스케줄러**
-  - [ ] 장 마감 후 데이터 수집 (Celery Beat)
-  - [ ] 실시간 가격 업데이트
-  - [ ] 데이터 검증 및 오류 처리
-
-### 5. LLM 뉴스 분석 연동
-- [ ] **Gemini API 연동**
-  - [ ] API 키 설정 (.env)
-  - [ ] 뉴스 크롤링 또는 API 연동
-  - [ ] 감성 분석 프롬프트 작성
-- [ ] **뉴스 수집**
-  - [ ] 네이버 뉴스 API
-  - [ ] 다음 금융 뉴스
-  - [ ] 연합뉴스 경제 뉴스
-- [ ] **감성 분석**
-  - [ ] 긍정/부정/중립 분류
-  - [ ] 키워드 추출
-  - [ ] 요약 생성
-- [ ] **종가베팅 뉴스 점수화**
-  - [ ] 뉴스 점수 계산 로직 (0-3점)
-  - [ ] 일별 뉴스 점수 집계
-
-### 6. VCP 패턴 분석 개선
-- [ ] **실제 차트 데이터 기반 분석**
-  - [ ] 볼린저밴드 계산 (20일, 2표준편차)
-  - [ ] 수축률 계산 (현재/평균 밴드폭)
-  - [ ] 거래량 감소율 계산
-- [ ] **SmartMoney 수급 분석**
-  - [ ] 외국인 5일 순매수/매도 추세
-  - [ ] 기관 5일 순매수/매도 추세
-  - [ ] 연기금 순매수 추세
-- [ ] **VCP 패턴 탐지 알고리즘**
-  - [ ] 수축 기간 식별
-  - [ ] 돌파 시점 감지
-  - [ **가짜 돌파 필터링
+### P2-3: 누적 수익률 API
+- [ ] **`services/api_gateway/routes/performance.py`**
+  - [ ] `GET /api/kr/performance/cumulative` - 누적 수익률
+  - [ ] `GET /api/kr/performance/by-signal` - 시그널별 성과
+  - [ ] `GET /api/kr/performance/by-period` - 기간별 성과
+- [ ] **`src/repositories/performance_repository.py`**
+  - [ ] `calculate_cumulative_return()` - 누적 수익률 계산
+  - [ ] `calculate_win_rate()` - 승률 계산
+  - [ ] `calculate_sharpe_ratio()` - 샤프 비율
+- **위치**: `services/api_gateway/routes/`, `src/repositories/`
+- **의존**: Signal 데이터 충분
+- **추정 시간**: 3시간
 
 ---
 
-## 🏗️ 시스템 개선 (P2)
+## 🔵 P3 - 품질 향상
 
-### 7. 실시간 가격 업데이트
-- [ ] **WebSocket 서버 구현**
-  - [ ] FastAPI WebSocket 엔드포인트
-  - [ ] 실시간 가격 브로드캐스트
-  - [ ] 종목별 구독 관리
-- [ ] **가격 데이터 소스**
-  - [ ] WebSocket API 연동 (upbit, binance 등 참고)
-  - [ ] 폴링 방식 백업
-- [ ] **프론트엔드 연동**
-  - [ ] WebSocket 클라이언트 구현
-  - [ ] 실시간 가격 표시
+### P3-1: 테스트 커버리지 향상
+- [ ] **단위 테스트 추가**
+  - [ ] `src/config/` 설정 모듈 테스트
+  - [ ] `src/repositories/backtest_repository.py` 테스트
+  - [ ] `services/ai_analyzer/` 테스트
+- [ ] **통합 테스트 추가**
+  - [ ] 백테스트 API 통합 테스트
+  - [ ] AI 분석 API 통합 테스트
+  - [ ] SSE 스트리밍 테스트
+- [ ] **목표**: 전체 커버리지 80% 이상
+- **추정 시간**: 4시간
 
-### 8. Circuit Breaker 패턴 구현
-- [ ] **서비스 간 Circuit Breaker**
-  - [ ] httpx HTTPClient 래퍼
-  - [ ] 실패율 기반 서킷 차단
-  - [ ] 반개방 상태 관리
-- [ ] **외부 API Circuit Breaker**
-  - [ ] pykrx API 호출 보호
-  - [ ] Gemini API 호출 제한
-- [ ] **모니터링 대시보드**
-  - [ ] 서킷 상태 표시
-  - [ ] 실패율 그래프
-
-### 9. API 인증 및 보안
-- [ ] **API Key 인증**
-  - [ ] API 키 생성/관리
-  - [ ] X-API-Key 헤더 검증
-  - [ ] 속도 제한 (Rate Limiting)
-- [ ] **JWT 인증 (선택)**
-  - [ ] 사용자 로그인/회원가입
-  - [ ] JWT 토큰 발급/검증
-  - [ ] Refresh Token 구현
-- [ ] **CORS 설정**
-  - [ ] 프론트엔드 도메인 허용
-  - [ ] 인증된 요청만 허용
-
-### 10. 로깅 및 모니터링
-- [ ] **구조화된 로깅**
-  - [ ] Python logging 구성
-  - [ ] JSON 포맷 로그
-  - [ ] 로그 레벨 관리
-- [ ] **메트릭 수집**
-  - [ ] Prometheus endpoint 구현
-  - [ ] 요청 수/응답 시간 수집
-  - [ ] 에러율 추적
-- [ ] **Grafana 대시보드**
-  - [ ] 시스템 상태 모니터링
-  - [ ] API 성능 그래프
-  - [ ] Celery 태스크 모니터링
-
----
-
-## 🎨 프론트엔드 개발 (P3)
-
-### 11. Next.js 14+ 프로젝트 설정
-- [ ] 프로젝트 생성
-  ```bash
-  npx create-next-app@latest kr-stock-frontend --typescript --tailwind --app
-  ```
-- [ ] 의존성 설치
-  - [ ] shadcn/ui 컴포넌트
-  - [ ] Recharts (차트)
-  - [ ] Zustand (상태 관리)
-  - [ ] Axios (API 클라이언트)
-
-### 12. 메인 페이지 구현
-- [ ] **Market Gate 대시보드**
-  - [ ] 시장 상태 표시 (GREEN/YELLOW/RED)
-  - [ ] 섹터별 ETF 카드
-  - [ ] 실시간 업데이트
-- [ ] **VCP 시그널 테이블**
-  - [ ] 시그널 목록 표시
-  - [ ] 필터/정렬
-  - [ ] 종목 상세 링크
-- [ ] **종가베팅 V2 카드**
-  - [ ] S/A/B급 시그널
-  - [ ] 점수별 그룹핑
-  - [ **매매 비율 표시**
-
-### 13. 종목 상세 페이지
-- [ ] **차트 구현**
-  - [ ] 일봉 차트 (Recharts)
-  - [ ] 볼린저밴드 오버레이
-  - [ ] 거래량 바 차트
-- [ ] **수급 차트**
-  - [ ] 외국인/기관 수급 그래프
-  - [ ] 5일/20일/60일 추세
-- [ ] **시그널 히스토리**
-  - [ ] 과거 시그널 성과
-  - [ **수익률 계산
-
----
-
-## 🧪 테스트 개선 (P4)
-
-### 14. 테스트 커버리지 향상
-- [ ] **단위 테스트 커버리지**
-  - [ ] 목표: 80% 이상
-  - [ ] 현재: 약 60% (추정)
-  - [ ] 누락된 부분 테스트 추가
-- [ ] **통합 테스트 확장**
-  - [ ] 엔드투엔드 시나리오
-  - [ ] API 연동 테스트
-- [ ] **성능 테스트**
-  - [ ] 부하 테스트 (Locust)
-  - [ ] 응답 시간 기준 설정
-
-### 15. E2E 테스트
-- [ ] **Playwright 설정**
-  ```bash
-  npm install -D @playwright/test
-  ```
-- [ ] **사용자 시나리오 테스트**
-  - [ ] 로그인 → 대시보드 조회
-  - [ ] 시그널 확인 → 종목 상세
-  - [ ] 필터/정렬 기능
-- [ ] **API 테스트**
-  - [ ] 모든 엔드포인트 테스트
-  - [ ] 에러 케이스 검증
-
----
-
-## 📚 문서화 (P5)
-
-### 16. API 문서 자동화
-- [ ] **FastAPI Swagger UI**
-  - [ ] 이미 기본 제공됨
-  - [ ] 엔드포인트 설명 추가
+### P3-2: API 문서화
+- [ ] **OpenAPI 스펙 완성**
+  - [ ] 모든 엔드포인트 설명 추가
   - [ ] 예제 응답 추가
-- [ ] **Postman 컬렉션**
-  - [ ] API 요청 모음
-  - [ ] 환경 변수 설정
-  - [ ] 테스트 스크립트
+  - [ ] 에러 케이스 문서화
+- [ ] **`docs/api/`** - API 가이드
+  - [ ] `getting-started.md`
+  - [ ] `endpoints.md`
+  - [ ] `examples.md`
+- **추정 시간**: 2시간
 
-### 17. 개발자 문서
-- [ ] **아키텍처 다이어그램**
-  - [ ] 서비스 간 통신 그래프
-  - [ ] 데이터 플로우 다이어그램
-- [ ] **설정 가이드**
-  - [ ] 로컬 개발 환경 설정
-  - [ ] 배포 가이드
-- [ ] **기여 가이드**
-  - [ ] 코딩 컨벤션
-  - [ ] PR 템플릿
-
----
-
-## 🚢 배포 (P6)
-
-### 18. Docker 이미지 빌드
-- [ ] **Gateway Dockerfile**
-  - [ ] 이미지 최적화
-  - [ ] Multi-stage build
-- [ ] **Service Dockerfile**
-  - [ ] 공통 베이스 이미지
-  - [ ] 의존성 캐싱
-- [ ] **Docker Compose 배포**
-  - [ ] 프로덕션 설정
-  - [ ] 볼륨 마운트
-  - [ ] 네트워크 설정
-
-### 19. CI/CD 파이프라인
-- [ ] **GitHub Actions**
-  - [ ] 테스트 자동 실행
-  - [ ] 린트/포맷 검사
-  - [ ] Docker 이미지 빌드/푸시
-- [ ] **배포 자동화**
-  - [ ] 스테이징 환경
-  - [ ] 프로덕션 환경
-  - [ ] 롤백 전략
-
-### 20. 클라우드 배포
-- [ ] **AWS 배포 (선택)**
-  - [ ] ECS/EKS 설정
-  - [ ] RDS PostgreSQL
-  - [ ] ElastiCache Redis
-- [ ] **또는 VPS 배포**
-  - [ ] DigitalOcean / Linode
-  - [ ] Docker Compose 배포
-  - [ **Nginx 리버스 프록시
-
----
-
-## 📊 백테스팅 및 분석 (P7)
-
-### 21. 백테스팅 시스템
-- [ ] **백테스팅 엔진**
-  - [ ] 과거 데이터 기반 시뮬레이션
-  - [ ] 수수료/슬리피지 고려
-  - [ ] 포트폴리오 관리
-- [ ] **성과 분석**
-  - [ ] 수익률 계산
-  - [ ] MDD (최대 낙폭)
-  - [ ] Sharpe Ratio
-- [ ] **백테스팅 결과 저장**
-  - [ ] DB 저장 구현
-  - [ ] 결과 조회 API
-
-### 22. 알파 전략 연구
-- [ ] **VCP 전략 최적화**
-  - [ ] 수축률 임계값 튜닝
-  - [ ] 거래량 조건 최적화
-- [ ] **종가베팅 전략 개선**
-  - [ ] 점수 가중치 조정
-  - [ ] 등급별 비율 튜닝
-- [ ] **새로운 전략 연구**
-  - [ ] 모멘텀 전략
-  - [ ] 섹터 로테이션
-
----
-
-## 🔧 기술 개선 (P8)
-
-### 23. 코드 품질
+### P3-3: 코드 품질 개선
 - [ ] **린트/포맷**
-  - [ ] Ruff (Python linter)
-  - [ ] Black (formatter)
-  - [ ] isort (import 정렬)
+  - [ ] `ruff check .` 통과
+  - [ ] `ruff format .` 적용
 - [ ] **타입 검사**
-  - [ ] mypy 설정
-  - [ ] �입 힌트 추가
+  - [ ] `mypy src/` 통과
+  - [ ] 타입 힌트 추가
 - [ ] **코드 복잡도**
   - [ ] cyclomatic complexity 확인
   - [ ] 리팩토링
-
-### 24. 성능 최적화
-- [ ] **데이터베이스 쿼리 최적화**
-  - [ ] 인덱스 추가
-  - [ ] N+1 쿼리 제거
-  - [ ] 쿼리 프로파일링
-- [ ] **캐시 전략 개선**
-  - [ ] 캐시 유효성 검사
-  - [ ] 캐시 사이즈 최적화
-  - [ **캐시 무효화 전략
-- [ ] **API 응답 시간**
-  - [ ] 목표: p95 < 200ms
-  - [ ] 느린 엔드포인트 최적화
+- **추정 시간**: 3시간
 
 ---
 
-## 📝 마일스톤
+## 📊 마일스톤
 
-### Milestone 1: 개발 환경 완성 (1주)
-- 인프라 설치
-- 전체 테스트 통과
-- CSV 데이터 마이그레이션
+### Milestone 1: 핵심 기능 완성 ✅
+- [x] Open Architecture 마이그레이션 (7/7 Phases)
+- [x] P0-1: Config 설정 복원
+- [x] P0-2: 백테스트 결과 모델 및 API
+- [x] P0-3: 종목 상세 API (백엔드 완료)
 
-### Milestone 2: 데이터 연동 (2주)
-- pykrx/FinanceDataReader 연동
-- 실제 데이터 수집
-- VCP/종가베팅 실제 데이터 기반 분석
+### Milestone 2: 누락 API 구현 ✅
+- [x] P1-1: AI 분석 API
+- [x] P1-2: 시스템 관리 API
+- [x] P1-3: VCP/Signal 트리거 API
 
-### Milestone 3: LLM 연동 (1주)
-- Gemini API 연동
-- 뉴스 수집
-- 감성 분석 구현
+### Milestone 3: 추가 기능 🔄
+- [ ] P2-1: Chatbot API
+- [x] P2-2: CLI 진입점
+- [ ] P2-3: 누적 수익률 API
 
-### Milestone 4: MVP 프론트엔드 (2주)
-- Next.js 프로젝트 설정
-- 메인 페이지 구현
-- API 연동
-
-### Milestone 5: 운영 준비 (1주)
-- 모니터링/로깅
-- API 인증
-- 배포 자동화
-
-### Milestone 6: 프로덕션 배포 (1주)
-- 클라우드 배포
-- 안정성 확인
-- 사용자 온보딩
+### Milestone 4: 품질 향상 ⏳
+- [ ] P3-1: 테스트 커버리지 향상
+- [ ] P3-2: API 문서화
+- [ ] P3-3: 코드 품질 개선
 
 ---
 
-## 🎯 우선순위 가이드
+## 🔗 관련 문서
 
-**P0 (긴급):** 당장 해야 할 것 (인프라, 테스트)
-**P1 (중요):** 핵심 기능 (데이터 연동, LLM)
-**P2 (개선):** 시스템 개선 (실시간, 보안)
-**P3 (추가):** 프론트엔드 개발
-**P4 (품질):** 테스트 개선
-**P5 (문서):** 문서화
-**P6 (배포):** 배포
-**P7 (연구):** 백테스팅
-**P8 (최적화):** 성능 최적화
-
----
-
-**마지막 업데이트:** 2026-01-23
-**상태:** Open Architecture 마이그레이션 완료 (7/7 Phases)
-**다음 단계:** 인프라 설치 (P0)
+- [PROGRESS.md](./PROGRESS.md) - 전체 진행 상황
+- [CLAUDE.md](./CLAUDE.md) - 프로젝트 개요 및 아키텍처
+- [docs/plans/PLAN_open_architecture_migration.md](./docs/plans/PLAN_open_architecture_migration.md) - 마이그레이션 상세 계획
+- [docs/migration/TODO_ARCHIVE.md](./docs/migration/TODO_ARCHIVE.md) - 완료된 P0/P1 작업 내역

@@ -18,6 +18,7 @@ celery_app = Celery(
         "tasks.scan_tasks",
         "tasks.signal_tasks",
         "tasks.market_tasks",
+        "tasks.news_tasks",  # 뉴스 태스크 추가
     ]
 )
 
@@ -66,6 +67,20 @@ celery_app.conf.update(
             "task": "tasks.market_tasks.update_market_gate",
             "schedule": 60 * 60,  # 1시간 (테스트용)
             # "schedule": crontab(hour="9,15", minute=0),
+        },
+        # 뉴스 수집 - 매시간 (테스트용: 1시간)
+        "collect-news-hourly": {
+            "task": "tasks.news_tasks.collect_all_stocks_news",
+            "schedule": 60 * 60,  # 1시간
+            # "schedule": crontab(minute=0),  # 매시간 정각
+            "args": ("KOSPI", 7, 30),
+        },
+        # 뉴스 감성 분석 - 2시간마다
+        "analyze-sentiment-daily": {
+            "task": "tasks.news_tasks.news_pipeline_task",
+            "schedule": 2 * 60 * 60,  # 2시간
+            # "schedule": crontab(hour="*/2"),
+            "args": ("005930", 7, 30),  # 삼성전자 예시
         },
     },
 )
