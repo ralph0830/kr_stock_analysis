@@ -12,10 +12,36 @@
 | **P1 (누락 API)** | ✅ 완료 | 2026-01-27 |
 | **P2 (추가 기능)** | ✅ 완료 | 2026-01-28 |
 | **P3 (품질 향상)** | ✅ 완료 | 2026-01-28 |
+| **P4 (운영 개선)** | ✅ 완료 | 2026-01-28 |
 
 ---
 
 ## 🎯 최신 작업 (2026-01-28)
+
+### ✅ P4: 운영 개선 완료
+
+**P4-1: Docker Compose Production 설정**
+- `docker-compose.prod.yml`: 리소스 제한, healthcheck, restart policies
+- `Dockerfile.gateway`: 다중 스테이지 빌드 + non-root user
+- `Dockerfile.service`: dev/prod target 지원
+- `Dockerfile.celery`: Celery worker 전용 빌드
+- `.env.example.production`: 프로덕션 환경 변수 템플릿
+
+**P4-2: 로그 수집 구조화**
+- `JSONFormatter`: service_name, environment, process_id, request_id
+- `REQUEST_ID_CONTEXT`: 요청 추적용 ContextVar
+- `RotatingFileHandler`: 로그 로테이션 (10MB, 5개 백업)
+- `RequestLoggingMiddleware`: 요청/응답 시간 측정, 민감정보 마스킹
+
+**P4-3: 헬스체크 개선**
+- `HealthChecker`: 비동기 헬스체크 코디네이터
+- `ServiceHealth`: 응답 시간, 메시지, 디테일 포함
+- `GET /api/system/health-v2`: 향상된 헬스체크 엔드포인트
+
+**P4-4: Graceful Shutdown 구현**
+- `GracefulShutdown`: 종료 태스크 등록 및 순차적 실행
+- `ShutdownManager`: 전역 종료 상태 공유
+- `setup_shutdown_signals()`: SIGINT, SIGTERM 핸들러
 
 ### ✅ P3-2: API 문서화 완료
 
