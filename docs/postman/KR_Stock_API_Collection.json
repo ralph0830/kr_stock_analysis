@@ -1,0 +1,885 @@
+{
+  "info": {
+    "name": "KR Stock API Gateway",
+    "description": "한국 주식 분석 시스템 API Gateway Collection",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5111",
+      "type": "string"
+    },
+    {
+      "key": "ticker",
+      "value": "005930",
+      "type": "string",
+      "description": "삼성전자 티커 (기본값)"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Service Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "API Gateway 서비스가 정상 동작 중인지 확인합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Root Endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"]
+            },
+            "description": "API Gateway의 기본 정보와 문서 링크를 반환합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "System Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/system/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "system", "health"]
+            },
+            "description": "전체 시스템의 건강 상태를 조회합니다. 데이터베이스, Redis, Celery, 외부 서비스 상태를 확인합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Data Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/system/data-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "system", "data-status"]
+            },
+            "description": "데이터베이스에 저장된 주가, 시그널 데이터의 상태를 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Data Update Stream (SSE)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/system/update-data-stream",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "system", "update-data-stream"]
+            },
+            "description": "백그라운드 작업으로 데이터 업데이트를 트리거하고 진행 상황을 스트리밍합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Signals",
+      "item": [
+        {
+          "name": "Get Active VCP Signals",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/signals?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "signals"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "반환할 최대 시그널 수 (1-100)"
+                }
+              ]
+            },
+            "description": "VCP Scanner 서비스로 프록시하여 활성 시그널 목록을 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Latest Jongga V2 Signals",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/jongga-v2/latest",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "jongga-v2", "latest"]
+            },
+            "description": "Signal Engine 서비스로 프록시하여 최신 종가베팅 V2 시그널을 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Analyze Single Stock (Jongga V2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticker\": \"005930\",\n  \"name\": \"삼성전자\",\n  \"price\": 80000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/jongga-v2/analyze",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "jongga-v2", "analyze"]
+            },
+            "description": "단일 종목의 종가베팅 V2 시그널을 생성합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Market Gate",
+      "item": [
+        {
+          "name": "Get Market Gate Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/market-gate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "market-gate"]
+            },
+            "description": "데이터베이스에서 가장 최신 Market Gate 상태를 반환합니다. GREEN(매수), YELLOW(관망), RED(매도)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Backtest KPI",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/backtest-kpi",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "backtest-kpi"]
+            },
+            "description": "VCP 및 종가베팅 V2 전략의 백테스트 결과 요약을 반환합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stocks",
+      "item": [
+        {
+          "name": "Get Stock Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/stocks/{{ticker}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "stocks", "{{ticker}}"]
+            },
+            "description": "종목 코드를 통해 기본 정보와 최신 가격을 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock Chart",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/stocks/{{ticker}}/chart?days=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "stocks", "{{ticker}}", "chart"],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "30",
+                  "description": "조회 일수 (1-365, 기본 30)"
+                }
+              ]
+            },
+            "description": "지정된 기간 동안의 종목 차트 데이터(OHLCV)를 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock Flow (SmartMoney)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/stocks/{{ticker}}/flow?days=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "stocks", "{{ticker}}", "flow"],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "20",
+                  "description": "조회 기간 (일수, 5-60, 기본 20)"
+                }
+              ]
+            },
+            "description": "외국인/기관 순매수 데이터를 조회합니다. SmartMoney 점수(0-100)를 계산하여 제공합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock Signal History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/stocks/{{ticker}}/signals?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "stocks", "{{ticker}}", "signals"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "최대 조회 수 (1-100, 기본 50)"
+                }
+              ]
+            },
+            "description": "특정 종목의 과거 시그널 내역을 조회합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AI Analysis",
+      "item": [
+        {
+          "name": "Get AI Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/ai-summary/{{ticker}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "ai-summary", "{{ticker}}"]
+            },
+            "description": "특정 종목의 최신 AI 분석 결과를 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get AI Analysis List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/ai-analysis?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "ai-analysis"],
+              "query": [
+                {
+                  "key": "analysis_date",
+                  "value": null,
+                  "description": "분석 날짜 (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "최대 반환 수 (1-100)"
+                }
+              ]
+            },
+            "description": "전체 종목 또는 특정 날짜의 AI 분석 목록을 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get AI History Dates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/ai-history-dates?limit=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "ai-history-dates"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "30",
+                  "description": "최대 반환 수 (1-365)"
+                }
+              ]
+            },
+            "description": "분석 가능 날짜 목록을 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get AI History by Date",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/ai-history/2026-01-28",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "ai-history", "2026-01-28"]
+            },
+            "description": "특정 날짜의 AI 분석 목록을 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger AI Analysis",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/ai-analyze/{{ticker}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "ai-analyze", "{{ticker}}"]
+            },
+            "description": "특정 종목의 AI 분석을 수행합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Backtest",
+      "item": [
+        {
+          "name": "Get Backtest Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/backtest/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "backtest", "summary"],
+              "query": [
+                {
+                  "key": "config_name",
+                  "value": null,
+                  "description": "설정명 필터 (vcp_conservative, jongga_v2)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "전체 또는 특정 설정의 백테스트 결과 요약 통계를 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Latest Backtests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/backtest/latest?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "backtest", "latest"],
+              "query": [
+                {
+                  "key": "config_name",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "최신 백테스트 결과 목록을 반환합니다 (생성일 내림차순)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Backtest History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/backtest/history?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "backtest", "history"],
+              "query": [
+                {
+                  "key": "start_date",
+                  "value": null,
+                  "description": "시작 날짜 (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": null,
+                  "description": "종료 날짜 (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "config_name",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "날짜 범위 및 설정명으로 필터링한 백테스트 히스토리를 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Best Backtest",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/backtest/best",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "backtest", "best"],
+              "query": [
+                {
+                  "key": "config_name",
+                  "value": null,
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "전체 또는 특정 설정 중 최고 수익률을 기록한 백테스트 결과를 반환합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Performance",
+      "item": [
+        {
+          "name": "Get Cumulative Returns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/performance/cumulative",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "performance", "cumulative"],
+              "query": [
+                {
+                  "key": "signal_type",
+                  "value": "VCP",
+                  "description": "시그널 타입 (VCP, JONGGA_V2)"
+                },
+                {
+                  "key": "start_date",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": null,
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "시그널 기반 누적 수익률을 날짜별로 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Signal Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/performance/by-signal?days=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "performance", "by-signal"],
+              "query": [
+                {
+                  "key": "ticker",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "signal_type",
+                  "value": "VCP"
+                },
+                {
+                  "key": "days",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "특정 종목 또는 전체 시그널의 성과 지표를 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Period Performance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/performance/by-period?period=3mo",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "performance", "by-period"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "3mo",
+                  "description": "기간 (1w, 2w, 1mo, 3mo, 6mo, 1y)"
+                },
+                {
+                  "key": "signal_type",
+                  "value": null,
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "특정 기간 동안의 성과 지표를 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Top Performers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/performance/top-performers?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "performance", "top-performers"],
+              "query": [
+                {
+                  "key": "signal_type",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "days",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "수익률 기준 최고 성과 종목 목록을 조회합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sharpe Ratio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/performance/sharpe-ratio?days=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "performance", "sharpe-ratio"],
+              "query": [
+                {
+                  "key": "signal_type",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "days",
+                  "value": "30"
+                },
+                {
+                  "key": "risk_free_rate",
+                  "value": "2.0"
+                }
+              ]
+            },
+            "description": "시그널 전략의 샤프 비율을 계산합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Scan Triggers",
+      "item": [
+        {
+          "name": "Trigger VCP Scan",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/scan/vcp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "scan", "vcp"],
+              "query": [
+                {
+                  "key": "market",
+                  "value": null,
+                  "description": "시장 (KOSPI, KOSDAQ)",
+                  "disabled": true
+                },
+                {
+                  "key": "min_score",
+                  "value": null,
+                  "description": "최소 점수",
+                  "disabled": true
+                },
+                {
+                  "key": "min_grade",
+                  "value": null,
+                  "description": "최소 등급 (S, A, B, C)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "VCP (Volatility Contraction Pattern) 스캔을 실행합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger Signal Generation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/scan/signals",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "scan", "signals"],
+              "query": [
+                {
+                  "key": "tickers",
+                  "value": null,
+                  "description": "특정 종목만 생성 (쉼표 구분)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "종가베팅 V2 시그널 생성을 실행합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Scan Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/scan/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "scan", "status"]
+            },
+            "description": "현재 진행 중인 VCP 스캔 및 시그널 생성의 상태를 조회합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Chatbot",
+      "item": [
+        {
+          "name": "Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"삼성전자 현재가 알려줘\",\n  \"session_id\": \"user-123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "chatbot", "chat"]
+            },
+            "description": "사용자 메시지를 처리하여 AI 응답을 생성합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Context",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"삼성전자랑 NAVER 최신 시그널 알려줘\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/chatbot/context",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "chatbot", "context"]
+            },
+            "description": "사용자 질문에서 추출한 종목, 시그널, 뉴스 등의 컨텍스트를 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Chatbot Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/chatbot/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "chatbot", "health"]
+            },
+            "description": "챗봇 서비스의 가용성을 확인합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/chatbot/recommendations?strategy=both&limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "chatbot", "recommendations"],
+              "query": [
+                {
+                  "key": "strategy",
+                  "value": "both",
+                  "description": "전략 (vcp, jongga, both)"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "VCP/종가베팅 시그널 기반 종목 추천을 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/chatbot/session/user-123",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "chatbot", "session", "user-123"]
+            },
+            "description": "특정 세션의 대화 기록을 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/kr/chatbot/session/user-123",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "kr", "chatbot", "session", "user-123"]
+            },
+            "description": "특정 세션을 삭제합니다."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Metrics",
+      "item": [
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics"]
+            },
+            "description": "Prometheus 텍스트 형식으로 메트릭을 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "JSON Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/metrics?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "metrics"],
+              "query": [
+                {
+                  "key": "metric_type",
+                  "value": null,
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "JSON 형식으로 모든 메트릭을 반환합니다."
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Metrics",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/metrics/reset",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "metrics", "reset"]
+            },
+            "description": "모든 메트릭을 0으로 리셋합니다 (개발/테스트용)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

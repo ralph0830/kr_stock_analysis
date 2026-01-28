@@ -5,24 +5,21 @@ System Routes
 
 from typing import Dict, List, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 
 from src.database.session import get_db_session
-from src.database.models import Stock, DailyPrice, Signal
+from src.database.models import DailyPrice, Signal
 from src.repositories.stock_repository import StockRepository
 from src.repositories.signal_repository import SignalRepository
 from services.api_gateway.schemas import (
     DataStatusResponse,
     DataStatusItem,
     SystemHealthResponse,
-    ServiceStatusItem,
 )
 
 import time
-import psutil
-import os
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -86,15 +83,36 @@ def check_celery_health() -> Optional[str]:
         return None
 
 
-@router.get("/data-status", response_model=DataStatusResponse)
+@router.get(
+    "/data-status",
+    response_model=DataStatusResponse,
+    summary="데이터 파일 상태 조회",
+    description="데이터베이스에 저장된 주가, 시그널 데이터의 상태를 조회합니다. 마지막 업데이트 시간과 레코드 수를 반환합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        500: {"description": "서버 오류"},
+    },
+)
 def get_data_status(
     session: Session = Depends(get_db_session),
 ) -> DataStatusResponse:
     """
     데이터 파일 상태 조회
 
-    Returns:
-        데이터 상태 응답
+    ## 설명
+    데이터베이스에 저장된 주가, 시그널 데이터의 상태를 조회합니다.
+
+    ## 반환 데이터
+    - **total_stocks**: 전체 종목 수
+    - **updated_stocks**: 최근 7일 이내 업데이트된 종목 수
+    - **last_update**: 마지막 업데이트 시간
+    - **data_files**: 데이터별 상태 (OK, NO_DATA, ERROR)
+    - **details**: 상세 데이터 상태 리스트
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/system/data-status"
+    ```
     """
     stock_repo = StockRepository(session)
     signal_repo = SignalRepository(session)
@@ -185,19 +203,37 @@ def get_data_status(
     )
 
 
-@router.get("/health", response_model=SystemHealthResponse)
+@router.get(
+    "/health",
+    response_model=SystemHealthResponse,
+    summary="시스템 헬스 체크",
+    description="전체 시스템의 건강 상태를 조회합니다. 데이터베이스, Redis, Celery, 외부 서비스 상태를 확인합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        500: {"description": "서버 오류"},
+    },
+)
 def get_system_health(
     session: Session = Depends(get_db_session),
 ) -> SystemHealthResponse:
     """
     전체 시스템 헬스 체크
 
-    Returns:
-        시스템 헬스 상태
+    ## 설명
+    데이터베이스, Redis, Celery, 외부 서비스 상태를 확인합니다.
+
+    ## 반환 데이터
+    - **status**: 전체 상태 (healthy, degraded, unhealthy)
+    - **services**: 개별 서비스 상태 (database, redis, celery, vcp_scanner, signal_engine)
+    - **uptime_seconds**: 서버 실행 시간 (초)
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/system/health"
+    ```
     """
     # 개별 서비스 상태 확인
     services: Dict[str, str] = {}
-    service_details: List[ServiceStatusItem] = []
 
     # 데이터베이스 상태
     db_status = check_database_health(session)
@@ -224,10 +260,8 @@ def get_system_health(
         try:
             import httpx
             vcp_url = registry.get_service_url("vcp_scanner")
-            start = time.time()
             with httpx.Client(timeout=2.0) as client:
                 response = client.get(f"{vcp_url}/health")
-                response_time = (time.time() - start) * 1000
                 services["vcp_scanner"] = "up" if response.status_code == 200 else "down"
         except Exception:
             services["vcp_scanner"] = "down"
@@ -235,10 +269,8 @@ def get_system_health(
         # Signal Engine
         try:
             signal_url = registry.get_service_url("signal_engine")
-            start = time.time()
             with httpx.Client(timeout=2.0) as client:
                 response = client.get(f"{signal_url}/health")
-                response_time = (time.time() - start) * 1000
                 services["signal_engine"] = "up" if response.status_code == 200 else "down"
         except Exception:
             services["signal_engine"] = "down"
@@ -266,15 +298,32 @@ def get_system_health(
     )
 
 
-@router.post("/update-data-stream")
+@router.post(
+    "/update-data-stream",
+    summary="데이터 업데이트 SSE 스트리밍",
+    description="백그라운드 작업으로 데이터 업데이트를 트리거하고 진행 상황을 Server-Sent Events로 스트리밍합니다.",
+    responses={
+        200: {"description": "SSE 스트리밍 시작"},
+        500: {"description": "서버 오류"},
+    },
+)
 async def update_data_stream():
     """
     데이터 업데이트 SSE 스트리밍
 
-    배경 작업으로 데이터 업데이트를 트리거하고 진행 상황을 스트리밍합니다.
+    ## 설명
+    VCP 스캔과 시그널 생성을 백그라운드로 실행하고 진행 상황을 실시간으로 스트리밍합니다.
 
-    Returns:
-        SSE 스트리밍 응답
+    ## 이벤트 타입
+    - **start**: 업데이트 시작
+    - **progress**: 진행 상황 (vcp_scan, signal_gen)
+    - **complete**: 완료
+    - **error**: 오류 발생
+
+    ## Example
+    ```bash
+    curl -N "http://localhost:5111/api/system/update-data-stream"
+    ```
     """
     from fastapi.responses import StreamingResponse
 
@@ -284,8 +333,6 @@ async def update_data_stream():
             yield "event: start\ndata: {'status': 'started', 'message': '데이터 업데이트 시작'}\n\n"
 
             # Celery 태스크 트리거
-            from tasks.scan_tasks import scan_vcp_signals
-            from tasks.signal_tasks import generate_jongga_v2_signals
 
             # VCP 스캔
             yield "event: progress\ndata: {'stage': 'vcp_scan', 'message': 'VCP 패턴 스캔 중...'}\n\n"

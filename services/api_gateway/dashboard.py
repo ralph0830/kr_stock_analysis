@@ -6,7 +6,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from src.utils.metrics import metrics_registry
 from src.websocket.server import connection_manager

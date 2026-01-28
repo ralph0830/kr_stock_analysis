@@ -22,11 +22,8 @@ router = APIRouter(prefix="/api/kr/backtest", tags=["backtest"])
 @router.get(
     "/summary",
     response_model=BacktestSummaryResponse,
-    responses={
-        200: {
-            "description": "백테스트 요약 조회 성공",
-        }
-    },
+    summary="백테스트 요약 조회",
+    description="전체 또는 특정 설정의 백테스트 결과 요약 통계를 반환합니다.",
 )
 async def get_backtest_summary(
     config_name: Optional[str] = Query(default=None, description="설정명 필터"),
@@ -64,11 +61,8 @@ async def get_backtest_summary(
 @router.get(
     "/latest",
     response_model=BacktestListResponse,
-    responses={
-        200: {
-            "description": "최신 백테스트 목록 조회 성공",
-        }
-    },
+    summary="최신 백테스트 목록 조회",
+    description="최신 백테스트 결과 목록을 반환합니다 (생성일 내림차순).",
 )
 async def get_latest_backtests(
     config_name: Optional[str] = Query(default=None, description="설정명 필터"),
@@ -107,11 +101,8 @@ async def get_latest_backtests(
 @router.get(
     "/history",
     response_model=BacktestListResponse,
-    responses={
-        200: {
-            "description": "백테스트 히스토리 조회 성공",
-        }
-    },
+    summary="백테스트 히스토리 조회",
+    description="날짜 범위 및 설정명으로 필터링한 백테스트 히스토리를 반환합니다.",
 )
 async def get_backtest_history(
     start_date: Optional[date] = Query(default=None, description="시작 날짜 (YYYY-MM-DD)"),
@@ -159,13 +150,11 @@ async def get_backtest_history(
 @router.get(
     "/best",
     response_model=BacktestResultItem,
+    summary="최고 수익률 백테스트 조회",
+    description="전체 또는 특정 설정 중 최고 수익률을 기록한 백테스트 결과를 반환합니다.",
     responses={
-        200: {
-            "description": "최고 수익률 백테스트 조회 성공",
-        },
-        404: {
-            "description": "백테스트 결과를 찾을 수 없음",
-        },
+        200: {"description": "조회 성공"},
+        404: {"description": "백테스트 결과를 찾을 수 없음"},
     },
 )
 async def get_best_backtest(

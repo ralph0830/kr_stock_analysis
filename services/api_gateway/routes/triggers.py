@@ -176,7 +176,16 @@ async def run_signal_generation(options: SignalGenerationOptions) -> dict:
         raise
 
 
-@router.post("/vcp", response_model=VCPScanResponse)
+@router.post(
+    "/vcp",
+    response_model=VCPScanResponse,
+    summary="VCP 스캔 트리거",
+    description="VCP (Volatility Contraction Pattern) 스캔을 실행합니다. 전체 또는 특정 시장의 종목을 스캔하여 VCP 패턴을 탐지합니다.",
+    responses={
+        200: {"description": "스캔 완료"},
+        409: {"description": "이미 진행 중인 스캔이 있음"},
+    },
+)
 async def trigger_vcp_scan(
     background_tasks: BackgroundTasks,
     market: Optional[str] = Query(None, description="시장 (KOSPI/KOSDAQ)"),
@@ -238,7 +247,16 @@ async def trigger_vcp_scan(
         )
 
 
-@router.post("/signals", response_model=SignalGenerationResponse)
+@router.post(
+    "/signals",
+    response_model=SignalGenerationResponse,
+    summary="종가베팅 V2 시그널 생성 트리거",
+    description="종가베팅 V2 시그널 생성을 실행합니다. 12점 스코어링 시스템로 종목을 평가하고 시그널을 생성합니다.",
+    responses={
+        200: {"description": "생성 완료"},
+        409: {"description": "이미 진행 중인 생성이 있음"},
+    },
+)
 async def trigger_signal_generation(
     background_tasks: BackgroundTasks,
     tickers: Optional[List[str]] = Query(None, description="특정 종목만 생성"),
@@ -284,7 +302,12 @@ async def trigger_signal_generation(
         )
 
 
-@router.get("/status", response_model=ScanStatusResponse)
+@router.get(
+    "/status",
+    response_model=ScanStatusResponse,
+    summary="스캔 상태 조회",
+    description="현재 진행 중인 VCP 스캔 및 시그널 생성의 상태를 조회합니다.",
+)
 def get_scan_status() -> ScanStatusResponse:
     """
     스캔 상태 조회

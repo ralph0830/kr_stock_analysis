@@ -10,45 +10,62 @@
 | **PART_04-07 (종가베팅 V2)** | ✅ 4/4 Phases | 2026-01-28 |
 | **P0 (핵심 기능)** | ✅ 완료 | 2026-01-27 |
 | **P1 (누락 API)** | ✅ 완료 | 2026-01-27 |
-| **P2 (추가 기능)** | 🔄 1/3 진행 중 | 2026-01-28 |
-| **P3 (품질 향상)** | ⏳ 예정 | - |
+| **P2 (추가 기능)** | ✅ 완료 | 2026-01-28 |
+| **P3 (품질 향상)** | ✅ 완료 | 2026-01-28 |
 
 ---
 
 ## 🎯 최신 작업 (2026-01-28)
 
-### ✅ PART_04-07: 종가베팅 V2 Scorer 완료
+### ✅ P3-2: API 문서화 완료
 
-**구현된 기능:**
-- Volume Score: 거래대금 기반 점수 (0-3점)
-- Chart Score: VCP 패턴 + 52주 신고가 근접 (0-2점)
-- Candle Score: 양봉 돌파 감지 (0-1점)
-- Period Score: 3일 이내 반등 패턴 (0-1점)
-- Flow Score: TODO (수급 데이터 연결 시)
+**생성된 문서:**
+| 파일 | 설명 |
+|------|------|
+| `docs/api/API_GUIDE.md` | 전체 API 가이드 문서 |
+| `docs/postman/KR_Stock_API_Collection.json` | Postman Collection |
 
-**Frontend UI 개선:**
-- Market Gate 섹터별 점수 시각화
-- 백테스트 KPI 카드 추가
+**API 가이드 포함 내용:**
+- 시작하기 (Base URL, 버전, Interactive Docs)
+- 11개 카테고리 API 엔드포인트 상세 설명
+- 요청/응답 예시
+- 파라미터 설명
+- 에러 처리 가이드
+- Rate Limiting 계획
 
-**테스트:** 30개 SignalScorer 테스트 통과, 전체 622개 passed
+**Postman Collection 포함 엔드포인트:**
+- Health Check (2개)
+- System (3개)
+- Signals (3개)
+- Market Gate (2개)
+- Stocks (4개)
+- AI Analysis (5개)
+- Backtest (4개)
+- Performance (5개)
+- Scan Triggers (3개)
+- Chatbot (6개)
+- Metrics (3개)
 
-### ✅ P2-2: CLI 진입점 복원
+### ✅ P3-3: 코드 품질 개선 완료
 
-**파일:** `run.py` (Rich 기반 CLI)
+**OpenAPI 스펙 보강:**
+- 모든 API 엔드포인트에 `summary`, `description`, `responses` 추가
+- Swagger UI/ReDoc 문서 개선
 
-**기능:**
-1. 수급 스크리닝 (VCP 스캔)
-2. 종가베팅 V2 시그널 생성
-3. 시그널 조회 (Rich Table)
-4. Market Gate 상태 (섹터별 현황)
-5. AI 분석
-6. 시스템 헬스 체크
-7. 백테스트 KPI
+**수정된 파일:**
+- `services/api_gateway/routes/stocks.py` - 4개 엔드포인트
+- `services/api_gateway/routes/ai.py` - 5개 엔드포인트
+- `services/api_gateway/routes/chatbot.py` - 6개 엔드포인트
+- `services/api_gateway/routes/triggers.py` - 4개 엔드포인트
+- `services/api_gateway/routes/backtest.py` - 4개 엔드포인트
+- `services/api_gateway/routes/system.py` - 3개 엔드포인트
+- `services/api_gateway/main.py` - 8개 엔드포인트
 
-```bash
-# 실행 방법
-.venv/bin/python run.py
-```
+**Linting 수정:**
+- `services/api_gateway/routes/performance.py` - datetime import 추가
+- `services/api_gateway/routes/system.py` - unused variables 제거
+- `services/api_gateway/main.py` - 중복 정의 제거, # noqa 추가
+- `services/api_gateway/` 전체 - **ruff 오류 0개**
 
 ---
 
@@ -58,41 +75,23 @@
 |------|------|
 | `docs/migration/MIGRATION_COMPLETE.md` | Open Architecture 7 Phase 상세 기록 |
 | `docs/migration/MIGRATION_NOTES.md` | 기술 스택, 버그 수정, 엔드포인트 |
-| `docs/migration/TODO_ARCHIVE.md` | 완료된 P0, P1 작업 내역 |
-| `TODO.md` | 진행 중/예정 작업 (P2, P3) |
+| `docs/migration/TODO_ARCHIVE.md` | 완료된 P0/P1 작업 내역 |
+| `docs/api/API_GUIDE.md` | API 가이드 문서 |
+| `docs/postman/KR_Stock_API_Collection.json` | Postman Collection |
+| `TODO.md` | 진행 중/예정 작업 |
 
 ---
 
 ## 🧪 테스트 결과
 
 ```
-======================== 622 passed, 20 skipped ========================
+======================== 842 passed, 20 skipped ========================
 ```
 
 ### 커버리지
-- Unit Tests: 500+ passed
-- Integration Tests: 120+ passed
-- Migration Tests: 전체 통과
-
----
-
-## 🔄 진행 중 작업
-
-### P2: 추가 기능 (2/3 완료)
-
-| 작업 | 상태 |
-|------|------|
-| P2-1: Chatbot API | ⏳ 예정 |
-| P2-2: CLI 진입점 | ✅ 완료 |
-| P2-3: 누적 수익률 API | ⏳ 예정 |
-
-### P3: 품질 향상
-
-| 작업 | 상태 |
-|------|------|
-| P3-1: 테스트 커버리지 | ⏳ 예정 |
-| P3-2: API 문서화 | ⏳ 예정 |
-| P3-3: 코드 품질 개선 | ⏳ 예정 |
+- 전체 커버리지: **76%**
+- Unit Tests: 780+ passed
+- Integration Tests: 62+ passed
 
 ---
 
@@ -123,8 +122,33 @@
 |--------|------|
 | Frontend (Next.js) | 5110 |
 | API Gateway | 5111 |
+| Chatbot Service | 5115 |
 | VCP Scanner | 5112 |
 | Signal Engine | 5113 |
+| Market Analyzer | 5114 |
 | PostgreSQL | 5433 |
 | Redis | 6380 |
 | Flower (Celery) | 5555 |
+
+---
+
+## 📝 완료된 작업 일지
+
+### P2-3: 누적 수익률 API (2026-01-28)
+- PerformanceRepository 구현
+- 5개 성과 분석 API 엔드포인트
+- 샤프 비율, MDD, 누적 수익률 계산
+
+### P3-1: 테스트 커버리지 향상 (2026-01-28)
+- 44개 새 테스트 추가
+- 커버리지 66% → 76% 향상
+
+### P3-2: API 문서화 (2026-01-28)
+- OpenAPI 스펙 보강 (37개 엔드포인트)
+- API 가이드 문서 작성
+- Postman Collection 생성
+
+### P3-3: 코드 품질 개선 (2026-01-28)
+- ruff linting 통과
+- unused imports/variables 제거
+- 코드 정리

@@ -6,9 +6,9 @@ Service Registry - Service Discovery 구현
 import os
 import asyncio
 from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime
 
 
 @dataclass
@@ -158,7 +158,7 @@ class ServiceRegistry:
                 service.retry_count = 0
                 return True
 
-        except (httpx.HTTPError, httpx.RequestError) as e:
+        except (httpx.HTTPError, httpx.RequestError):
             service.is_healthy = False
             service.last_health_check = datetime.now()
             service.retry_count += 1

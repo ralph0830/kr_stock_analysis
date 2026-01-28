@@ -3,13 +3,12 @@ AI Routes
 AI 종목 분석 API
 """
 
-from typing import List, Optional
+from typing import Optional
 from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db_session
-from src.database.models import Stock, AIAnalysis
 from src.repositories.stock_repository import StockRepository
 from src.repositories.ai_analysis_repository import AIAnalysisRepository
 from src.analysis.sentiment_analyzer import SentimentAnalyzer
@@ -49,7 +48,16 @@ def get_recommendation(score: float, sentiment: str) -> str:
         return "HOLD"
 
 
-@router.get("/ai-summary/{ticker}", response_model=AIAnalysisResponse)
+@router.get(
+    "/ai-summary/{ticker}",
+    response_model=AIAnalysisResponse,
+    summary="종목 AI 요약 조회",
+    description="특정 종목의 최신 AI 분석 결과를 조회합니다. 감성, 점수, 요약, 키워드, 추천사항을 포함합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        404: {"description": "종목을 찾을 수 없음"},
+    },
+)
 def get_ai_summary(
     ticker: str,
     session: Session = Depends(get_db_session),
@@ -66,6 +74,11 @@ def get_ai_summary(
 
     Raises:
         HTTPException: 종목을 찾을 수 없음 (404)
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/kr/ai-summary/005930"
+    ```
     """
     # 종목 존재 확인
     stock_repo = StockRepository(session)
@@ -103,7 +116,16 @@ def get_ai_summary(
     )
 
 
-@router.get("/ai-analysis", response_model=AIAnalysisListResponse)
+@router.get(
+    "/ai-analysis",
+    response_model=AIAnalysisListResponse,
+    summary="전체 AI 분석 조회",
+    description="전체 종목 또는 특정 날짜의 AI 분석 목록을 조회합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        400: {"description": "잘못된 날짜 형식"},
+    },
+)
 def get_ai_analysis(
     analysis_date: Optional[str] = Query(
         default=None, description="분석 날짜 (YYYY-MM-DD)"
@@ -121,6 +143,12 @@ def get_ai_analysis(
 
     Returns:
         AI 분석 목록
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/kr/ai-analysis?limit=20"
+    curl "http://localhost:5111/api/kr/ai-analysis?analysis_date=2024-01-15"
+    ```
     """
     ai_repo = AIAnalysisRepository(session)
 

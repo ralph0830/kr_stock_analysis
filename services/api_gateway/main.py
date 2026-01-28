@@ -2,32 +2,29 @@
 KR Stock - API Gateway
 FastAPI 기반 API Gateway 구현
 """
+# ruff: noqa: E402  # dotenv 로드 후 import 필요
 
 from fastapi import FastAPI, HTTPException, status, Request, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel
 from contextlib import asynccontextmanager
-from typing import Optional, Dict, Any, List
-from datetime import datetime, date
+from typing import Optional, List
+from datetime import datetime
 from sqlalchemy.orm import Session
 import httpx
-import os
 from dotenv import load_dotenv
 
 # 환경변수 로드
 load_dotenv()
 
-from services.api_gateway.service_registry import ServiceRegistry, get_registry
+from services.api_gateway.service_registry import get_registry
 from src.database.session import get_db_session
-from src.database.models import MarketStatus, Stock, DailyPrice
+from src.database.models import MarketStatus, DailyPrice
 from src.repositories.stock_repository import StockRepository
 from sqlalchemy import select, desc
 
 # WebSocket, 메트릭, 미들웨어
 from src.websocket.routes import router as websocket_router
-from src.websocket.server import price_broadcaster
-from src.websocket.price_provider import init_realtime_service
 from src.utils.metrics import metrics_registry
 from src.middleware.metrics_middleware import MetricsMiddleware
 
@@ -35,7 +32,7 @@ from src.middleware.metrics_middleware import MetricsMiddleware
 from services.api_gateway.dashboard import router as dashboard_router
 
 # Kiwoom 연동
-from src.api_gateway.kiwoom_integration import create_kiwoom_integration, get_kiwoom_integration
+from src.api_gateway.kiwoom_integration import create_kiwoom_integration
 from src.api_gateway.kiwoom_routes import setup_kiwoom_routes
 
 # API 스키마
@@ -43,13 +40,8 @@ from services.api_gateway.schemas import (
     HealthCheckResponse,
     SignalResponse,
     MarketGateStatus,
-    ErrorDetail,
     MetricsResponse,
-    SystemOverview,
-    ConnectionInfo,
     RealtimePricesRequest,
-    StockChartRequest,
-    SignalListRequest,
     StockDetailResponse,
     ChartPoint,
     StockChartResponse,
@@ -57,22 +49,12 @@ from services.api_gateway.schemas import (
     StockFlowResponse,
     SignalHistoryItem,
     SignalHistoryResponse,
-    BacktestSummaryResponse,
-    BacktestResultItem,
-    BacktestListResponse,
     BacktestStatsItem,
     BacktestKPIResponse,
-    AIAnalysisResponse,
-    AIAnalysisListResponse,
-    AIHistoryDatesResponse,
-    AIAnalysisItem,
     EXAMPLE_SIGNAL,
     EXAMPLE_MARKET_GATE,
     EXAMPLE_ERROR,
-    EXAMPLE_SIGNALS_LIST,
-    EXAMPLE_SYSTEM_OVERVIEW,
     EXAMPLE_METRICS,
-    EXAMPLE_CONNECTION_INFO,
 )
 
 
@@ -223,6 +205,14 @@ app = FastAPI(
             "name": "ai",
             "description": "AI 종목 분석 및 감성 분석",
         },
+        {
+            "name": "chatbot",
+            "description": "AI 챗봇 및 종목 추천",
+        },
+        {
+            "name": "performance",
+            "description": "누적 수익률 및 성과 분석",
+        },
     ],
 
     # Contact 정보
@@ -284,6 +274,16 @@ print("✅ Triggers routes registered")
 # Kiwoom 라우터 설정 (항상 등록, 내부에서可用性 체크)
 setup_kiwoom_routes(app)
 print("✅ Kiwoom routes registered")
+
+# Chatbot 라우터 포함
+from services.api_gateway.routes.chatbot import router as chatbot_router
+app.include_router(chatbot_router)
+print("✅ Chatbot routes registered")
+
+# Performance 라우터 포함
+from services.api_gateway.routes.performance import router as performance_router
+app.include_router(performance_router)
+print("✅ Performance routes registered")
 
 
 # ============================================================================
@@ -1068,26 +1068,54 @@ async def get_stock_chart(
 # ============================================================================
 
 
-class RealtimePricesRequest(BaseModel):
-    """실시간 가격 요청 모델"""
-    tickers: list[str] = []
-
-
-@app.post("/api/kr/realtime-prices")
+@app.post(
+    "/api/kr/realtime-prices",
+    tags=["realtime"],
+    summary="실시간 가격 일괄 조회",
+    description="여러 종목의 실시간 가격 정보를 일괄 조회합니다. 이전 Flask 라우팅 호환용 엔드포인트입니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        503: {"description": "실시간 서비스 unavailable"},
+    },
+)
 async def get_kr_realtime_prices(request: RealtimePricesRequest):
     """
     실시간 가격 일괄 조회 (이전 Flask 라우팅 호환)
-    """
-    tickers = request.tickers
 
+    ## 설명
+    여러 종목의 실시간 가격 정보를 일괄 조회합니다.
+
+    ## Request Body
+    - **tickers**: 종목 코드 리스트
+
+    ## 반환 데이터
+    - **prices**: 종목별 실시간 가격 정보
+    """
     # TODO: Price Service 또는 Data Collector로 프록시
     return {"prices": {}}
 
 
-@app.get("/api/kr/stock-chart/{ticker}")
+@app.get(
+    "/api/kr/stock-chart/{ticker}",
+    tags=["stocks"],
+    summary="종목 차트 데이터 조회 (레거시)",
+    description="특정 종목의 차트 데이터(OHLCV)를 조회합니다. 이전 Flask 라우팅 호환용 엔드포인트입니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        404: {"description": "종목을 찾을 수 없음"},
+    },
+)
 async def get_kr_stock_chart(ticker: str, period: str = "6mo"):
     """
-    종목 차트 데이터 조회
+    종목 차트 데이터 조회 (레거시 호환용)
+
+    ## 설명
+    특정 종목의 차트 데이터를 조회합니다.
+    최신 버전은 `/api/kr/stocks/{ticker}/chart`를 사용하세요.
+
+    ## Parameters
+    - **ticker**: 종목 코드 (6자리)
+    - **period**: 기간 (1mo, 3mo, 6mo, 1y)
     """
     # TODO: Data Service 또는 VCP Scanner로 프록시
     return {"ticker": ticker, "data": []}

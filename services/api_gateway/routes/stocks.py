@@ -64,7 +64,16 @@ def calculate_smartmoney_score(flows: list) -> float:
     return round(smartmoney_score, 2)
 
 
-@router.get("/{ticker}", response_model=StockDetailResponse)
+@router.get(
+    "/{ticker}",
+    response_model=StockDetailResponse,
+    summary="종목 상세 조회",
+    description="종목 코드를 통해 기본 정보와 최신 가격을 조회합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        404: {"description": "종목을 찾을 수 없음"},
+    },
+)
 def get_stock_detail(
     ticker: str,
     session: Session = Depends(get_db_session),
@@ -81,6 +90,11 @@ def get_stock_detail(
 
     Raises:
         HTTPException: 종목을 찾을 수 없음 (404)
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/kr/stocks/005930"
+    ```
     """
     repo = StockRepository(session)
     stock = repo.get_by_ticker(ticker)
@@ -121,7 +135,16 @@ def get_stock_detail(
     )
 
 
-@router.get("/{ticker}/chart", response_model=StockChartResponse)
+@router.get(
+    "/{ticker}/chart",
+    response_model=StockChartResponse,
+    summary="종목 차트 데이터 조회",
+    description="지정된 기간 동안의 종목 차트 데이터(OHLCV)를 조회합니다. TimescaleDB hypertable을 활용하여 빠른 조회를 지원합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        404: {"description": "종목을 찾을 수 없음"},
+    },
+)
 def get_stock_chart(
     ticker: str,
     days: int = Query(default=30, ge=1, le=365, description="조회 일수"),
@@ -137,6 +160,11 @@ def get_stock_chart(
 
     Returns:
         차트 데이터 (OHLCV)
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/kr/stocks/005930/chart?days=90"
+    ```
     """
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
@@ -164,7 +192,16 @@ def get_stock_chart(
     )
 
 
-@router.get("/{ticker}/flow", response_model=StockFlowResponse)
+@router.get(
+    "/{ticker}/flow",
+    response_model=StockFlowResponse,
+    summary="종목 수급 데이터 조회",
+    description="외국인/기관 순매수 데이터를 조회합니다. SmartMoney 점수(0-100)를 계산하여 제공합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        404: {"description": "종목을 찾을 수 없음"},
+    },
+)
 def get_stock_flow(
     ticker: str,
     days: int = Query(default=20, ge=1, le=60, description="조회 일수"),
@@ -180,6 +217,17 @@ def get_stock_flow(
 
     Returns:
         수급 데이터 (SmartMoney 점수 포함)
+
+    ## SmartMoney 점수 산출
+    - 외국인 5일 순매수 비중: 40%
+    - 기관 5일 순매수 비중: 30%
+    - 외국인 연속 순매수 일수: 15%
+    - 이중 매수(외국인+기관 동시 순매수): 15%
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/kr/stocks/005930/flow?days=20"
+    ```
     """
     stock_repo = StockRepository(session)
     flows = stock_repo.get_institutional_flow(ticker, days)
@@ -208,7 +256,16 @@ def get_stock_flow(
     )
 
 
-@router.get("/{ticker}/signals", response_model=SignalHistoryResponse)
+@router.get(
+    "/{ticker}/signals",
+    response_model=SignalHistoryResponse,
+    summary="종목 시그널 히스토리 조회",
+    description="특정 종목의 과거 시그널 내역을 조회합니다. OPEN/CLOSED 상태별 요약과 수익률 통계를 제공합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        404: {"description": "종목을 찾을 수 없음"},
+    },
+)
 def get_stock_signals(
     ticker: str,
     session: Session = Depends(get_db_session),
@@ -222,6 +279,11 @@ def get_stock_signals(
 
     Returns:
         시그널 히스토리 (OPEN/COUNT 요약)
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/kr/stocks/005930/signals"
+    ```
     """
     repo = SignalRepository(session)
     signals = repo.get_by_ticker(ticker)
