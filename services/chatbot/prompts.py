@@ -116,7 +116,13 @@ def build_rag_prompt(
     if context.get("stocks"):
         parts.append("\n## 관련 종목")
         for stock in context["stocks"][:3]:
-            parts.append(f"- {stock['name']}({stock['ticker']}): {stock['market']} {stock['sector']}")
+            # 실시간 가격 정보가 있으면 포함
+            price_info = ""
+            if stock.get("realtime_price"):
+                rp = stock["realtime_price"]
+                price_info = f", 현재가: {rp.get('price'):,}원 ({rp.get('timestamp')})"
+
+            parts.append(f"- {stock['name']}({stock['ticker']}): {stock['market']} {stock['sector']}{price_info}")
 
     if context.get("signals"):
         parts.append("\n## 시그널 정보")

@@ -10,7 +10,7 @@ import httpx
 router = APIRouter(prefix="/api/kr/chatbot", tags=["chatbot"])
 
 # Chatbot 서비스 URL (직접 연결용)
-CHATBOT_SERVICE_URL = "http://localhost:5115"
+CHATBOT_SERVICE_URL = "http://localhost:5114"
 
 
 @router.post(

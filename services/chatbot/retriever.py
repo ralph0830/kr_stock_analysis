@@ -27,19 +27,26 @@ class KnowledgeRetriever:
         """지식 검색기 초기화"""
         self._stock_repo: Optional[StockRepository] = None
         self._signal_repo: Optional[SignalRepository] = None
+        self._session = None  # DB 세션 저장
 
     def _get_stock_repo(self) -> StockRepository:
         """StockRepository lazy loading"""
         if self._stock_repo is None:
             from src.database.session import get_db_session
-            self._stock_repo = StockRepository(get_db_session().__enter__())
+            session_gen = get_db_session()
+            session = next(session_gen)
+            self._stock_repo = StockRepository(session)
+            self._session = session_gen  # 세션 저장
         return self._stock_repo
 
     def _get_signal_repo(self) -> SignalRepository:
         """SignalRepository lazy loading"""
         if self._signal_repo is None:
             from src.database.session import get_db_session
-            self._signal_repo = SignalRepository(get_db_session().__enter__())
+            session_gen = get_db_session()
+            session = next(session_gen)
+            self._signal_repo = SignalRepository(session)
+            self._session = session_gen  # 세션 저장
         return self._signal_repo
 
     def search_stocks(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
@@ -70,17 +77,38 @@ class KnowledgeRetriever:
                         "sector": stock.sector,
                     }]
 
-            # 이름 검색
+            # 이름 검색 - 먼저 전체 쿼리로 시도
             results = repo.search(query, limit=limit)
-            return [
-                {
-                    "ticker": s.ticker,
-                    "name": s.name,
-                    "market": s.market,
-                    "sector": s.sector,
-                }
-                for s in results
-            ]
+            if results:
+                return [
+                    {
+                        "ticker": s.ticker,
+                        "name": s.name,
+                        "market": s.market,
+                        "sector": s.sector,
+                    }
+                    for s in results
+                ]
+
+            # 전체 쿼리로 결과가 없으면, 쿼리에서 주요 단어 추출 후 재시도
+            # 예: "삼성전자 현재가 알려줘" -> "삼성전자" 추출
+            words = query.replace("현재가", "").replace("알려줘", "").replace("가격", "")
+            words = words.strip().split()
+            for word in words:
+                if len(word) >= 2:  # 최소 2글자
+                    results = repo.search(word, limit=limit)
+                    if results:
+                        return [
+                            {
+                                "ticker": s.ticker,
+                                "name": s.name,
+                                "market": s.market,
+                                "sector": s.sector,
+                            }
+                            for s in results[:1]  # 첫 번째 결과만 반환
+                        ]
+
+            return []
 
         except Exception as e:
             logger.error(f"종목 검색 실패: {e}")
@@ -141,7 +169,7 @@ class KnowledgeRetriever:
             from src.database.models import MarketStatus
             from sqlalchemy import desc
 
-            db = get_db_session().__enter__()
+            db = next(get_db_session())
             latest = db.query(MarketStatus).order_by(desc(MarketStatus.date)).first()
 
             if latest:
@@ -204,7 +232,7 @@ class KnowledgeRetriever:
             from src.database.models import AIAnalysis
             from sqlalchemy import desc
 
-            db = get_db_session().__enter__()
+            db = next(get_db_session())
 
             query = db.query(AIAnalysis)
             if ticker:

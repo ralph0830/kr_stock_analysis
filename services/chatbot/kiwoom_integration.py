@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 KIWOOM_APP_KEY = os.getenv("KIWOOM_APP_KEY", "")
 KIWOOM_SECRET_KEY = os.getenv("KIWOOM_SECRET_KEY", "")
 KIWOOM_BASE_URL = os.getenv("KIWOOM_BASE_URL", "https://api.kiwoom.com")
+KIWOOM_WS_URL = os.getenv("KIWOOM_WS_URL", "wss://api.kiwoom.com:10000/api/dostk/websocket")
 USE_KIWOOM_REST = os.getenv("USE_KIWOOM_REST", "false").lower() == "true"
 
 
@@ -49,6 +50,7 @@ def _get_kiwoom_client() -> Optional["KiwoomRestAPI"]:
                 app_key=KIWOOM_APP_KEY,
                 secret_key=KIWOOM_SECRET_KEY,
                 base_url=KIWOOM_BASE_URL,
+                ws_url=KIWOOM_WS_URL,
             )
             _kiwoom_api_client = KiwoomRestAPI(config)
             logger.info("KiwoomRestAPI client initialized for chatbot")
@@ -64,6 +66,8 @@ async def get_kiwoom_current_price(ticker: str) -> Optional[Dict[str, Any]]:
     """
     Kiwoom API에서 현재가 조회
 
+    참고: get_current_price() API ID 문제로 get_daily_prices(days=1)를 대신 사용
+
     Args:
         ticker: 종목 코드 (6자리)
 
@@ -76,19 +80,18 @@ async def get_kiwoom_current_price(ticker: str) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        # KiwoomRestAPI.get_current_price() 사용
-        price = await client.get_current_price(ticker)
+        # get_current_price() 대신 get_daily_prices(days=1) 사용
+        # (API ID ka10001 문제로 인한 우회)
+        prices = await client.get_daily_prices(ticker, days=1)
 
-        if price:
+        if prices and len(prices) > 0:
+            latest = prices[0]  # 가장 최근 데이터
             return {
-                "ticker": price.ticker,
-                "price": price.price,
-                "change": price.change,
-                "change_rate": price.change_rate,
-                "volume": price.volume,
-                "bid_price": price.bid_price,
-                "ask_price": price.ask_price,
-                "timestamp": price.timestamp,
+                "ticker": ticker,
+                "price": latest.get("price"),
+                "change": latest.get("change"),
+                "volume": latest.get("volume"),
+                "timestamp": latest.get("date"),
             }
         return None
 
@@ -165,7 +168,7 @@ async def get_kiwoom_stock_info(ticker: str) -> Optional[Dict[str, Any]]:
     from src.database.session import get_db_session
 
     try:
-        db = get_db_session().__enter__()
+        db = next(get_db_session())
         repo = StockRepository(db)
         stock = repo.get_by_ticker(ticker)
 

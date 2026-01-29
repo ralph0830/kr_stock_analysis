@@ -3,6 +3,10 @@ Chatbot Service - FastAPI Main
 RAG 기반 주식 분석 AI 챗봇 서비스
 """
 
+# 환경변수 로드 (가장 먼저 실행)
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -19,6 +23,7 @@ from services.chatbot.session_manager import get_session_manager
 from services.chatbot.retriever import get_retriever
 from services.chatbot.prompts import build_rag_prompt
 from services.chatbot.llm_client import get_llm_client
+from services.chatbot.recommender import get_recommender
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +135,11 @@ async def chat(request: ChatRequest):
         # RAG 컨텍스트 검색
         context = retriever.retrieve_context(request.message)
 
+        # 종목 관련 질문이면 Kiwoom 실시간 현재가 추가
+        if context.get("stocks"):
+            # 비동기로 Kiwoom 데이터 enrich
+            context = await retriever.enrich_with_kiwoom_data(context)
+
         # 대화 기록 조회
         history = session_manager.get_history_formatted(session_id)
 
@@ -168,7 +178,7 @@ async def chat(request: ChatRequest):
 )
 async def get_context(session_id: str):
     """
-    대화 컨텍스트 조회
+    대화 컨텍스트 조회 (세션 기반)
 
     세션 ID에 해당하는 대화 기록을 반환합니다.
 
@@ -185,6 +195,61 @@ async def get_context(session_id: str):
         history=history,
         message_count=message_count,
     )
+
+
+@app.post(
+    "/context",
+    tags=["chat"],
+    responses={
+        200: {
+            "description": "질문에 대한 컨텍스트 검색 성공",
+        }
+    },
+)
+async def query_context(request: Dict[str, Any]):
+    """
+    질문에 대한 컨텍스트 조회 (쿼리 기반)
+
+    사용자 질문에서 추출한 종목, 시그널, 뉴스 등의 컨텍스트를 반환합니다.
+
+    - **query**: 사용자 질문
+    """
+    try:
+        query = request.get("query", "")
+        if not query:
+            raise HTTPException(
+                status_code=422,
+                detail="query 필드가 필요합니다."
+            )
+
+        retriever = get_retriever()
+
+        # 질문에 대한 컨텍스트 검색
+        context = retriever.retrieve_context(query)
+
+        return {
+            "query": query,
+            "query_type": context.get("query_type", "general"),
+            "stocks": context.get("stocks", []),
+            "signals": context.get("signals", []),
+            "news": context.get("news", []),
+            "market_status": context.get("market_status"),
+            "timestamp": context.get("timestamp"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"컨텍스트 검색 실패: {e}")
+        return {
+            "query": request.get("query", ""),
+            "query_type": "general",
+            "stocks": [],
+            "signals": [],
+            "news": [],
+            "market_status": None,
+            "timestamp": None,
+        }
 
 
 @app.delete(
@@ -219,6 +284,166 @@ async def delete_context(session_id: str):
         )
 
     return {"message": "세션이 삭제되었습니다", "session_id": session_id}
+
+
+@app.delete(
+    "/session/{session_id}",
+    tags=["session"],
+    responses={
+        200: {
+            "description": "세션 삭제 성공",
+        },
+        404: {
+            "description": "세션을 찾을 수 없음",
+        }
+    },
+)
+async def delete_session(session_id: str):
+    """
+    세션 삭제 (표준 경로)
+
+    세션 ID에 해당하는 대화 기록을 삭제합니다.
+    `/context/{session_id}`의 별칭이지만, API Gateway와의 호환성을 위해 제공됩니다.
+
+    - **session_id**: 세션 ID
+    """
+    session_manager = get_session_manager()
+
+    # 세션 삭제
+    success = session_manager.clear_session(session_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"세션을 찾을 수 없습니다: {session_id}"
+        )
+
+    return {"message": "세션이 삭제되었습니다", "session_id": session_id}
+
+
+# ============================================================================
+# Recommendations Endpoint
+# ============================================================================
+
+@app.get(
+    "/recommendations",
+    tags=["recommendations"],
+    responses={
+        200: {
+            "description": "종목 추천 성공",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "ticker": "005930",
+                            "name": "삼성전자",
+                            "signal_type": "vcp",
+                            "grade": "A",
+                            "score": 85,
+                            "position_size": 12.0,
+                        }
+                    ]
+                }
+            }
+        },
+        500: {
+            "description": "서버 오류",
+        }
+    },
+)
+async def get_recommendations(
+    strategy: str = "both",
+    limit: int = 5,
+):
+    """
+    종목 추천 조회
+
+    VCP/종가베팅 시그널 기반 종목 추천을 반환합니다.
+
+    - **strategy**: 전략 (vcp, jongga, both)
+    - **limit**: 최대 추천 수
+    """
+    try:
+        recommender = get_recommender()
+
+        # 추천 종목 조회
+        recommendations = recommender.get_top_picks(strategy=strategy, limit=limit)
+
+        # 종목명 추가 (StockRepository 사용)
+        result = []
+        for rec in recommendations:
+            result.append({
+                "ticker": rec.get("ticker"),
+                "name": rec.get("name", rec.get("ticker", "")),  # 이름이 없으면 티커 사용
+                "signal_type": rec.get("signal_type", ""),
+                "grade": rec.get("grade", ""),
+                "score": rec.get("score", 0),
+                "position_size": recommender.get_position_size(rec.get("grade", "C")),
+            })
+
+        return result
+
+    except Exception as e:
+        logger.error(f"추천 종목 조회 실패: {e}")
+        # 빈 리스트 반환 (서비스 중단 방지)
+        return []
+
+
+# ============================================================================
+# Session Endpoint
+# ============================================================================
+
+@app.get(
+    "/session/{session_id}",
+    tags=["session"],
+    responses={
+        200: {
+            "description": "세션 조회 성공",
+        },
+        404: {
+            "description": "세션을 찾을 수 없음",
+        }
+    },
+)
+async def get_session(session_id: str):
+    """
+    세션 정보 조회
+
+    특정 세션의 대화 기록을 반환합니다.
+
+    - **session_id**: 세션 ID
+    """
+    try:
+        session_manager = get_session_manager()
+
+        # 세션 정보 조회
+        session_info = session_manager.get_session_info(session_id)
+
+        if session_info is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"세션을 찾을 수 없습니다: {session_id}"
+            )
+
+        # 대화 기록 조회
+        messages = session_manager.get_history_formatted(session_id)
+
+        return {
+            "session_id": session_id,
+            "created_at": session_info.get("created_at", ""),
+            "updated_at": session_info.get("last_activity", session_info.get("created_at", "")),
+            "message_count": session_info.get("message_count", 0),
+            "messages": messages,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"세션 조회 실패: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"세션 조회 중 오류가 발생했습니다: {str(e)}"
+        )
 
 
 # ============================================================================
