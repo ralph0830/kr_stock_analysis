@@ -5,6 +5,7 @@ import { useStore } from "@/store";
 import { formatPrice, formatPercent, getMarketGateColor, cn } from "@/lib/utils";
 import { RealtimePriceGrid, WebSocketStatus } from "@/components/RealtimePriceCard";
 import { Watchlist } from "@/components/Watchlist";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function HomePage() {
   const [showDashboard, setShowDashboard] = useState(false);
@@ -44,12 +45,15 @@ export default function HomePage() {
               </h1>
               <WebSocketStatus />
             </div>
-            <button
-              onClick={() => setShowDashboard(!showDashboard)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
-            >
-              {showDashboard ? "간단 보기" : "전체 보기"}
-            </button>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <button
+                onClick={() => setShowDashboard(!showDashboard)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+              >
+                {showDashboard ? "간단 보기" : "전체 보기"}
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -280,6 +284,24 @@ export default function HomePage() {
               className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
             >
               차트 페이지로 이동
+            </a>
+          </div>
+        </section>
+
+        {/* 챗봇 링크 */}
+        <section>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow text-center">
+            <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">
+              🤖 AI 주식 챗봇
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              주식 관련 질문을 하고 AI 답변을 받아보세요. 종목 정보, 시장 상태, 시그널 추천 등을 지원합니다.
+            </p>
+            <a
+              href="/chatbot"
+              className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+            >
+              챗봇 시작하기
             </a>
           </div>
         </section>

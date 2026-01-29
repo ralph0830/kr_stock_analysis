@@ -7,6 +7,7 @@ import type { MarketGateStatus, Signal, SectorItem } from "@/types";
 import { RealtimePriceGrid, WebSocketStatus } from "@/components/RealtimePriceCard";
 import { SystemHealthIndicator } from "@/components/SystemHealthIndicator";
 import { ScanTriggerPanel } from "@/components/ScanTriggerPanel";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -87,12 +88,15 @@ export default function DashboardPage() {
               </h1>
               <WebSocketStatus />
             </div>
-            <a
-              href="/"
-              className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-            >
-              ← 홈
-            </a>
+            <div className="flex items-center gap-4">
+              <ThemeToggle />
+              <a
+                href="/"
+                className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+              >
+                ← 홈
+              </a>
+            </div>
           </div>
         </div>
       </header>
@@ -383,6 +387,30 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           )}
+        </section>
+
+        {/* 챗봇 바로가기 */}
+        <section>
+          <Card className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 border-purple-200 dark:border-purple-800">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                    🤖 AI 주식 챗봇
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    주식 관련 질문을 하고 AI 답변을 받아보세요
+                  </p>
+                </div>
+                <a
+                  href="/chatbot"
+                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
+                >
+                  챗봇 시작하기
+                </a>
+              </div>
+            </CardContent>
+          </Card>
         </section>
       </div>
     </main>

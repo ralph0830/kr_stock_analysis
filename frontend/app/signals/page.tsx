@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/store";
 import { formatPrice, getGradeColor } from "@/lib/utils";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import type { Signal, ScoreDetail } from "@/types";
 
 export default function SignalsPage() {
@@ -63,12 +64,15 @@ export default function SignalsPage() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               🎯 종가베팅 V2 시그널
             </h1>
-            <a
-              href="/"
-              className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-            >
-              ← 홈
-            </a>
+            <div className="flex items-center gap-4">
+              <ThemeToggle />
+              <a
+                href="/"
+                className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+              >
+                ← 홈
+              </a>
+            </div>
           </div>
         </div>
       </header>
