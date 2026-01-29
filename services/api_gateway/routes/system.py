@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, text
+from sqlalchemy import func, text, select
 
 from src.database.session import get_db_session
 from src.database.models import DailyPrice, Signal
@@ -130,11 +130,12 @@ def get_data_status(
 
     # 주가 데이터 상태
     try:
+        # DailyPrice는 복합 기본 키 (ticker, date)를 사용하므로 raw SQL count(*) 사용
         price_count = session.execute(
-            func.count(DailyPrice.id)
+            text("SELECT COUNT(*) FROM daily_prices")
         ).scalar() or 0
         latest_price = session.execute(
-            func.max(DailyPrice.date)
+            text("SELECT MAX(date) FROM daily_prices")
         ).scalar()
 
         price_status = "OK" if price_count > 0 else "NO_DATA"
