@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { apiClient } from "@/lib/api-client";
-import { formatPrice, formatPercent } from "@/lib/utils";
+import { formatPrice } from "@/lib/utils";
 import type { Signal } from "@/types";
 import type { IAIAnalysisList } from "@/types";
 
@@ -46,6 +46,8 @@ function formatFlow(value: number | undefined): string {
  */
 function AIBadge({
   recommendation,
+  // model is kept for future use (e.g., different styling per model)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   model
 }: {
   recommendation: AIRecommendation | undefined;

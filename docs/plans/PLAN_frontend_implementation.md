@@ -210,11 +210,42 @@ frontend/app/
 **Last Updated**: 2026-01-30
 
 ### Phase 진행률
-- [ ] Phase 1: VCP Signals 페이지 (0%)
-- [ ] Phase 2: KR Market Overview (0%)
-- [ ] Phase 3: Closing Bet V2 (0%)
-- [ ] Phase 4: Apple Dark 모드 (0%)
-- [ ] Phase 5: 네이버 차트 위젯 (0%)
+- [x] Phase 1: VCP Signals 페이지 (100%)
+- [x] Phase 2: KR Market Overview (100%)
+- [x] Phase 3: Closing Bet V2 (100%)
+- [x] Phase 4: Apple Dark 모드 (100%)
+- [x] Phase 5: 네이버 차트 위젯 (100%)
+
+### 완료된 페이지/컴포넌트
+1. **VCP Signals 페이지**: `/dashboard/kr/vcp/page.tsx`
+   - AI 추천 뱃지 (GPT + Gemini)
+   - 실시간 가격 업데이트 (60s 간격)
+   - 수급 데이터 포맷 (억/만 단위)
+   - VCP 수축률 표시
+
+2. **KR Market Overview 페이지**: `/dashboard/kr/page.tsx`
+   - Market Gate 원형 프로그레스
+   - 섹터별 bullish/bearish 카드
+   - 백테스트 KPI 표시
+   - 실시간 데이터 갱신
+
+3. **Closing Bet V2 페이지**: `/dashboard/kr/closing-bet/page.tsx`
+   - 날짜 선택기
+   - 점수 바 컴포넌트 (12점 스코어링)
+   - 체크리스트 뱃지
+   - 네이버 차트 모달
+   - 엔진 실행 버튼
+
+4. **Apple Dark Mode 디자인 시스템**: `app/globals.css`
+   - Apple 스타일 다크 모드 팔레트
+   - Glassmorphism 효과
+   - 커스텀 스크롤바
+   - 애니메이션 (fadeIn, pulse-glow, shimmer)
+
+5. **네이버 차트 위젯**: `components/NaverChartWidget.tsx`
+   - NaverChartWidget 컴포넌트
+   - NaverChartButton 컴포넌트
+   - ChartModal 컴포넌트 (ESC 키 지원)
 
 ---
 
