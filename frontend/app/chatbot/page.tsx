@@ -6,8 +6,16 @@
 import { ChatbotWidget } from "@/components/ChatbotWidget"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 export default function ChatbotPage() {
+  const router = useRouter()
+
+  // 티커 클릭 핸들러 - 종목 상세 페이지로 이동
+  const handleStockClick = (ticker: string) => {
+    router.push(`/stock/${ticker}`)
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       {/* Header */}
@@ -61,10 +69,13 @@ export default function ChatbotPage() {
                 종목별 기본 정보 및 섹터
               </li>
             </ul>
+            <p className="mt-4 text-xs text-gray-500 dark:text-gray-500">
+              ⚠️ 모든 정보는 참고용이며, 투자 손실에 대해 책임지지 않습니다.
+            </p>
           </div>
 
           {/* 챗봇 위젯 */}
-          <ChatbotWidget />
+          <ChatbotWidget onStockClick={handleStockClick} />
         </div>
       </div>
     </main>

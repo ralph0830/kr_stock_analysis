@@ -5,8 +5,8 @@ info:
     \ 한국 주식 분석 시스템의 API Gateway입니다.\n\n    ## 주요 기능\n    - **VCP 패턴 스캐너**: 볼린저밴드 수축\
     \ 패턴 탐지\n    - **종가베팅 V2 시그널**: 12점 scoring 기반 매매 시그널\n    - **실시간 가격 브로드캐스팅**:\
     \ WebSocket 기반 실시간 가격 업데이트\n    - **SmartMoney 수급 분석**: 외국인/기관 수급 데이터 분석\n\n \
-    \   ## 지원 서비스\n    - VCP Scanner (port 8001)\n    - Signal Engine (port 8003)\n\
-    \    - Market Analyzer (port 8002)\n    - Real-time Price Broadcaster\n    "
+    \   ## 지원 서비스\n    - VCP Scanner (port 5112)\n    - Signal Engine (port 5113)\n\
+    \    - Chatbot Service (port 5114)\n    - Real-time Price Broadcaster\n    "
   contact:
     name: KR Stock Team
     email: support@krstock.example.com

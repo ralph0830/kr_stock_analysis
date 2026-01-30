@@ -500,7 +500,17 @@ class KiwoomWebSocket(IKiwoomBridge):
 
     async def _on_receive_real_data(self, data: Dict[str, Any]) -> None:
         """
-        실시간 체결가 수신 처리 (키움 프로토콜)
+        실시간 체결가 수신 처리 (키움 0B TR 프로토콜)
+
+        0B TR (주식체결) 필드:
+        - 10: 현재가 (음수는 하락)
+        - 11: 전일대비 (가격 차이)
+        - 12: 등락율 (%)
+        - 13: 누적거래량
+        - 15: 거래량 (+는 매수체결, -는 매도체결)
+        - 20: 체결시간 (HHMMSS)
+        - 27: (최우선)매도호가
+        - 28: (최우선)매수호가
 
         Args:
             data: TR 데이터 (trnm: REAL)
@@ -520,28 +530,39 @@ class KiwoomWebSocket(IKiwoomBridge):
                 if not values:
                     continue
 
-                # 키움 실시간 데이터 필드 파싱
-                # 10: 현재가, 11: 전일대비, 25: 거래량, 27: (호가)
+                # 현재가 (10번 필드) - +/- 기호가 포함될 수 있음
                 current_price_str = values.get("10", "0")
-                # +/- 기호 제거 후 파싱
+                # +/- 기호와 공백 제거
                 current_price_str = current_price_str.replace("+", "").replace("-", "").replace(" ", "")
-                current_price = float(current_price_str) if current_price_str.replace(".", "").isdigit() else 0
+                current_price = float(current_price_str) if current_price_str else 0
 
                 # 전일대비 (11번 필드)
+                # 전일대비 (11번 필드) - 부호 유지 (+는 제거, -는 유지)
                 change_str = values.get("11", "0")
-                change = float(change_str.replace("+", "").replace("-", "").replace(" ", "")) if change_str else 0
+                change_str = change_str.replace("+", "").replace(" ", "")
+                change = float(change_str) if change_str else 0
 
-                # 등락율 계산 (현재가 기준)
-                prev_price = current_price - change
-                change_rate = (change / prev_price * 100) if prev_price > 0 else 0
+                # 등락율 (12번 필드) - 이미 %로 계산됨, 부호 유지
+                change_rate_str = values.get("12", "0")
+                change_rate_str = change_rate_str.replace("+", "").replace(" ", "")
+                change_rate = float(change_rate_str) if change_rate_str else 0
 
-                # 거래량 (25번 필드)
-                volume_str = values.get("25", "0")
-                volume = int(volume_str) if volume_str.isdigit() else 0
+                # 누적거래량 (13번 필드)
+                cumulative_volume_str = values.get("13", "0")
+                cumulative_volume = int(cumulative_volume_str) if cumulative_volume_str.isdigit() else 0
 
-                # 호가 (27번 필드) - 없으면 0
-                bid_price = 0.0
-                ask_price = 0.0
+                # 거래량 (15번 필드) - +는 매수체결, -는 매도체결
+                volume_str = values.get("15", "0")
+                volume = int(volume_str) if volume_str.lstrip("+-").isdigit() else 0
+
+                # 호가 (27: 매도호가, 28: 매수호가)
+                bid_price_str = values.get("28", "0")  # 매수호가 (bid)
+                bid_price_str = bid_price_str.replace("+", "").replace("-", "").replace(" ", "")
+                bid_price = float(bid_price_str) if bid_price_str else 0
+
+                ask_price_str = values.get("27", "0")  # 매도호가 (ask)
+                ask_price_str = ask_price_str.replace("+", "").replace("-", "").replace(" ", "")
+                ask_price = float(ask_price_str) if ask_price_str else 0
 
                 if current_price > 0:
                     price_data = RealtimePrice(
@@ -549,7 +570,7 @@ class KiwoomWebSocket(IKiwoomBridge):
                         price=current_price,
                         change=change,
                         change_rate=change_rate,
-                        volume=volume,
+                        volume=cumulative_volume,  # 누적거래량 사용
                         bid_price=bid_price,
                         ask_price=ask_price,
                         timestamp=datetime.now(timezone.utc).isoformat()
@@ -562,9 +583,10 @@ class KiwoomWebSocket(IKiwoomBridge):
                     self._emit_event(KiwoomEventType.RECEIVE_REAL_DATA, price_data)
 
                     if self._debug_mode:
-                        logger.debug(
-                            f"Received real-time data: {ticker} = {current_price} "
-                            f"({change_rate:+.2f}%)"
+                        logger.info(
+                            f"Real-time [{type_code}] {ticker}: {current_price:,}원 "
+                            f"({change:+,}원, {change_rate:+.2f}%) "
+                            f"매수:{bid_price:,} / 매도:{ask_price:,}"
                         )
 
         except Exception as e:

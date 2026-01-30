@@ -8,7 +8,7 @@ import requests
 from datetime import datetime
 
 # API Gateway URL
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://localhost:5111"
 
 # 색상 출력
 class Colors:

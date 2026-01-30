@@ -1,6 +1,14 @@
-version: '3.8'
+# ============================================================================
+# KR Stock Analysis - Docker Compose (Full Stack)
+# ============================================================================
+# 전체 서비스를 하나로 실행: docker compose up -d
+# ============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure Services
+  # ---------------------------------------------------------------------------
+
   # PostgreSQL + TimescaleDB
   postgres:
     image: timescale/timescaledb:latest-pg15
@@ -9,8 +17,9 @@ services:
       POSTGRES_DB: kr_stock
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      TZ: Asia/Seoul
     ports:
-      - "5433:5432"  # Changed from 5432 to avoid conflict
+      - "5433:5432"
     volumes:
       - postgres_data:/home/postgresql/data
     healthcheck:
@@ -20,6 +29,7 @@ services:
       retries: 5
     networks:
       - kr_stock_network
+    restart: unless-stopped
 
   # Redis (Cache + Message Broker)
   redis:
@@ -27,7 +37,7 @@ services:
     container_name: kr_stock_redis
     command: redis-server --appendonly yes
     ports:
-      - "6380:6379"  # Changed from 6379 to avoid conflict
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -37,134 +47,190 @@ services:
       retries: 5
     networks:
       - kr_stock_network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Backend Services
+  # ---------------------------------------------------------------------------
 
   # API Gateway (FastAPI)
   api-gateway:
     build:
       context: .
-      dockerfile: Dockerfile.gateway
+      dockerfile: Dockerfile.service
+      target: development
     container_name: kr_stock_api_gateway
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
       VCP_SCANNER_URL: http://vcp-scanner:8000
       SIGNAL_ENGINE_URL: http://signal-engine:8000
       MARKET_ANALYZER_URL: http://market-analyzer:8000
+      TZ: Asia/Seoul
     ports:
-      - "5111:8000"
+      - "5111:5111"
+    command: ["python", "-m", "uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "5111", "--reload"]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      vcp-scanner:
-        condition: service_started
-      signal-engine:
-        condition: service_started
     volumes:
-      - ./services:/app/services
       - ./src:/app/src
+      - ./services:/app/services
       - ./data:/app/data
     networks:
       - kr_stock_network
-    command: uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
 
   # VCP Scanner Service
   vcp-scanner:
     build:
       context: .
       dockerfile: Dockerfile.service
+      target: development
     container_name: kr_stock_vcp_scanner
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
       REDIS_URL: redis://redis:6379/0
-      SERVICE_NAME: vcp-scanner
+      TZ: Asia/Seoul
     ports:
-      - "5112:8000"
+      - "5112:5112"
+    command: ["python", "-m", "uvicorn", "services.vcp_scanner.main:app", "--host", "0.0.0.0", "--port", "5112", "--reload"]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./services:/app/services
       - ./src:/app/src
+      - ./services:/app/services
       - ./data:/app/data
     networks:
       - kr_stock_network
-    command: uvicorn services.vcp_scanner.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
 
   # Signal Engine Service
   signal-engine:
     build:
       context: .
       dockerfile: Dockerfile.service
+      target: development
     container_name: kr_stock_signal_engine
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
       REDIS_URL: redis://redis:6379/0
-      SERVICE_NAME: signal-engine
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TZ: Asia/Seoul
     ports:
-      - "5113:8000"
+      - "5113:5113"
+    command: ["python", "-m", "uvicorn", "services.signal_engine.main:app", "--host", "0.0.0.0", "--port", "5113", "--reload"]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./services:/app/services
       - ./src:/app/src
+      - ./services:/app/services
       - ./data:/app/data
     networks:
       - kr_stock_network
-    command: uvicorn services.signal_engine.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
 
-  # Celery Worker (Background Tasks)
+  # Chatbot Service (WebSocket)
+  chatbot:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      target: development
+    container_name: kr_stock_chatbot
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      REDIS_URL: redis://redis:6379/0
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      TZ: Asia/Seoul
+    ports:
+      - "5114:5114"
+    command: ["python", "-m", "uvicorn", "services.chatbot.main:app", "--host", "0.0.0.0", "--port", "5114", "--reload"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./services:/app/services
+      - ./data:/app/data
+    networks:
+      - kr_stock_network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Background Processing
+  # ---------------------------------------------------------------------------
+
+  # Celery Worker (autoscale)
   celery-worker:
     build:
       context: .
       dockerfile: Dockerfile.service
+      target: development
     container_name: kr_stock_celery_worker
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      DATABASE_URL: postgresql://postgres:postgres:postgres@postgres:5432/kr_stock
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
+      TZ: Asia/Seoul
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./services:/app/services
       - ./src:/app/src
+      - ./services:/app/services
       - ./tasks:/app/tasks
       - ./data:/app/data
+    # autoscale: 최소 2개, 최대 8개 워커
+    command: [
+      "celery", "-A", "tasks.celery_app", "worker",
+      "--loglevel=info",
+      "--concurrency=2",  # 기본 동시성
+      "--autoscale=8,2",  # 최대 8개, 최소 2개
+      "--max-tasks-per-child=100"  # 메모리 누수 방지
+    ]
     networks:
       - kr_stock_network
-    command: celery -A tasks.celery_app worker --loglevel=info
+    restart: unless-stopped
 
   # Celery Beat (Scheduler)
   celery-beat:
     build:
       context: .
       dockerfile: Dockerfile.service
+      target: development
     container_name: kr_stock_celery_beat
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
+      TZ: Asia/Seoul
     depends_on:
       - postgres
       - redis
       - celery-worker
     volumes:
-      - ./services:/app/services
       - ./src:/app/src
+      - ./services:/app/services
       - ./tasks:/app/tasks
+    command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
     networks:
       - kr_stock_network
-    command: celery -A tasks.celery_app beat --loglevel=info
+    restart: unless-stopped
 
   # Flower (Celery Monitoring)
   flower:
@@ -172,12 +238,41 @@ services:
     container_name: kr_stock_flower
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
+      TZ: Asia/Seoul
     ports:
       - "5555:5555"
     depends_on:
       - redis
     networks:
       - kr_stock_network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Frontend
+  # ---------------------------------------------------------------------------
+
+  # Frontend (Next.js) - Development Mode
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../Dockerfile.frontend.dev
+    container_name: kr_stock_frontend
+    environment:
+      # 도메인 접속용: 빈 값으로 두어 브라우저가 자동으로 현재 호스트 사용
+      NEXT_PUBLIC_API_URL: ""
+      NEXT_PUBLIC_WS_URL: ""
+      TZ: Asia/Seoul
+    ports:
+      - "5110:5110"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      # .next는 호스트와 공유하여 코드 변경 즉시 반영
+    depends_on:
+      - api-gateway
+    networks:
+      - kr_stock_network
+    restart: unless-stopped
 
 volumes:
   postgres_data:

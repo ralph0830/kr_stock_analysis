@@ -421,6 +421,127 @@ async def check_single_service(service_name: str):
     return service_health.to_dict()
 
 
+@router.get(
+    "/cache/metrics",
+    summary="캐시 메트릭 조회",
+    description="Redis 캐시 적중률, 저장/삭제 횟수 등 캐시 성능 지표를 반환합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        503: {"description": "캐시 서비스 unavailable"},
+    },
+)
+async def get_cache_metrics():
+    """
+    캐시 메트릭 조회
+
+    ## 설명
+    Redis 캐시 적중률, 저장/삭제 횟수 등 캐시 성능 지표를 반환합니다.
+
+    ## 반환 데이터
+    - **hits**: 캐시 적중 횟수
+    - **misses**: 캐시 미스 횟수
+    - **sets**: 캐시 저장 횟수
+    - **deletes**: 캐시 삭제 횟수
+    - **hit_rate**: 적중률 (%)
+    - **total_requests**: 전체 요청 수
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/system/cache/metrics"
+    ```
+    """
+    try:
+        from src.cache import get_cache_metrics
+
+        metrics = get_cache_metrics()
+        return metrics.to_dict()
+
+    except Exception as e:
+        return {
+            "error": f"Cache metrics not available: {str(e)}",
+            "hits": 0,
+            "misses": 0,
+            "sets": 0,
+            "deletes": 0,
+            "hit_rate": 0.0,
+            "total_requests": 0,
+        }
+
+
+@router.get(
+    "/metrics/slow",
+    summary="느린 엔드포인트 조회",
+    description="응답 시간이 임계값을 초과한 느린 엔드포인트 목록을 반환합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+    },
+)
+async def get_slow_endpoints(limit: int = 10):
+    """
+    느린 엔드포인트 조회
+
+    ## 설명
+    응답 시간이 1초 이상인 느린 엔드포인트 목록을 반환합니다.
+
+    ## Parameters
+    - **limit**: 반환할 최대 항목 수 (기본값: 10)
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/system/metrics/slow?limit=10"
+    ```
+    """
+    try:
+        from src.middleware.slow_endpoint import get_slow_endpoint_tracker
+
+        tracker = get_slow_endpoint_tracker()
+        return tracker.to_dict(limit=limit)
+
+    except Exception as e:
+        return {
+            "threshold": 1.0,
+            "slow_endpoints": [],
+            "error": str(e),
+        }
+
+
+@router.post(
+    "/cache/clear",
+    summary="캐시 비우기",
+    description="캐시를 모두 비우거나 패턴으로 선택적으로 삭제합니다.",
+    responses={
+        200: {"description": "삭제 성공"},
+    },
+)
+async def clear_cache(pattern: str = "*"):
+    """
+    캐시 비우기
+
+    ## 설명
+    캐시를 모두 비우거나 패턴으로 선택적으로 삭제합니다.
+
+    ## Parameters
+    - **pattern**: 삭제할 캐시 키 패턴 (기본값: "*" - 모두 삭제)
+
+    ## Example
+    ```bash
+    curl -X POST "http://localhost:5111/api/system/cache/clear?pattern=price:*"
+    ```
+    """
+    try:
+        from src.cache import get_cache
+
+        cache = await get_cache()
+        if not cache:
+            return {"cleared": 0, "message": "Cache not available"}
+
+        count = await cache.clear_pattern(pattern)
+        return {"cleared": count, "pattern": pattern}
+
+    except Exception as e:
+        return {"cleared": 0, "error": str(e)}
+
+
 @router.post(
     "/update-data-stream",
     summary="데이터 업데이트 SSE 스트리밍",

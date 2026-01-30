@@ -4,7 +4,10 @@ FastAPI 기반 API Gateway 구현
 """
 # ruff: noqa: E402  # dotenv 로드 후 import 필요
 
+import logging
 from fastapi import FastAPI, HTTPException, status, Request, Query, Depends
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from contextlib import asynccontextmanager
@@ -25,16 +28,22 @@ from sqlalchemy import select, desc
 
 # WebSocket, 메트릭, 미들웨어
 from src.websocket.routes import router as websocket_router
+from src.websocket.server import price_broadcaster
 from src.utils.metrics import metrics_registry
 from src.middleware.metrics_middleware import MetricsMiddleware
 from src.middleware.logging_middleware import RequestLoggingMiddleware
+from src.middleware.request_id import RequestIDMiddleware
+from src.middleware.slow_endpoint import SlowEndpointMiddleware
 
 # 대시보드
 from services.api_gateway.dashboard import router as dashboard_router
 
 # Kiwoom 연동
-from src.api_gateway.kiwoom_integration import create_kiwoom_integration
-from src.api_gateway.kiwoom_routes import setup_kiwoom_routes
+from src.api_gateway.kiwoom_integration import (
+    create_kiwoom_integration,
+    setup_kiwoom_routes,
+)
+from src.websocket.server import connection_manager, price_broadcaster
 
 # API 스키마
 from services.api_gateway.schemas import (
@@ -52,10 +61,6 @@ from services.api_gateway.schemas import (
     SignalHistoryResponse,
     BacktestStatsItem,
     BacktestKPIResponse,
-    EXAMPLE_SIGNAL,
-    EXAMPLE_MARKET_GATE,
-    EXAMPLE_ERROR,
-    EXAMPLE_METRICS,
 )
 
 
@@ -63,6 +68,9 @@ from services.api_gateway.schemas import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """애플리케이션 라이프사이클 관리"""
+    # Kiwoom WebSocket 연결 추적
+    kiwoom_ws = None
+
     # Startup
     print("🚀 API Gateway Starting...")
     print("📡 Registering services...")
@@ -74,48 +82,90 @@ async def lifespan(app: FastAPI):
     kiwoom_integration = create_kiwoom_integration()
     await kiwoom_integration.startup()
 
-    # Kiwoom WebSocket Bridge 연결 (Kiwoom Pipeline → WebSocket 클라이언트)
-    print("📡 Connecting Kiwoom Pipeline to WebSocket...")
-    try:
-        from src.websocket.kiwoom_bridge import init_kiwoom_ws_bridge
+    # Kiwoom WebSocket 직접 연결 및 실시간 데이터 브로드캐스트 설정
+    print("📡 Connecting to Kiwoom WebSocket for real-time prices...")
+    kiwoom_pipeline = kiwoom_integration.pipeline
 
-        kiwoom_pipeline = kiwoom_integration.pipeline
-        if kiwoom_pipeline:
-            await init_kiwoom_ws_bridge(kiwoom_pipeline)
-            print("✅ Kiwoom WebSocket Bridge connected")
-        else:
-            print("⚠️ Kiwoom Pipeline not available")
-    except Exception as e:
-        print(f"❌ Failed to connect Kiwoom WebSocket Bridge: {e}")
+    if kiwoom_pipeline:
+        # Pipeline이 실행될 때까지 대기
+        import asyncio
+        for attempt in range(10):  # 최대 10초 대기
+            if kiwoom_pipeline.is_running():
+                print("✅ Kiwoom Pipeline is running")
+                break
+            print(f"⏳ Waiting for Kiwoom Pipeline... ({attempt + 1}/10)")
+            await asyncio.sleep(1)
 
-    # KOA 실시간 데이터 파이프라인 (레거시 호환용 - Kiwoom이 없을 때만)
-    if kiwoom_integration.pipeline is None:
-        print("📡 Starting KOA real-time data pipeline (fallback)...")
-        try:
-            from src.koa.pipeline import init_pipeline_manager
-            import os
+        if kiwoom_pipeline.is_running():
+            # 실시간 데이터 브로드캐스트 콜백 등록
+            from src.kiwoom.base import KiwoomEventType
 
-            koa_app_key = os.environ.get("KIWOOM_APP_KEY")
-            has_koa_key = bool(koa_app_key and koa_app_key != "your_koa_app_key")
+            async def broadcast_price_to_frontend(price_data):
+                """Kiwoom 실시간 데이터를 프론트엔드 WebSocket으로 브로드캐스트"""
+                try:
+                    await connection_manager.broadcast(
+                        {
+                            "type": "price_update",
+                            "ticker": price_data.ticker,
+                            "data": {
+                                "price": price_data.price,
+                                "change": price_data.change,
+                                "change_rate": price_data.change_rate,
+                                "volume": price_data.volume,
+                                "bid_price": price_data.bid_price,
+                                "ask_price": price_data.ask_price,
+                            },
+                            "timestamp": price_data.timestamp,
+                            "source": "kiwoom_ws",
+                        },
+                        topic=f"price:{price_data.ticker}",
+                    )
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"Broadcasted Kiwoom price: {price_data.ticker} = {price_data.price}")
+                except Exception as e:
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error broadcasting price: {e}")
 
-            use_koa = has_koa_key
-            use_redis = True
-
-            pipeline_manager = await init_pipeline_manager(
-                use_koa=use_koa,
-                use_redis=use_redis,
-                tickers=["005930", "000660", "035420"],
-                update_interval=1.0
+            # 이벤트 핸들러 등록
+            kiwoom_pipeline.register_event_handler(
+                KiwoomEventType.RECEIVE_REAL_DATA,
+                broadcast_price_to_frontend
             )
+            print("✅ Kiwoom price broadcast handler registered")
 
-            if pipeline_manager:
-                mode = "KOA" if use_koa else "Mock"
-                print(f"✅ Real-time data pipeline started ({mode} mode)")
-            else:
-                print("⚠️ Pipeline manager initialization failed")
+            # 기본 종목 구독 (삼성전자, SK하이닉스, NAVER, 현대차)
+            default_tickers = ["005930", "000660", "035420", "005380"]
+            for ticker in default_tickers:
+                try:
+                    await kiwoom_pipeline.subscribe(ticker)
+                    price_broadcaster.add_ticker(ticker)
+                    print(f"✅ Subscribed to {ticker}")
+                except Exception as e:
+                    print(f"⚠️ Failed to subscribe to {ticker}: {e}")
 
-        except Exception as e:
-            print(f"❌ Failed to start KOA pipeline: {e}")
+            # Kiwoom WebSocket Bridge 연결 (기존 호환성 유지)
+            try:
+                from src.websocket.kiwoom_bridge import init_kiwoom_ws_bridge
+                await init_kiwoom_ws_bridge(kiwoom_pipeline)
+                print("✅ Kiwoom WebSocket Bridge connected")
+            except Exception as e:
+                print(f"⚠️ Kiwoom WebSocket Bridge: {e}")
+
+        else:
+            print("⚠️ Kiwoom Pipeline failed to start. Real-time prices not available.")
+
+    # Kiwoom REST API가 구성된 경우 Price Broadcaster 시작 (Pipeline 상관없이)
+    # WebSocket 연결 문제로 우회: REST API로만 가격 조회 후 브로드캐스트
+    import os
+    use_kiwoom_rest = os.getenv("USE_KIWOOM_REST", "false").lower() == "true"
+    has_api_keys = bool(os.getenv("KIWOOM_APP_KEY") and os.getenv("KIWOOM_SECRET_KEY"))
+
+    if use_kiwoom_rest and has_api_keys:
+        print("📡 Starting Price Broadcaster (REST API mode)...")
+        await price_broadcaster.start()
+        print("✅ Price Broadcaster started")
+    else:
+        print("⚠️ Real-time price broadcasting not available (Kiwoom REST API not configured)")
 
     yield
 
@@ -131,17 +181,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ Error stopping Kiwoom WebSocket Bridge: {e}")
 
+    # 가격 브로드캐스터 중지
+    print("📡 Stopping Price Broadcaster...")
+    await price_broadcaster.stop()
+    print("✅ Price Broadcaster stopped")
+
     # Kiwoom 연동 중지
     print("📡 Stopping Kiwoom REST API integration...")
     await kiwoom_integration.shutdown()
-
-    # KOA 파이프라인 중지 (레거시 호환용)
-    try:
-        from src.koa.pipeline import shutdown_pipeline_manager
-        await shutdown_pipeline_manager()
-        print("✅ KOA pipeline stopped")
-    except Exception as e:
-        print(f"⚠️ Error stopping KOA pipeline: {e}")
 
 
 app = FastAPI(
@@ -158,9 +205,9 @@ app = FastAPI(
     - **SmartMoney 수급 분석**: 외국인/기관 수급 데이터 분석
 
     ## 지원 서비스
-    - VCP Scanner (port 8001)
-    - Signal Engine (port 8003)
-    - Market Analyzer (port 8002)
+    - VCP Scanner (port 5112)
+    - Signal Engine (port 5113)
+    - Market Analyzer (port 5114)
     - Real-time Price Broadcaster
     """,
     version="2.0.0",
@@ -238,6 +285,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 요청 ID 미들웨어 (가장 먼저 실행)
+app.add_middleware(RequestIDMiddleware)
+
+# 느린 엔드포인트 추적 미들웨어
+app.add_middleware(SlowEndpointMiddleware, threshold=1.0)
+
 # 요청/응답 로깅 미들웨어 (CORS 다음, Metrics 이전)
 app.add_middleware(
     RequestLoggingMiddleware,
@@ -280,7 +333,9 @@ app.include_router(triggers_router)
 print("✅ Triggers routes registered")
 
 # Kiwoom 라우터 설정 (항상 등록, 내부에서可用性 체크)
-setup_kiwoom_routes(app)
+from src.websocket.kiwoom_bridge import get_kiwoom_ws_bridge
+ws_bridge = get_kiwoom_ws_bridge()
+setup_kiwoom_routes(app, ws_bridge=ws_bridge)
 print("✅ Kiwoom routes registered")
 
 # Chatbot 라우터 포함
@@ -404,11 +459,6 @@ async def prometheus_metrics():
     responses={
         200: {
             "description": "JSON 형식 메트릭",
-            "content": {
-                "application/json": {
-                    "example": EXAMPLE_METRICS,
-                }
-            }
         }
     },
 )
@@ -481,19 +531,9 @@ async def reset_metrics():
     responses={
         200: {
             "description": "시그널 목록 반환 성공",
-            "content": {
-                "application/json": {
-                    "example": [EXAMPLE_SIGNAL]
-                }
-            }
         },
         503: {
             "description": "VCP Scanner 서비스 unavailable",
-            "content": {
-                "application/json": {
-                    "example": EXAMPLE_ERROR
-                }
-            }
         }
     },
 )
@@ -584,19 +624,9 @@ async def get_kr_signals(
     responses={
         200: {
             "description": "Market Gate 상태 반환 성공",
-            "content": {
-                "application/json": {
-                    "example": EXAMPLE_MARKET_GATE
-                }
-            }
         },
         503: {
             "description": "Market Analyzer 서비스 unavailable",
-            "content": {
-                "application/json": {
-                    "example": EXAMPLE_ERROR
-                }
-            }
         }
     },
 )
@@ -643,13 +673,7 @@ async def get_kr_market_gate(db: Session = Depends(get_db_session)):
         return max(0, min(100, 50 + (change_pct * 10)))
 
     if not market_status:
-        # 데이터가 없는 경우 기본 응답 반환 + 섹터 Mock 데이터
-        mock_sectors = [
-            SectorItem(name="반도체", signal="neutral", change_pct=0.0, score=50.0),
-            SectorItem(name="2차전지", signal="neutral", change_pct=0.0, score=50.0),
-            SectorItem(name="자동차", signal="neutral", change_pct=0.0, score=50.0),
-            SectorItem(name="바이오", signal="neutral", change_pct=0.0, score=50.0),
-        ]
+        # 데이터가 없는 경우 빈 섹터 목록 반환
         return MarketGateStatus(
             status="YELLOW",
             level=50,
@@ -659,7 +683,7 @@ async def get_kr_market_gate(db: Session = Depends(get_db_session)):
             kospi_change_pct=None,
             kosdaq_close=None,
             kosdaq_change_pct=None,
-            sectors=mock_sectors,
+            sectors=[],  # 빈 배열 반환 (mock 데이터 제거)
             updated_at=datetime.now().isoformat(),
         )
 
@@ -668,11 +692,11 @@ async def get_kr_market_gate(db: Session = Depends(get_db_session)):
 
     # 섹터 데이터 생성 (MarketStatus의 JSON 필드 활용)
     sectors = []
-    if market_status.sector_data:
-        # sector_data는 JSON 형식으로 저장: [{"name": "반도체", "change_pct": 2.5}, ...]
+    if market_status.sector_scores:
+        # sector_scores는 JSON 형식으로 저장: [{"name": "반도체", "change_pct": 2.5}, ...]
         try:
             import json
-            sector_data_list = json.loads(market_status.sector_data) if isinstance(market_status.sector_data, str) else market_status.sector_data
+            sector_data_list = json.loads(market_status.sector_scores) if isinstance(market_status.sector_scores, str) else market_status.sector_scores
             for sector in sector_data_list:
                 sectors.append(SectorItem(
                     name=sector.get("name", "알 수 없음"),
@@ -680,27 +704,21 @@ async def get_kr_market_gate(db: Session = Depends(get_db_session)):
                     change_pct=sector.get("change_pct", 0),
                     score=get_sector_score(sector.get("change_pct", 0)),
                 ))
-        except (json.JSONDecodeError, TypeError):
-            # JSON 파싱 실패 시 Mock 데이터 반환
-            pass
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"Failed to parse sector data: {e}")
 
-    # 섹터 데이터가 없으면 기본 섹터 Mock 데이터 반환
+    # 섹터 데이터가 없으면 빈 배열 반환 (mock 데이터 제거)
     if not sectors:
-        sectors = [
-            SectorItem(name="반도체", signal="neutral", change_pct=0.0, score=50.0),
-            SectorItem(name="2차전지", signal="neutral", change_pct=0.0, score=50.0),
-            SectorItem(name="자동차", signal="neutral", change_pct=0.0, score=50.0),
-            SectorItem(name="바이오", signal="neutral", change_pct=0.0, score=50.0),
-        ]
+        logger.warning("No sector data available in database")
 
     return MarketGateStatus(
         status=market_status.gate or "YELLOW",
         level=market_status.gate_score or 50,
         kospi_status=kospi_status,
         kosdaq_status=kosdaq_status,
-        kospi_close=market_status.kospi_close,
+        kospi_close=market_status.kospi,  # 컬럼명 수정: kospi_close → kospi
         kospi_change_pct=market_status.kospi_change_pct,
-        kosdaq_close=market_status.kosdaq_close,
+        kosdaq_close=market_status.kosdaq,  # 컬럼명 수정: kosdaq_close → kosdaq
         kosdaq_change_pct=market_status.kosdaq_change_pct,
         sectors=sectors,
         updated_at=market_status.created_at.isoformat() if market_status.created_at else datetime.now().isoformat(),
@@ -802,11 +820,6 @@ async def get_backtest_kpi(db: Session = Depends(get_db_session)):
     responses={
         200: {
             "description": "최신 종가베팅 V2 시그널 반환 성공",
-            "content": {
-                "application/json": {
-                    "example": [EXAMPLE_SIGNAL]
-                }
-            }
         },
         503: {
             "description": "Signal Engine 서비스 unavailable",
@@ -1194,7 +1207,7 @@ async def get_stock_flow(
 
     ## 사용 예시
     ```bash
-    curl "http://localhost:8000/api/kr/stocks/005930/flow?days=20"
+    curl "http://localhost:5111/api/kr/stocks/005930/flow?days=20"
     ```
     """
     try:
@@ -1333,7 +1346,7 @@ async def get_stock_signals(
 
     ## 사용 예시
     ```bash
-    curl "http://localhost:8000/api/kr/stocks/005930/signals?limit=50"
+    curl "http://localhost:5111/api/kr/stocks/005930/signals?limit=50"
     ```
     """
     try:

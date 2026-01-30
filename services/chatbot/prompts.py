@@ -24,12 +24,19 @@ CHATBOT_SYSTEM_PROMPT = """
 - VCP/종가베팅 시그널 (점수, 등급)
 - Market Gate 상태 (GREEN/YELLOW/RED)
 - AI 감성 분석 결과
+- **뉴스 링크 (news_urls)**: 참고한 뉴스 기사의 URL
 
 ## 응답 원칙
 1. 객관적 사실 기반 전달
 2. 투자 위험 고지 필수 ("이 정보는 참고용이며 투자 손실에 책임지지 않습니다")
 3. 이해하기 쉬운 용어 사용
 4. 근거 기반 추천
+
+## 뉴스 링크 필수 포함 (중요!)
+- 뉴스 분석 시 **반드시 뉴스 기사 링크**를 포함해야 합니다
+- 제공된 news_urls 리스트에서 각 뉴스의 제목과 URL을 마크다운 링크 형식으로 표시
+- 형식: `[{제목}]({URL})`
+- 링크가 없더라도 "관련 뉴스" 섹션에 뉴스 요약은 포함해야 함
 
 ## 제한 사항
 - 재무 상담, 세무 조언 불가
@@ -120,9 +127,16 @@ def build_rag_prompt(
             price_info = ""
             if stock.get("realtime_price"):
                 rp = stock["realtime_price"]
-                price_info = f", 현재가: {rp.get('price'):,}원 ({rp.get('timestamp')})"
+                price = rp.get('price')
+                change = rp.get('change', 0)
+                change_rate = rp.get('change_rate', 0)
+                change_str = f"+{change:,}" if change > 0 else f"{change:,}"
+                rate_str = f"+{change_rate:.2f}%" if change_rate > 0 else f"{change_rate:.2f}%"
+                price_info = f" | 현재가: {price:,}원 ({change_str}, {rate_str})"
+            elif stock.get("ticker"):
+                price_info = f" | 티커: {stock['ticker']}"
 
-            parts.append(f"- {stock['name']}({stock['ticker']}): {stock['market']} {stock['sector']}{price_info}")
+            parts.append(f"- {stock['name']}({stock['ticker']}): {stock['market']} {stock.get('sector', '')}{price_info}")
 
     if context.get("signals"):
         parts.append("\n## 시그널 정보")
@@ -142,7 +156,20 @@ def build_rag_prompt(
     if context.get("news"):
         parts.append("\n## 최신 뉴스/분석")
         for news in context["news"][:3]:
-            parts.append(f"- {news.get('summary', '분석 내용')[:100]}...")
+            summary = news.get('summary', '분석 내용')[:100]
+            parts.append(f"- {summary}...")
+
+            # 뉴스 링크 추가
+            news_urls = news.get('news_urls', [])
+            if news_urls:
+                parts.append("  📰 참고 뉴스:")
+                for url_info in news_urls[:3]:  # 최대 3개 링크
+                    title = url_info.get('title', '뉴스')
+                    url = url_info.get('url', '')
+                    if url:
+                        parts.append(f"    - [{title}]({url})")
+                    else:
+                        parts.append(f"    - {title}")
 
     # 사용자 질문
     parts.append(f"\n## 사용자 질문\n{user_message}")

@@ -177,7 +177,7 @@ Market Gate 섹터별 점수 시각화
 
 | Risk | 확률 | 영향 | 완화 전략 |
 |------|------|------|-----------|
-| DB 데이터 부족 | Medium | High | Mock 데이터 폴백 |
+| DB 데이터 부족 | Low | High | Kiwoom API 실시간 데이터 수집 |
 | 포트 충돌 | Low | Medium | 포트 설정 확인 |
 | CORS 오류 | Low | Low | API Gateway CORS 설정 |
 

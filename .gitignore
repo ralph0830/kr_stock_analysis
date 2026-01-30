@@ -80,6 +80,9 @@ data/csv/
 # Claude docs
 claudedocs/
 
+# Archived documents (not referenced)
+_archive/
+
 # Temporary files
 *.tmp
 *.bak

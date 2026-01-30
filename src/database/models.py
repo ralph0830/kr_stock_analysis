@@ -248,6 +248,9 @@ class AIAnalysis(Base):
     keywords = Column(JSON, nullable=True)  # 키워드 리스트
     recommendation = Column(String(20), nullable=True)  # BUY, SELL, HOLD
 
+    # 뉴스 출처 (참고한 뉴스 링크)
+    news_urls = Column(JSON, nullable=True, default=list)  # [{"title": "...", "url": "..."}]
+
     # 추가 정보
     news_count = Column(Integer, default=0)  # 분석한 뉴스 수
     model_version = Column(String(50), default="v1.0")  # 모델 버전

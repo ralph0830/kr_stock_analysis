@@ -20,7 +20,7 @@ export default function HomePage() {
   } = useStore();
 
   useEffect(() => {
-    // 데이터 로드
+    // 데이터 로드 (서비스 확인 없이 바로 시도)
     fetchSignals();
     fetchMarketGate();
   }, [fetchSignals, fetchMarketGate]);

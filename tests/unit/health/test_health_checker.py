@@ -207,7 +207,7 @@ class TestHttpServiceCheck:
 
             health = await checker._check_http_service(
                 name="test_service",
-                base_url="http://localhost:8000",
+                base_url="http://localhost:5111",
                 health_path="/health",
             )
 
@@ -230,7 +230,7 @@ class TestHttpServiceCheck:
 
             health = await checker._check_http_service(
                 name="test_service",
-                base_url="http://localhost:8000",
+                base_url="http://localhost:5111",
                 health_path="/health",
             )
 
@@ -255,7 +255,7 @@ class TestHttpServiceCheck:
 
             health = await checker._check_http_service(
                 name="test_service",
-                base_url="http://localhost:8000",
+                base_url="http://localhost:5111",
                 health_path="/health",
             )
 

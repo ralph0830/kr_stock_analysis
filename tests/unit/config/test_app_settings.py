@@ -121,15 +121,15 @@ class TestEnvOverride:
         with patch.dict(
             os.environ,
             {
-                "VCP_SCANNER_URL": "http://scanner:8000",
-                "SIGNAL_ENGINE_URL": "http://signal:8001",
-                "MARKET_ANALYZER_URL": "http://analyzer:8002",
+                "VCP_SCANNER_URL": "http://scanner:5112",
+                "SIGNAL_ENGINE_URL": "http://signal:5113",
+                "MARKET_ANALYZER_URL": "http://analyzer:5114",
             },
         ):
             settings = AppSettings()
-            assert settings.vcp_scanner_url == "http://scanner:8000"
-            assert settings.signal_engine_url == "http://signal:8001"
-            assert settings.market_analyzer_url == "http://analyzer:8002"
+            assert settings.vcp_scanner_url == "http://scanner:5112"
+            assert settings.signal_engine_url == "http://signal:5113"
+            assert settings.market_analyzer_url == "http://analyzer:5114"
 
     def test_gemini_api_key_override(self):
         """GEMINI_API_KEY 환경변수 오버라이드 테스트"""
@@ -276,14 +276,14 @@ class TestHelperMethods:
     def test_get_service_urls(self):
         """서비스 URL 딕셔너리 반환 확인"""
         settings = AppSettings(
-            vcp_scanner_url="http://scanner:8000",
-            signal_engine_url="http://signal:8001",
-            market_analyzer_url="http://analyzer:8002",
+            vcp_scanner_url="http://scanner:5112",
+            signal_engine_url="http://signal:5113",
+            market_analyzer_url="http://analyzer:5114",
         )
         urls = settings.get_service_urls()
-        assert urls["vcp_scanner"] == "http://scanner:8000"
-        assert urls["signal_engine"] == "http://signal:8001"
-        assert urls["market_analyzer"] == "http://analyzer:8002"
+        assert urls["vcp_scanner"] == "http://scanner:5112"
+        assert urls["signal_engine"] == "http://signal:5113"
+        assert urls["market_analyzer"] == "http://analyzer:5114"
 
     def test_get_celery_config(self):
         """Celery 설정 딕셔너리 반환 확인"""
@@ -398,12 +398,12 @@ class TestIntegration:
 
     def test_multiple_independent_instances(self):
         """독립적인 인스턴스 생성 확인"""
-        settings1 = AppSettings(vcp_scanner_url="http://instance1:8000")
-        settings2 = AppSettings(vcp_scanner_url="http://instance2:8000")
+        settings1 = AppSettings(vcp_scanner_url="http://instance1:5112")
+        settings2 = AppSettings(vcp_scanner_url="http://instance2:5112")
 
         # 독립적인 인스턴스이므로 서로 다른 값 유지
-        assert settings1.vcp_scanner_url == "http://instance1:8000"
-        assert settings2.vcp_scanner_url == "http://instance2:8000"
+        assert settings1.vcp_scanner_url == "http://instance1:5112"
+        assert settings2.vcp_scanner_url == "http://instance2:5112"
         assert settings1 is not settings2
 
 

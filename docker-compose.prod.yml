@@ -87,15 +87,15 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kr_stock}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      VCP_SCANNER_URL: http://vcp-scanner:8000
-      SIGNAL_ENGINE_URL: http://signal-engine:8000
-      MARKET_ANALYZER_URL: http://market-analyzer:8000
+      VCP_SCANNER_URL: http://vcp-scanner:5112
+      SIGNAL_ENGINE_URL: http://signal-engine:5113
+      CHATBOT_SERVICE_URL: http://chatbot:5114
       KIWOOM_APP_KEY: ${KIWOOM_APP_KEY}
       KIWOOM_SECRET_KEY: ${KIWOOM_SECRET_KEY}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ENVIRONMENT: production
     ports:
-      - "${API_GATEWAY_PORT:-5111}:8000"
+      - "${API_GATEWAY_PORT:-5111}:5111"
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,7 +109,7 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -145,7 +145,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ENVIRONMENT: production
     ports:
-      - "${VCP_SCANNER_PORT:-5112}:8000"
+      - "${VCP_SCANNER_PORT:-5112}:5112"
     depends_on:
       postgres:
         condition: service_healthy
@@ -155,7 +155,7 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -192,7 +192,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ENVIRONMENT: production
     ports:
-      - "${SIGNAL_ENGINE_PORT:-5113}:8000"
+      - "${SIGNAL_ENGINE_PORT:-5113}:5113"
     depends_on:
       postgres:
         condition: service_healthy
@@ -202,7 +202,7 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
       interval: 30s
       timeout: 10s
       retries: 3

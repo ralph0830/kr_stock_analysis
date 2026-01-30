@@ -40,7 +40,8 @@ COPY services/ services/
 COPY tasks/ tasks/
 COPY data/ data/
 
-CMD ["python", "-m", "uvicorn", "services.${SERVICE_NAME}.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# 기본 CMD (docker-compose.yml에서 오버라이드)
+CMD ["python", "-m", "uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "5111", "--reload"]
 
 # Stage 3: Production Runtime
 FROM python:3.11-slim as production
@@ -75,10 +76,10 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:5111/health || exit 1
 
 # Expose port
-EXPOSE 8000
+EXPOSE 5111
 
 # Run application
-CMD ["uvicorn", "services.${SERVICE_NAME}.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "services.${SERVICE_NAME}.main:app", "--host", "0.0.0.0", "--port", "5111"]

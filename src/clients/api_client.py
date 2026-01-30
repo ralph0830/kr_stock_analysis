@@ -89,14 +89,14 @@ class APIClient:
     KR Stock API Gateway용 HTTP 클라이언트
 
     사용 예:
-        client = APIClient(base_url="http://localhost:8000")
+        client = APIClient(base_url="http://localhost:5111")
         signals = await client.get_signals(limit=10)
         market_gate = await client.get_market_gate()
     """
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:5111",
         api_key: Optional[str] = None,
         timeout: float = 30.0,
     ):
@@ -329,7 +329,7 @@ class SyncAPIClient:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8000",
+        base_url: str = "http://localhost:5111",
         api_key: Optional[str] = None,
         timeout: float = 30.0,
     ):

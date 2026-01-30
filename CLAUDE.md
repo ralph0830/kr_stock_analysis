@@ -46,7 +46,7 @@ KR Stock Analysis System is a microservices-based Korean stock analysis platform
 | **API Gateway** | 5111 | Main API Gateway |
 | **VCP Scanner** | 5112 | Pattern detection service |
 | **Signal Engine** | 5113 | Scoring & signal generation |
-| **Market Analyzer** | 5114 | Market analysis service |
+| **Chatbot** | 5114 | AI chatbot service with WebSocket |
 | **PostgreSQL** | 5433 | Database (external: 5432) |
 | **Redis** | 6380 | Cache/Message broker (external: 6379) |
 | **Flower** | 5555 | Celery monitoring |
@@ -75,7 +75,7 @@ KR Stock Analysis System is a microservices-based Korean stock analysis platform
 4. **Kiwoom REST API** (`src/kiwoom/`)
    - REST API client for Kiwoom securities
    - WebSocket real-time data streaming
-   - Mock bridge for testing
+   - Real-time price subscription and broadcasting
    - Endpoints: `/api/kr/kiwoom/health`, `/api/kr/kiwoom/subscribe`, `/api/kr/kiwoom/prices`
 
 5. **Event Bus** (`services/event_bus/`)
@@ -99,13 +99,11 @@ KR Stock Analysis System is a microservices-based Korean stock analysis platform
      - `fetch_stock_list()` - Stock master data from KOSPI/KOSDAQ
      - `fetch_daily_prices()` - OHLCV daily price data
      - `fetch_supply_demand()` - Foreign/institutional flow data
-     - Includes fallback to mock data when pykrx unavailable
 
 9. **Analysis Modules** (`src/analysis/`)
    - `SentimentAnalyzer` - Gemini API-based news sentiment analysis
      - `Sentiment` enum (POSITIVE/NEGATIVE/NEUTRAL)
      - `SentimentResult` with confidence, keywords, summary, score (-1.0~1.0)
-     - Fallback to keyword-based mock analysis without API key
    - `NewsScorer` - 종가베팅 V2 news scoring (0-3 points)
      - `calculate_daily_score()` - Daily news score calculation
      - `calculate_weekly_score()` - Weekly aggregation
@@ -347,13 +345,12 @@ CELERY_RESULT_BACKEND=redis://localhost:6380/2
 # Service URLs (for API Gateway)
 VCP_SCANNER_URL=http://localhost:5112
 SIGNAL_ENGINE_URL=http://localhost:5113
-MARKET_ANALYZER_URL=http://localhost:5114
+CHATBOT_SERVICE_URL=http://localhost:5114
 
 # Kiwoom REST API
 KIWOOM_APP_KEY=your_app_key
 KIWOOM_SECRET_KEY=your_secret_key
 USE_KIWOOM_REST=true
-USE_MOCK=true
 ```
 
 ### Frontend Environment Variables
@@ -534,7 +531,7 @@ All data collectors should inherit from `BaseCollector` in `src/collectors/base.
 - Implement `fetch_stock_list()`, `fetch_daily_prices()`, `fetch_supply_demand()`
 - Use `normalize_ticker()` for consistent 6-digit ticker codes
 - Use `validate_date_range()` for date range handling
-- Include fallback/mock data for offline development
+- Use real-time data from KRX and Kiwoom APIs
 
 ### Service Communication
 - Use `ServiceRegistry` for service discovery (no hardcoded URLs)
@@ -549,7 +546,7 @@ All data collectors should inherit from `BaseCollector` in `src/collectors/base.
 - TimescaleDB hypertables for time-series data (DailyPrice)
 
 ### Testing Strategy
-- Unit tests: Mock external dependencies (pykrx, Gemini API, Redis)
+- Unit tests: Mock external dependencies for isolated testing
 - Integration tests: Use real database via pytest fixtures
 - Test scripts in `scripts/` for manual data collection testing
 
@@ -671,5 +668,4 @@ KIWOOM_APP_KEY=79YOf4S3zPm1NPTaie7WP3qamJnLD-Oxi1EOT4V-jA8
 KIWOOM_SECRET_KEY=u0GjsIxLV8H4oY4jX5OPoEl_LpZR12NJnTd1BXkGqVY
 KIWOOM_BASE_URL=https://api.kiwoom.com
 USE_KIWOOM_REST=true
-# USE_MOCK=false (default, not set in .env)
 ```

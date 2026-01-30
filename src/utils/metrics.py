@@ -115,6 +115,7 @@ class Histogram:
         histogram.observe(0.3)
         histogram.observe(1.5)
         histogram.get() -> {"count": 2, "sum": 1.8, "buckets": {...}}
+        histogram.get_percentile(0.95) -> 1.5  # P95
     """
 
     def __init__(
@@ -128,6 +129,7 @@ class Histogram:
         self.help_text = help_text
         self.labels = labels or {}
         self._bucket = HistogramBucket()
+        self._observations: List[float] = []  # 정확한 백분위수 계산용
 
         # 기본 버킷
         if buckets is None:
@@ -143,6 +145,9 @@ class Histogram:
         self._bucket.count += 1
         self._bucket.sum += value
 
+        # 관측값 저장 (정확한 백분위수 계산용)
+        self._observations.append(value)
+
         # 버킷 업데이트
         for bucket_bound in sorted(self._bucket.buckets.keys()):
             if value <= bucket_bound:
@@ -154,11 +159,38 @@ class Histogram:
             "count": self._bucket.count,
             "sum": self._bucket.sum,
             "buckets": dict(self._bucket.buckets),
+            "p50": self.get_percentile(0.50),
+            "p95": self.get_percentile(0.95),
+            "p99": self.get_percentile(0.99),
+            "avg": self._bucket.sum / self._bucket.count if self._bucket.count > 0 else 0,
         }
+
+    def get_percentile(self, percentile: float) -> float:
+        """
+        백분위수 계산
+
+        Args:
+            percentile: 백분위수 (0.0 ~ 1.0)
+
+        Returns:
+            백분위수 값
+        """
+        if not self._observations:
+            return 0.0
+
+        sorted_obs = sorted(self._observations)
+        n = len(sorted_obs)
+        index = int(n * percentile)
+
+        if index >= n:
+            index = n - 1
+
+        return sorted_obs[index]
 
     def reset(self) -> None:
         """리셋"""
         self._bucket = HistogramBucket()
+        self._observations = []
         for bucket_bound in self._bucket.buckets.keys():
             self._bucket.buckets[bucket_bound] = 0
 
@@ -297,6 +329,10 @@ class MetricsRegistry:
                     "count": data["count"],
                     "sum": data["sum"],
                     "buckets": buckets_serializable,
+                    "p50": data.get("p50", 0),
+                    "p95": data.get("p95", 0),
+                    "p99": data.get("p99", 0),
+                    "avg": data.get("avg", 0),
                 },
                 "help": histogram.help_text,
             }

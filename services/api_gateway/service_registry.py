@@ -47,7 +47,7 @@ class ServiceRegistry:
     def _load_from_env(self):
         """환경 변수에서 서비스 설정 로드"""
         # VCP Scanner
-        vcp_url = os.getenv("VCP_SCANNER_URL", "http://localhost:8001")
+        vcp_url = os.getenv("VCP_SCANNER_URL", "http://localhost:5112")
         self.register(ServiceInfo(
             name="vcp-scanner",
             url=vcp_url,
@@ -55,7 +55,7 @@ class ServiceRegistry:
         ))
 
         # Market Analyzer
-        market_url = os.getenv("MARKET_ANALYZER_URL", "http://localhost:8002")
+        market_url = os.getenv("MARKET_ANALYZER_URL", "http://localhost:5114")
         self.register(ServiceInfo(
             name="market-analyzer",
             url=market_url,
@@ -63,7 +63,7 @@ class ServiceRegistry:
         ))
 
         # Signal Engine
-        signal_url = os.getenv("SIGNAL_ENGINE_URL", "http://localhost:8003")
+        signal_url = os.getenv("SIGNAL_ENGINE_URL", "http://localhost:5113")
         self.register(ServiceInfo(
             name="signal-engine",
             url=signal_url,
@@ -72,7 +72,7 @@ class ServiceRegistry:
         ))
 
         # AI Analyzer
-        ai_url = os.getenv("AI_ANALYZER_URL", "http://localhost:8004")
+        ai_url = os.getenv("AI_ANALYZER_URL", "http://localhost:5115")
         self.register(ServiceInfo(
             name="ai-analyzer",
             url=ai_url,

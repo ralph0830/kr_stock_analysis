@@ -96,10 +96,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || defaultUrl;
 
     // 디버깅용 URL 로깅
-    console.log("[WebSocket] Connecting to:", wsUrl);
+    console.log("[useWebSocket] Getting client for:", wsUrl);
 
-    // 클라이언트 생성
+    // 클라이언트 생성 (싱글톤)
     clientRef.current = createWebSocketClient(wsUrl);
+
+    // 연결 상태 동기화 (이미 연결된 경우)
+    if (clientRef.current.connectionState === "connected") {
+      setConnectionState("connected");
+    }
 
     // 메시지 수신 처리
     const unsubscribeMessage = clientRef.current.onMessage((message: WSMessage) => {
@@ -156,19 +161,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
     });
 
-    // 자동 연결
-    if (autoConnect) {
+    // 자동 연결 (이미 연결되어 있지 않은 경우만)
+    if (autoConnect && clientRef.current.connectionState === "disconnected") {
       clientRef.current.connect(initialTopics);
     }
 
-    // 클린업
+    // 클린업 (연결 끊지 않고 콜백만 정리)
     return () => {
       unsubscribeMessage();
       unsubscribeStateChange();
-      if (clientRef.current) {
-        clientRef.current.disconnect();
-        clientRef.current = null;
-      }
+      // 싱글톤이므로 연결을 끊지 않음 (다른 컴포넌트 사용 중일 수 있음)
     };
   }, []); // 빈 의존성 배열: 마운트 시 한 번만 실행
 

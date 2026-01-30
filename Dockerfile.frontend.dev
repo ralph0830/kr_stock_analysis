@@ -1,0 +1,18 @@
+# ============================================================================
+# Next.js Frontend Development Dockerfile
+# ============================================================================
+# 개발용: Hot Reload 지원, 소스 코드 마운트용
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 패키지 파일 복사 및 설치
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# 개발 서버 포트 노출
+EXPOSE 5110
+
+# Hot Reload를 위한 개발 서버 시작
+CMD ["npm", "run", "dev"]

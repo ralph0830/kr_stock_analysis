@@ -10,6 +10,12 @@ from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 import logging
 
+# 로그 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 from services.vcp_scanner.vcp_analyzer import VCPAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -88,9 +94,13 @@ async def health_check():
 # ============================================================================
 
 @app.get("/signals")
-async def get_signals(limit: int = 20):
+async def get_signals(limit: int = 20, market: str = "ALL"):
     """
     활성 VCP 시그널 조회
+
+    Args:
+        limit: 최대 반환 개수
+        market: 시장 필터 (KOSPI, KOSDAQ, ALL)
 
     Returns:
         VCP 패턴이 감지된 종목 리스트
@@ -100,7 +110,7 @@ async def get_signals(limit: int = 20):
 
         # TODO: Database에서 저장된 시그널 조회
         # 현재는 실시간 분석 결과 반환
-        results = await analyzer.scan_market("KOSPI", top_n=limit)
+        results = await analyzer.scan_market(market, top_n=limit)
 
         return {
             "signals": [r.to_dict() for r in results],

@@ -71,6 +71,7 @@ class KiwoomRestAPI:
     BALANCE_URL = "/api/dostk/t0424"      # 잔고 조회
     DEPOSIT_URL = "/api/dostk/t0425"      # 예수금 조회
     CHART_URL = "/api/dostk/chart"        # 종목별투자자기관별차트 (ka10060)
+    DAILY_CHART_URL = "/api/dostk/ka10081"  # 주식일봉차트조회 (지수 포함)
 
     # 주문 유형
     ORDER_BUY = "001"       # 매수
@@ -410,6 +411,11 @@ class KiwoomRestAPI:
             현재가 정보 또는 None
         """
         try:
+            # 토큰 유효성 확인
+            await self.ensure_token_valid()
+
+            client = await self._get_client()
+
             # JSON-RPC 2.0 요청
             request_data = {
                 "jsonrpc": "2.0",
@@ -422,13 +428,34 @@ class KiwoomRestAPI:
                 "id": 1,
             }
 
-            response = await self._request_with_auth("POST", self.PRICE_URL, data=request_data)
+            # 헤더에 api-id 포함 (필수!)
+            headers = {
+                "Authorization": f"Bearer {self._access_token}",
+                "api-id": "ka10001",  # 현재가 API ID
+                "Content-Type": "application/json;charset=UTF-8",
+            }
+
+            response = await client.post(
+                self.PRICE_URL,
+                json=request_data,
+                headers=headers,
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            # return_code 확인
+            return_code = result.get("return_code", -1)
+            if return_code != 0:
+                logger.warning(f"Current price API returned code {return_code}: {result.get('return_msg')}")
+                return None
 
             # 응답 파싱
-            result = response.get("result", {})
-            t0414 = result.get("t0414", [])
+            result_data = result.get("result", {})
+            t0414 = result_data.get("t0414", [])
 
             if not t0414 or len(t0414) < 8:
+                logger.warning(f"Invalid current price response for {ticker}: {t0414}")
                 return None
 
             return RealtimePrice(
@@ -442,8 +469,8 @@ class KiwoomRestAPI:
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
-        except KiwoomAPIError as e:
-            logger.error(f"Get current price failed: {e}")
+        except HTTPStatusError as e:
+            logger.error(f"Get current price failed: {e.response.status_code}")
             return None
         except Exception as e:
             logger.error(f"Get current price error: {e}")
@@ -626,10 +653,13 @@ class KiwoomRestAPI:
                         if item_date != date_str:
                             continue
                         # 데이터 파싱
+                        # pred_pre: 전일대비 (부호 포함, 예: +9500, -3000)
+                        # "+" 제거만 하고 "-"는 유지하여 음수값 정상 처리
+                        pred_pre_val = item.get("pred_pre", "0").replace("+", "")
                         price_data.append({
                             "date": item.get("dt", date_str),
                             "price": int(item.get("cur_prc", "0").replace("+", "").replace("-", "")),
-                            "change": int(item.get("pred_pre", "0").replace("+", "").replace("-", "")),
+                            "change": int(pred_pre_val),
                             "volume": int(item.get("acc_trde_prica", "0")),
                             # 투자자별 수급
                             "individual": int(item.get("ind_invsr", "0")),  # 개인
@@ -893,3 +923,238 @@ class KiwoomRestAPI:
     def has_valid_token(self) -> bool:
         """유효한 토큰 보유 여부"""
         return self.is_token_valid()
+
+    # ==================== 지수 데이터 조회 ====================
+
+    # 지수 종목코드
+    KOSPI_INDEX_CODE = "KS11"   # KOSPI 지수 코드
+    KOSDAQ_INDEX_CODE = "KQ11"  # KOSDAQ 지수 코드
+
+    async def get_index_price(self, index_code: str) -> Optional[Dict[str, Any]]:
+        """
+        지수 현재가 조회 (KOSPI/KOSDAQ)
+
+        kiwoom REST API는 지수 전용 API가 없으며,
+        주식기본정보(ka10001) API를 사용하여 지수 정보를 조회합니다.
+
+        Args:
+            index_code: 지수 코드 ("KS11": KOSPI, "KQ11": KOSDAQ)
+
+        Returns:
+            지수 정보 딕셔너리 {"price": float, "change": float, "change_pct": float}
+        """
+        try:
+            await self.ensure_token_valid()
+
+            client = await self._get_client()
+
+            # 주식기본정보 API (ka10001)
+            # 엔드포인트: /api/dostk/stkinfo
+            headers = {
+                "Authorization": f"Bearer {self._access_token}",
+                "api-id": "ka10001",
+                "Content-Type": "application/json;charset=UTF-8",
+                "cont-yn": "N",  # 연속조회여부 (N: 처음, Y: 다음)
+                "next-key": "",  # 연속조회키
+            }
+
+            # 요청 파라미터 (단순 POST)
+            request_data = {
+                "stk_cd": index_code,  # 지수 코드 (KS11: KOSPI, KQ11: KOSDAQ)
+            }
+
+            # 전체 URL 사용
+            url = f"{self._config.base_url}/api/dostk/stkinfo"
+            logger.info(f"Fetching index price from: {url} with code: {index_code}")
+
+            response = await client.post(
+                url,
+                json=request_data,
+                headers=headers,
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            # 디버깅: 응답의 핵심 필드만 로깅
+            cur_prc = result.get("cur_prc", "")
+            logger.info(f"Index API response for {index_code}: return_code={result.get('return_code')}, cur_prc=[{cur_prc}], stk_cd=[{result.get('stk_cd')}]")
+
+            # return_code 확인
+            return_code = result.get("return_code", -1)
+            if return_code != 0:
+                logger.warning(f"Index price API returned code {return_code}: {result.get('return_msg')}")
+                return None
+
+            # 응답 파싱 (ka10001 응답 구조 - 데이터가 바로 최상위 레벨에 있음)
+            cur_prc = result.get("cur_prc", "")
+            if not cur_prc or cur_prc == "":
+                logger.warning(f"No current price in response for {index_code}")
+                return None
+
+            return {
+                "code": result.get("stk_cd", index_code),
+                "name": result.get("stk_nm", ""),
+                "price": float(cur_prc),
+                "change": float(result.get("pred_pre", "0").replace("+", "")),  # 전일대비
+                "change_pct": float(result.get("flu_rt", "0").replace("+", "")),  # 등락율 (%)
+                "volume": int(result.get("trde_qty", "0") or 0),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        except HTTPStatusError as e:
+            logger.error(f"Get index price failed: {e.response.status_code}, response: {e.response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"Get index price error: {e}")
+            return None
+
+    async def get_index_daily_chart(
+        self,
+        index_code: str,
+        days: int = 5,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        지수 일봉 차트 조회 (ka10081)
+
+        ka10081 주식일봉차트조회 API를 사용하여 지수 차트 데이터를 조회합니다.
+
+        Args:
+            index_code: 지수 코드 ("KS11": KOSPI, "KQ11": KOSDAQ)
+            days: 조회 일수
+
+        Returns:
+            일봉 차트 데이터 리스트 [{"date": "YYYYMMDD", "open": float, "high": float, ...}]
+        """
+        try:
+            await self.ensure_token_valid()
+
+            client = await self._get_client()
+
+            # 기본 날짜 범위 계산 (영업일 기준)
+            from datetime import datetime, timedelta
+
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days * 2)  # 주말 고려하여 여유있게
+
+            # 주식일봉차트조회 API (ka10081)
+            headers = {
+                "Authorization": f"Bearer {self._access_token}",
+                "api-id": "ka10081",
+                "Content-Type": "application/json;charset=UTF-8",
+            }
+
+            # 요청 파라미터
+            request_data = {
+                "stk_cd": index_code,  # 지수 코드
+                "inq_strt_dt": start_date.strftime("%Y%m%d"),  # 조회시작일
+                "inq_end_dt": end_date.strftime("%Y%m%d"),      # 조회종료일
+                "data_tp": "01",  # 데이터유형 (01:일봉, 02:주봉, 03:월봉)
+                "isu_cd_tp": "02",  # 종목코드구분 (02: 지수)
+                "cont_yn": "N",
+                "next_key": "",
+            }
+
+            # ka10081 전용 엔드포인트
+            url = f"{self._config.base_url}/api/dostk/ka10081"
+            logger.info(f"Fetching index chart from: {url} with code: {index_code}")
+
+            response = await client.post(
+                url,
+                json=request_data,
+                headers=headers,
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            logger.info(f"Index chart API response for {index_code}: return_code={result.get('return_code')}")
+
+            # return_code 확인
+            return_code = result.get("return_code", -1)
+            if return_code != 0:
+                logger.warning(f"Index chart API returned code {return_code}: {result.get('return_msg')}")
+                return None
+
+            # 응답 파싱 (ka10081 응답 구조 - dtal_1 배열에 차트 데이터)
+            chart_data = result.get("dtal_1", [])
+            if not chart_data:
+                logger.warning(f"No chart data in response for {index_code}")
+                return None
+
+            # 변환된 데이터 반환
+            parsed_data = []
+            for item in chart_data:
+                parsed_data.append({
+                    "date": item.get("dt", ""),           # 날짜 (YYYYMMDD)
+                    "open": float(item.get("opn_prc", "0") or "0"),
+                    "high": float(item.get("hgh_prc", "0") or "0"),
+                    "low": float(item.get("lw_prc", "0") or "0"),
+                    "close": float(item.get("cls_prc", "0") or "0"),
+                    "volume": int(item.get("trde_qty", "0") or "0"),
+                })
+
+            logger.info(f"Retrieved {len(parsed_data)} index chart data points for {index_code}")
+            return parsed_data
+
+        except HTTPStatusError as e:
+            logger.error(f"Get index chart failed: {e.response.status_code}, response: {e.response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"Get index chart error: {e}")
+            return None
+
+    async def get_index_price_from_chart(self, index_code: str) -> Optional[Dict[str, Any]]:
+        """
+        차트 데이터에서 최신 지수 가격 추출
+
+        ka10081 일봉 차트 데이터를 조회하여 가장 최신의 지수 정보를 반환합니다.
+
+        Args:
+            index_code: 지수 코드 ("KS11": KOSPI, "KQ11": KOSDAQ)
+
+        Returns:
+            지수 정보 딕셔너리 {"code": str, "name": str, "price": float, "change_pct": float}
+        """
+        try:
+            # 최근 5일 차트 데이터 조회
+            chart_data = await self.get_index_daily_chart(index_code, days=5)
+
+            if not chart_data or len(chart_data) == 0:
+                logger.warning(f"No chart data available for {index_code}")
+                return None
+
+            # 가장 최근 데이터 (마지막 요소)
+            latest = chart_data[-1]
+            previous = chart_data[-2] if len(chart_data) >= 2 else None
+
+            close_price = latest.get("close", 0)
+            if close_price == 0:
+                logger.warning(f"Invalid close price for {index_code}: {close_price}")
+                return None
+
+            # 전일대비 등락률 계산
+            change_pct = 0.0
+            if previous and previous.get("close", 0) > 0:
+                prev_close = previous["close"]
+                change_pct = ((close_price - prev_close) / prev_close) * 100
+
+            # 지수명 매핑
+            index_names = {
+                "KS11": "KOSPI",
+                "KQ11": "KOSDAQ",
+            }
+
+            return {
+                "code": index_code,
+                "name": index_names.get(index_code, index_code),
+                "price": close_price,
+                "change": close_price - (previous.get("close", 0) if previous else close_price),
+                "change_pct": round(change_pct, 2),
+                "date": latest.get("date", ""),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(f"Get index price from chart error: {e}")
+            return None

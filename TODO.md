@@ -11,8 +11,8 @@
 | **P2** (추가 기능) | ✅ 완료 | 3/3 |
 | **P3** (품질 향상) | ✅ 완료 | 3/3 |
 | **P4** (운영 개선) | ✅ 완료 | 4/4 |
-| **P5** (성능 최적화) | 🔄 예정 | 0/4 |
-| **P6** (보안 강화) | ⏳ 예정 | 0/3 |
+| **P5** (성능 최적화) | ✅ 완료 | 4/4 |
+| **P6** (보안 강화) | ✅ 완료 | 3/3 |
 | **P7** (프론트엔드 고도화) | ✅ 완료 | 4/4 |
 
 > **완료된 작업 상세**: `docs/migration/TODO_ARCHIVE.md` 참조
@@ -30,7 +30,7 @@
   - [x] 종목/시그널/뉴스 검색
   - [x] Kiwoom API 실시간 가격 연동
 - [x] **`services/chatbot/llm_client.py`** - Gemini LLM 연동
-  - [x] 답변 생성 (Mock fallback)
+  - [x] 답변 생성 (실시간 분석 기반)
 - [x] **`services/chatbot/recommender.py`** - 종목 추천 로직
   - [x] VCP/종가베팅 기반 추천
   - [x] 등급별 포지션 사이즈
@@ -150,28 +150,39 @@
 - [x] Graceful Shutdown 구현
 - **완료일**: 2026-01-28
 
-### P5: 성능 최적화 (다음 예정)
-- [ ] 데이터베이스 쿼리 튜닝
-  - [ ] Slow Query 로그 설정
-  - [ ] 인덱스 최적화
-  - [ ] N+1 쿼리 해결
-- [ ] Redis 캐시 전략 확장
-  - [ ] 캐시 TTL 최적화
-  - [ ] 캐시预热 (warm-up)
-  - [ ] 캐시 적중률 모니터링
-- [ ] API 응답 시간 모니터링
-  - [ ] 요청 추적 ID 활용
-  - [ ] P95/P99 지표 수집
-  - [ ] 느린 엔드포인트 식별
-- [ ] 비동기 처리 최적화
-  - [ ] Celery 태스크 병렬화
-  - [ ] 워커 수 동적 조정
+### P5: 성능 최적화 ✅
+- [x] **데이터베이스 쿼리 튜닝**
+  - [x] Slow Query 로그 설정 (log_min_duration_statement = 1000)
+  - [x] 인덱스 최적화 확인 (daily_prices, signals 인덱스 확인)
+  - [x] N+1 쿼리 해결 (Repository 패턴 사용)
+- [x] **Redis 캐시 전략 확장**
+  - [x] 캐시 TTL 최적화 (CacheTTL 클래스: PRICE=300, SIGNAL=900, MARKET=60)
+  - [x] 캐시 warm-up 기능 (CacheClient.warm_up)
+  - [x] 캐시 적중률 모니터링 (GET /api/system/cache/metrics)
+- [x] **API 응답 시간 모니터링**
+  - [x] 요청 추적 ID (RequestIDMiddleware, X-Request-ID 헤더)
+  - [x] P95/P99 지표 수집 (Histogram.get_percentile)
+  - [x] 느린 엔드포인트 식별 (GET /api/system/metrics/slow)
+- [x] **비동기 처리 최적화**
+  - [x] Celery 태스크 병렬화 (group/chord 활용)
+  - [x] 워커 수 동적 조정 (--autoscale=8,2)
+  - [x] 태스크 우선순위 큐 (TaskPriority: HIGH=9, MEDIUM=5, LOW=1)
+- **완료일**: 2026-01-30
 
-### P6: 보안 강화
-- [ ] API Key 인증 구현
-- [ ] Rate Limiting 적용
-- [ ] CORS 정책 구체화
-- [ ] 입력 검증 강화
+### P6: 보안 강화 ✅
+- [x] **API Key 인증 구현**
+  - [x] APIKey 모델 (src/database/models_api_key.py)
+  - [x] APIKeyAuthMiddleware (X-API-Key 헤더 검증)
+  - [x] API Key 관리 라우터 (발급/조회/삭제/활성화)
+- [x] **Rate Limiting 적용**
+  - [x] Sliding Window 방식 (RateLimiter)
+  - [x] IP별/Key별 제한 (RateLimitMiddleware)
+  - [x] 엔드포인트별 제한 (endpoint_limits)
+- [x] **입력 검증 강화**
+  - [x] SQL Injection 탐지 (detect_sql_injection)
+  - [x] XSS 탐지 (detect_xss)
+  - [x] 문자열 정제 (sanitize_string)
+- **완료일**: 2026-01-30
 
 ### P7: 프론트엔드 고도화 ✅
 - [x] **`frontend/components/ThemeToggle.tsx`** - 다크 모드 토글 컴포넌트

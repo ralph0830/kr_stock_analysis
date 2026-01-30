@@ -57,11 +57,11 @@ class TestWebSocketClient:
 
     @pytest.fixture
     def ws_client(self):
-        return WebSocketClient("ws://localhost:8000/ws/price")
+        return WebSocketClient("ws://localhost:5111/ws/price")
 
     def test_init(self, ws_client):
         """클라이언트 초기화 테스트"""
-        assert ws_client.uri == "ws://localhost:8000/ws/price"
+        assert ws_client.uri == "ws://localhost:5111/ws/price"
         assert ws_client.reconnect_interval == 5.0
         assert ws_client.ping_interval == 20.0
         assert ws_client._websocket is None
@@ -71,7 +71,7 @@ class TestWebSocketClient:
     def test_custom_init(self):
         """사용자 정의 초기화 테스트"""
         client = WebSocketClient(
-            uri="ws://localhost:8000/ws/price",
+            uri="ws://localhost:5111/ws/price",
             reconnect_interval=10.0,
             ping_interval=30.0,
         )
@@ -255,7 +255,7 @@ class TestWebSocketClientPool:
         with patch("websockets.connect", side_effect=mock_connect):
             client = await pool.create_client(
                 name="test-client",
-                uri="ws://localhost:8000/ws/price",
+                uri="ws://localhost:5111/ws/price",
             )
 
             assert client is not None
@@ -273,7 +273,7 @@ class TestWebSocketClientPool:
         with patch("websockets.connect", side_effect=mock_connect):
             await pool.create_client(
                 name="test-client",
-                uri="ws://localhost:8000/ws/price",
+                uri="ws://localhost:5111/ws/price",
             )
 
             client = pool.get_client("test-client")
@@ -292,8 +292,8 @@ class TestWebSocketClientPool:
             return mock_ws
 
         with patch("websockets.connect", side_effect=mock_connect):
-            await pool.create_client("client1", "ws://localhost:8000/ws/price")
-            await pool.create_client("client2", "ws://localhost:8000/ws/price")
+            await pool.create_client("client1", "ws://localhost:5111/ws/price")
+            await pool.create_client("client2", "ws://localhost:5111/ws/price")
 
             await pool.close_all()
 
@@ -311,7 +311,7 @@ class TestWebSocketClientPool:
 
         with patch("websockets.connect", side_effect=mock_connect):
             async with WebSocketClientPool() as pool:
-                await pool.create_client("test", "ws://localhost:8000/ws/price")
+                await pool.create_client("test", "ws://localhost:5111/ws/price")
                 assert len(pool._clients) == 1
 
             # 컨텍스트 종료 후 모든 클라이언트가 종료되어야 함
@@ -339,7 +339,7 @@ class TestSubscribeToTickers:
 
         with patch("websockets.connect", return_value=mock_connect_instance):
             client = await subscribe_to_tickers(
-                uri="ws://localhost:8000/ws/price",
+                uri="ws://localhost:5111/ws/price",
                 tickers=["005930", "000660"],
                 callback=callback,
             )
@@ -364,7 +364,7 @@ class TestSubscribeToTickers:
 
         with patch("websockets.connect", return_value=mock_connect_instance):
             client = await subscribe_to_tickers(
-                uri="ws://localhost:8000/ws/price",
+                uri="ws://localhost:5111/ws/price",
                 tickers=["005930"],
                 callback=callback,
                 reconnect_interval=10.0,

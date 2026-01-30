@@ -15,7 +15,7 @@ from src.clients.api_client import (
 
 @pytest.fixture
 def api_client():
-    return APIClient(base_url="http://localhost:8000")
+    return APIClient(base_url="http://localhost:5111")
 
 
 class TestSignalDataclass:
@@ -89,13 +89,13 @@ class TestAPIClient:
 
     def test_init(self, api_client):
         """클라이언트 초기화 테스트"""
-        assert api_client.base_url == "http://localhost:8000"
+        assert api_client.base_url == "http://localhost:5111"
         assert api_client.timeout == 30.0
 
     def test_init_with_api_key(self):
         """API 키 설정 테스트"""
         client = APIClient(
-            base_url="http://localhost:8000",
+            base_url="http://localhost:5111",
             api_key="test-key-123",
         )
 
@@ -216,7 +216,7 @@ class TestSyncAPIClient:
 
     def test_init(self):
         """동기 클라이언트 초기화 테스트"""
-        client = SyncAPIClient(base_url="http://localhost:8000")
+        client = SyncAPIClient(base_url="http://localhost:5111")
         assert client._async_client is not None
 
     @patch("src.clients.api_client.asyncio.run")
@@ -227,7 +227,7 @@ class TestSyncAPIClient:
             "service": "api-gateway",
         }
 
-        client = SyncAPIClient(base_url="http://localhost:8000")
+        client = SyncAPIClient(base_url="http://localhost:5111")
         result = client.health_check()
 
         assert result["status"] == "healthy"

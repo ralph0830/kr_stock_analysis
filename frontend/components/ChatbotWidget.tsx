@@ -8,6 +8,7 @@
 import { useState, useRef, useEffect } from "react";
 import apiClient from "@/lib/api-client";
 import { type IChatMessage, type IChatResponse } from "@/types";
+import { useTypingAnimation } from "@/hooks/useTypingAnimation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ export function ChatbotWidget({ initialMessage, onStockClick }: IChatbotWidgetPr
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId] = useState(() => `session-${Date.now()}`);
+  const typingDots = useTypingAnimation({ interval: 300 });
 
   // 스크롤 참조
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -199,12 +201,10 @@ export function ChatbotWidget({ initialMessage, onStockClick }: IChatbotWidgetPr
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100 rounded-lg px-4 py-2">
-                <div className="flex gap-1">
-                  <span className="animate-bounce">●</span>
-                  <span className="animate-bounce delay-100">●</span>
-                  <span className="animate-bounce delay-200">●</span>
-                </div>
+              <div className="bg-gray-100 dark:bg-gray-700 rounded-lg px-4 py-2">
+                <span className="text-gray-600 dark:text-gray-300">
+                  {typingDots}
+                </span>
               </div>
             </div>
           )}

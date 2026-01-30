@@ -14,7 +14,6 @@ from src.kiwoom.base import (
     RealtimePrice,
     IKiwoomBridge,
 )
-from src.kiwoom.mock import MockKiwoomBridge
 from src.kiwoom.websocket import KiwoomWebSocket
 from src.kiwoom.rest_api import KiwoomRestAPI
 
@@ -39,7 +38,7 @@ class KiwoomRealtimeService:
         초기화
 
         Args:
-            bridge: 키움 Bridge 인스턴스 (Mock 또는 실제)
+            bridge: 키움 Bridge 인스턴스
             redis_client: Redis 클라이언트 (선택)
             rest_api: REST API 클라이언트 (선택)
         """
@@ -53,18 +52,15 @@ class KiwoomRealtimeService:
     def from_config(cls, config: KiwoomConfig) -> 'KiwoomRealtimeService':
         """설정에서 Service 생성"""
         if config.use_mock:
-            logger.info("Using MockKiwoomBridge")
-            bridge = MockKiwoomBridge(config)
-        else:
-            # 실제 Kiwoom WebSocket 생성
-            logger.info("Using KiwoomWebSocket (Real Trading)")
-            bridge = KiwoomWebSocket(config, debug_mode=config.debug_mode)
+            raise RuntimeError("Mock mode is no longer supported. Please disable use_mock in your config.")
 
-        # REST API 클라이언트 생성 (실전 트레이딩인 경우만)
-        rest_api = None
-        if not config.use_mock:
-            rest_api = KiwoomRestAPI(config)
-            logger.info("KiwoomRestAPI created for real trading")
+        # 실제 Kiwoom WebSocket 생성
+        logger.info("Using KiwoomWebSocket (Real Trading)")
+        bridge = KiwoomWebSocket(config, debug_mode=config.debug_mode)
+
+        # REST API 클라이언트 생성
+        rest_api = KiwoomRestAPI(config)
+        logger.info("KiwoomRestAPI created")
 
         return cls(bridge, rest_api=rest_api)
 

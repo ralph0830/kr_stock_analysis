@@ -147,11 +147,11 @@ def create_circuit_breaker_client(
     Usage:
         # 동기 클라이언트
         client = create_circuit_breaker_client("vcp_scanner")
-        response = client.get("http://localhost:8001/scan")
+        response = client.get("http://localhost:5112/scan")
 
         # 비동기 클라이언트
         async_client = create_circuit_breaker_client("vcp_scanner", async_client=True)
-        response = await client.aget("http://localhost:8001/scan")
+        response = await client.aget("http://localhost:5112/scan")
     """
     return CircuitBreakerClientWrapper(
         name=name,

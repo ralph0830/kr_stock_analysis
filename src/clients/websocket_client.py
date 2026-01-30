@@ -61,7 +61,7 @@ class WebSocketClient:
         async def on_price(update: PriceUpdate):
             print(f"Received: {update}")
 
-        client = WebSocketClient("ws://localhost:8000/ws/price")
+        client = WebSocketClient("ws://localhost:5111/ws/price")
         await client.connect()
 
         # 종목 구독
@@ -85,7 +85,7 @@ class WebSocketClient:
         WebSocket 클라이언트 초기화
 
         Args:
-            uri: WebSocket 서버 URI (예: ws://localhost:8000/ws/price)
+            uri: WebSocket 서버 URI (예: ws://localhost:5111/ws/price)
             reconnect_interval: 재연결 시도 간격 (초)
             ping_interval: 핑 전송 간격 (초)
         """

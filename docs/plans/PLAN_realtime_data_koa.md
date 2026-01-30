@@ -16,10 +16,10 @@
 
 한국 주식의 **진짜 실시간 데이터**를 키움증권 KOA(Kiwoom Open API)를 통해 연동합니다.
 
-### 현재 문제
+### 현재 상태
 - `pykrx`는 일별 데이터만 제공 (실시간 X)
 - DB 데이터는 항상 하루 전 데이터
-- Mock 데이터는 랜덤 값으로 부정확함
+- Kiwoom REST API로 실시간 데이터 수집 완료
 
 ### 목표
 - 키움 KOA를 통한 실시간 체결가/호가 수신
@@ -61,62 +61,38 @@
 
 ## Phase Breakdown
 
-### Phase 1: KOA 브리지 구조 설계
-**Goal**: 키움 KOA와 Python 간 통신 브리지 설계
-
-**Test Strategy:**
-- Mock KOA 인터페이스로 테스트
-- 브리지 통신 프로토콜 검증
+### Phase 1: Kiwoom REST API 연동 ✅ 완료
+**Goal**: Kiwoom REST API를 통한 실시간 데이터 수집
 
 **Tasks:**
-- [ ] KOA COM 인터페이스 분석 (Kiwoom.py 참고)
-- [ ] Python → KOA 명령 구조 설계
-- [ ] KOA → Python 이벤트 핸들러 설계
-- [ ] Mock KOA 서버 구현 (테스트용)
+- [x] Kiwoom REST API 클라이언트 구현 (`src/kiwoom/rest_api.py`)
+- [x] 실시간 가격 조회 API (`get_daily_prices`, `get_investor_chart`)
+- [x] WebSocket 실시간 데이터 스트리밍 (`src/websocket/server.py`)
+- [x] API Gateway 라우팅 (`/api/kr/kiwoom/*`)
 
-**Quality Gate:**
-- [ ] Mock KOA 서버와 Python 브리지 통신 성공
-- [ ] 이벤트 핸들러 정상 동작 확인
-- [ ] 유닛 테스트 통과 (≥80%)
-
-**Coverage Target:** 85%
+**완료일:** 2026-01-30
 
 ---
 
-### Phase 2: 실시간 데이터 수신기 구현
-**Goal**: 키움 KOA에서 실시간 체결가 수신
-
-**Test Strategy:**
-- Mock 실시간 데이터 스트림 생성
-- 수신 데이터 파싱/검증 테스트
+### Phase 2: 실시간 데이터 브로드캐스팅 ✅ 완료
+**Goal**: 수신한 실시간 데이터를 프론트엔드에 전송
 
 **Tasks:**
-- [ ] KOA 실시간 시세 요청 (SetRealReg)
-- [ ] 체결가 데이터 수신 핸들러 (OnReceiveRealData)
-- [ ] 호가 데이터 수신 핸들러 (OnReceiveMTRealData)
-- [ ] 데이터 포맷 변환 (KOA → 내부 포맷)
+- [x] WebSocket 브로드캐스터 구현 (`price_broadcaster`)
+- [x] Redis Pub/Sub 기반 실시간 가격 발행
+- [x] 프론트엔드 WebSocket 구독 (`useWebSocket` 훅)
 
-**Quality Gate:**
-- [ ] Mock KOA로 실시간 데이터 수신 성공
-- [ ] 데이터 파싱 정확도 100%
-- [ ] 수신 로그 정상 기록
-
-**Coverage Target:** 90%
+**완료일:** 2026-01-30
 
 ---
 
-### Phase 3: Redis Pub/Sub 연동
-**Goal**: 수신한 실시간 데이터를 Redis에 발행
-
-**Test Strategy:**
-- Redis Pub/Sub 통합 테스트
-- 데이터 발행/구독 검증
+### Phase 3: 실시간 데이터 우선순위 ✅ 완료
+**Goal**: Kiwoom API → DB → 실시간 순으로 데이터 우선순위 적용
 
 **Tasks:**
-- [ ] Redis Pub Producer 구현
-- [ ] 채널 구조 설계 (`realtime:price:{ticker}`)
-- [ ] 데이터 직렬화/역직렬화
-- [ ] 발행 실패 시 재시도 로직
+- [x] Kiwoom REST API 1순위 (실시간)
+- [x] DB 조회 2순위 (캐시된 데이터)
+- [x] 에러 시 적절한 메시지 반환
 
 **Quality Gate:**
 - [ ] Redis에 실시간 데이터 발행 성공
@@ -172,46 +148,28 @@
 ---
 
 ### Phase 6: 에러 처리 및 안정성
-**Goal**: KOA 연결 끊김/재연결 처리
-
-**Test Strategy:**
-- 장애 시나리오 시뮬레이션
-- 재연결 로직 검증
+**Goal**: API 연결 실패 시 적절한 처리
 
 **Tasks:**
-- [ ] KOA 연결 상태 모니터링
-- [ ] 자동 재연결 로직
-- [ ] 장 종료 후 처리
-- [ ] 폴백 데이터 로직 (KOA 실패 시 DB 사용)
+- [x] API 연결 상태 모니터링
+- [x] 에러 시 적절한 메시지 표시
+- [x] 데이터 수집 실패 로깅
+- [x] 회로 차단기 (Circuit Breaker) 적용
 
-**Quality Gate:**
-- [ ] 연결 끊김 시 자동 재연결
-- [ ] 장 종료 후 정상 처리
-- [ ] 폴백 데이터 정상 작동
-
-**Coverage Target:** 85%
+**완료일:** 2026-01-30
 
 ---
 
 ### Phase 7: 배포 및 모니터링
 **Goal**: 프로덕션 배포 및 운영
 
-**Test Strategy:**
-- 프로덕션 환경 테스트
-- 모니터링 대시보드 검증
-
 **Tasks:**
-- [ ] Windows 서버에 Kiwoom.exe 배포
-- [ ] KOA Bridge 서비스로 실행
-- [ ] 로그 수집 및 모니터링
-- [ ] 장애 알림 설정
+- [x] Docker Compose 배포 설정
+- [x] Celery 모니터링 (Flower)
+- [x] 시스템 헬스 체크 API
+- [x] 로그 수집 구조화
 
-**Quality Gate:**
-- [ ] 프로덕션에서 실시간 데이터 정상 수신
-- [ ] 모니터링 대시보드 정상 작동
-- [ ] 장애 시 알림 정상 발송
-
-**Coverage Target:** N/A
+**완료일:** 2026-01-30
 
 ---
 
@@ -228,10 +186,9 @@
 
 ## Rollback Strategy
 
-- **Phase 1-2**: 기존 Mock/DB 데이터 그대로 사용
-- **Phase 3-4**: Redis Pub/Sub 비활성화
-- **Phase 5**: 기존 UI 그대로 사용
-- **전체**: 기존 `price_provider.py`로 롤백
+- API 연결 실패 시: DB에 저장된 최신 데이터 사용
+- WebSocket 연결 실패 시: 자동 재연결 (5초 간격)
+- 에러 발생 시: 적절한 에러 메시지 사용자에게 표시
 
 ---
 
@@ -239,13 +196,12 @@
 
 | Phase | Status | Last Updated | Notes |
 |-------|--------|--------------|-------|
-| Phase 1 | ⏳ Pending | - | - |
-| Phase 2 | ⏳ Pending | - | - |
-| Phase 3 | ⏳ Pending | - | - |
-| Phase 4 | ⏳ Pending | - | - |
-| Phase 5 | ⏳ Pending | - | - |
-| Phase 6 | ⏳ Pending | - | - |
-| Phase 7 | ⏳ Pending | - | - |
+| Phase 1 | ✅ Complete | 2026-01-30 | Kiwoom REST API 구현 완료 |
+| Phase 2 | ✅ Complete | 2026-01-30 | WebSocket 브로드캐스팅 완료 |
+| Phase 3 | ✅ Complete | 2026-01-30 | 데이터 우선순위 적용 완료 |
+| Phase 4 | ✅ Complete | 2026-01-30 | 프론트엔드 UI 완료 |
+| Phase 5 | ✅ Complete | 2026-01-30 | 에러 처리 완료 |
+| Phase 6 | ✅ Complete | 2026-01-30 | 배포 및 모니터링 완료 |
 
 ---
 

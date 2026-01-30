@@ -9,8 +9,10 @@ import httpx
 
 router = APIRouter(prefix="/api/kr/chatbot", tags=["chatbot"])
 
-# Chatbot 서비스 URL (직접 연결용)
-CHATBOT_SERVICE_URL = "http://localhost:5114"
+# Chatbot 서비스 URL (Docker 네트워크 내에서는 서비스 이름 사용)
+# 환경 변수가 있으면 우선 사용 (로컬 개발용), 없으면 Docker 서비스 이름
+import os
+CHATBOT_SERVICE_URL = os.getenv("CHATBOT_SERVICE_URL", "http://chatbot:5114")
 
 
 @router.post(

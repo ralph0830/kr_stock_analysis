@@ -25,10 +25,10 @@ async def websocket_endpoint(
 
     Usage:
         // 기본 연결
-        ws://localhost:8000/ws
+        ws://localhost:5111/ws
 
         // 토픽 구독
-        ws://localhost:8000/ws?subscribe=price:005930,price:000660
+        ws://localhost:5111/ws?subscribe=price:005930,price:000660
 
     Message Format:
         {
@@ -49,6 +49,8 @@ async def websocket_endpoint(
             topic = topic.strip()
             if topic:
                 connection_manager.subscribe(client_id, topic)
+                # price:{ticker} 형식이면 ticker를 price_broadcaster에 추가
+                # (ConnectionManager.subscribe() 내부에서 처리됨)
                 await websocket.send_json({
                     "type": "subscribed",
                     "topic": topic,
@@ -74,6 +76,8 @@ async def websocket_endpoint(
                 topic = data.get("topic")
                 if topic:
                     connection_manager.subscribe(client_id, topic)
+                    # price:{ticker} 형식이면 ticker를 price_broadcaster에 추가
+                    # (ConnectionManager.subscribe() 내부에서 처리됨)
                     await websocket.send_json({
                         "type": "subscribed",
                         "topic": topic,
@@ -124,6 +128,64 @@ async def websocket_stats():
             for topic in ["price:005930", "price:000660", "signals", "market-gate"]
         },
         "broadcaster_running": price_broadcaster.is_running(),
+        "active_tickers": list(price_broadcaster.get_active_tickers()),
     }
 
     return stats
+
+
+@router.post("/ws/subscribe/{ticker}")
+async def subscribe_ticker(ticker: str):
+    """
+    종목 가격 구독 추가
+
+    Args:
+        ticker: 종목코드 (6자리)
+
+    Returns:
+        성공 메시지
+    """
+    # 종목코드 형식 검증 (6자리 숫자)
+    if not ticker or not ticker.isdigit() or len(ticker) != 6:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid ticker format. Use 6-digit code.")
+
+    price_broadcaster.add_ticker(ticker)
+    return {
+        "status": "subscribed",
+        "ticker": ticker,
+        "active_tickers": list(price_broadcaster.get_active_tickers()),
+    }
+
+
+@router.delete("/ws/subscribe/{ticker}")
+async def unsubscribe_ticker(ticker: str):
+    """
+    종목 가격 구독 제거
+
+    Args:
+        ticker: 종목코드 (6자리)
+
+    Returns:
+        성공 메시지
+    """
+    price_broadcaster.remove_ticker(ticker)
+    return {
+        "status": "unsubscribed",
+        "ticker": ticker,
+        "active_tickers": list(price_broadcaster.get_active_tickers()),
+    }
+
+
+@router.get("/ws/tickers")
+async def get_active_tickers():
+    """
+    활성화된 종목 목록 조회
+
+    Returns:
+        활성 종목 목록
+    """
+    return {
+        "active_tickers": list(price_broadcaster.get_active_tickers()),
+        "default_tickers": list(price_broadcaster.DEFAULT_TICKERS),
+    }

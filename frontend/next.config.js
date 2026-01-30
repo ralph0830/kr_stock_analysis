@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  // Docker standalone 출력용 설정
+  output: 'standalone',
+
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:5111';
 
@@ -11,8 +14,6 @@ const nextConfig = {
         source: '/api/:path*',
         destination: `${backendUrl}/api/:path*`,
       },
-      // WebSocket 연결을 백엔드로 포워딩 (WebSocket은 rewrites로 동작하지 않음)
-      // Nginx Proxy Manager에서 별도 설정 필요
     ];
   },
 };

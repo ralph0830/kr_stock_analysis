@@ -4,6 +4,7 @@ WebSocket 서버
 """
 
 import asyncio
+import os
 from typing import Dict, Set, Optional
 from fastapi import WebSocket
 from datetime import datetime, timezone
@@ -11,6 +12,22 @@ from datetime import datetime, timezone
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Kiwoom REST API (lazy import - USE_KIWOOM_REST가 false면 임포트하지 않음)
+_kiwoom_api = None
+
+
+def get_kiwoom_api():
+    """Kiwoom REST API 클라이언트 가져오기 (lazy init)"""
+    global _kiwoom_api
+    if _kiwoom_api is None and os.getenv("USE_KIWOOM_REST", "false").lower() == "true":
+        try:
+            from src.kiwoom.rest_api import KiwoomRestAPI
+            _kiwoom_api = KiwoomRestAPI.from_env()
+            logger.info("Kiwoom REST API initialized for price broadcasting")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Kiwoom REST API: {e}")
+    return _kiwoom_api
 
 
 class ConnectionManager:
@@ -115,12 +132,24 @@ class ConnectionManager:
         Args:
             client_id: 클라이언트 ID
             topic: 구독할 토픽
+
+        Note:
+            topic이 'price:{ticker}' 형식이면 자동으로 price_broadcaster에 ticker 추가
         """
         if topic not in self.subscriptions:
             self.subscriptions[topic] = set()
 
         self.subscriptions[topic].add(client_id)
         logger.info(f"Client {client_id} subscribed to {topic}")
+
+        # price:{ticker} 형식이면 price_broadcaster에 ticker 추가
+        if topic.startswith("price:"):
+            ticker = topic.split(":", 1)[1]
+            # ticker는 6자리 숫자여야 함
+            if ticker.isdigit() and len(ticker) == 6:
+                # 전역 price_broadcaster 인스턴스 가져오기
+                from src.websocket.server import price_broadcaster
+                price_broadcaster.add_ticker(ticker)
 
     def unsubscribe(self, client_id: str, topic: str) -> None:
         """
@@ -133,9 +162,16 @@ class ConnectionManager:
         if topic in self.subscriptions:
             self.subscriptions[topic].discard(client_id)
 
-            # 구독자가 없으면 토픽 삭제
+            # 구독자가 없으면 토픽 삭제 및 price_broadcaster에서 ticker 제거
             if not self.subscriptions[topic]:
                 del self.subscriptions[topic]
+
+                # price:{ticker} 형식이면 price_broadcaster에서 ticker 제거
+                if topic.startswith("price:"):
+                    ticker = topic.split(":", 1)[1]
+                    if ticker.isdigit() and len(ticker) == 6:
+                        from src.websocket.server import price_broadcaster
+                        price_broadcaster.remove_ticker(ticker)
 
             logger.info(f"Client {client_id} unsubscribed from {topic}")
 
@@ -172,10 +208,13 @@ class PriceUpdateBroadcaster:
     """
     가격 업데이트 브로드캐스터
 
-    일정 주기로 가격 데이터를 수집하여 브로드캐스트
+    Kiwoom REST API에서 실시간 가격 데이터를 가져와 브로드캐스트합니다.
 
     Usage:
         broadcaster = PriceUpdateBroadcaster()
+
+        # 종목 구독 추가
+        broadcaster.add_ticker("005930")
 
         # 브로드캐스팅 시작
         await broadcaster.start()
@@ -183,6 +222,10 @@ class PriceUpdateBroadcaster:
         # 브로드캐스팅 중지
         await broadcaster.stop()
     """
+
+    # 기본 종목 (마켓 개장 시 항상 포함)
+    # 삼성전자, SK하이닉스, NAVER, 현대차, LG화학, 셀트리온
+    DEFAULT_TICKERS = {"005930", "000660", "035420", "005380", "051910", "068270"}
 
     def __init__(self, interval_seconds: int = 5):
         """
@@ -193,13 +236,133 @@ class PriceUpdateBroadcaster:
         self._broadcast_task: Optional[asyncio.Task] = None
         self._is_running = False
 
+        # 구독 중인 종목 목록
+        self._active_tickers: Set[str] = set()
+
+        # Kiwoom API 토큰 초기화 플래그
+        self._token_initialized = False
+
+    def add_ticker(self, ticker: str) -> None:
+        """
+        종목 구독 추가
+
+        Args:
+            ticker: 종목코드 (6자리)
+        """
+        self._active_tickers.add(ticker)
+        logger.info(f"Added ticker to price broadcaster: {ticker}")
+
+    def remove_ticker(self, ticker: str) -> None:
+        """
+        종목 구독 제거
+
+        Args:
+            ticker: 종목코드
+        """
+        self._active_tickers.discard(ticker)
+        logger.info(f"Removed ticker from price broadcaster: {ticker}")
+
+    def get_active_tickers(self) -> Set[str]:
+        """활성 종목 목록 반환"""
+        return self._active_tickers.copy()
+
+    async def _ensure_token(self) -> bool:
+        """Kiwoom API 토큰 초기화 확인"""
+        if self._token_initialized:
+            return True
+
+        api = get_kiwoom_api()
+        if api is None:
+            return False
+
+        try:
+            success = await api.issue_token()
+            if success:
+                self._token_initialized = True
+                logger.info("Kiwoom API token issued for price broadcasting")
+                return True
+            else:
+                logger.warning("Failed to issue Kiwoom API token")
+                return False
+        except Exception as e:
+            logger.error(f"Error issuing Kiwoom API token: {e}")
+            return False
+
+    async def _fetch_prices_from_kiwoom(self, tickers: Set[str]) -> Dict[str, dict]:
+        """
+        Kiwoom REST API에서 종목 가격 조회
+
+        참고: get_current_price() API ID ka10001 문제로 인해
+        get_daily_prices(days=1)를 대신 사용하여 최신 종가를 가져옵니다.
+
+        Args:
+            tickers: 조회할 종목코드 집합
+
+        Returns:
+            종목코드 -> 가격데이터 매핑
+        """
+        api = get_kiwoom_api()
+        if api is None:
+            return {}
+
+        # 토큰 확인
+        if not await self._ensure_token():
+            return {}
+
+        prices = {}
+        for ticker in tickers:
+            try:
+                # ka10001 API ID 문제로 get_daily_prices(days=1) 대신 사용
+                # 가장 최근 일자 데이터의 종가를 현재가로 사용
+                daily_prices = await api.get_daily_prices(ticker, days=1)
+
+                if daily_prices and len(daily_prices) > 0:
+                    latest = daily_prices[0]  # 가장 최근 데이터 (dict 형식)
+                    price = latest.get("price", 0)
+                    change = latest.get("change", 0)
+                    # 등락률 = (현재가 - 기준가) / 기준가 * 100 = change / (price - change) * 100
+                    base_price = price - change
+                    change_rate = (change / base_price * 100) if base_price > 0 else 0.0
+
+                    prices[ticker] = {
+                        "price": price,
+                        "change": change,
+                        "change_rate": change_rate,
+                        "volume": latest.get("volume", 0),
+                        "bid_price": price,  # 종가를 사용 (호가/비도가 없음)
+                        "ask_price": price,
+                    }
+                    logger.info(f"Fetched daily price for {ticker}: {latest.get('price')}")
+                else:
+                    logger.warning(f"No daily price data for {ticker}")
+            except Exception as e:
+                logger.error(f"Error fetching daily price for {ticker}: {e}")
+
+        return prices
+
     async def _broadcast_loop(self):
         """브로드캐스트 루프"""
         while self._is_running:
             try:
-                # TODO: 실제 가격 데이터 조회 (DB 또는 외부 API)
-                # 현재는 Mock 데이터
-                price_updates = self._generate_mock_price_updates()
+                # 브로드캐스트할 종목 결정 (기본 종목 + 추가된 종목)
+                tickers_to_broadcast = self.DEFAULT_TICKERS | self._active_tickers
+
+                if not tickers_to_broadcast:
+                    logger.debug("No tickers to broadcast")
+                    await asyncio.sleep(self.interval_seconds)
+                    continue
+
+                # Kiwoom API 사용 여부에 따라 데이터 소스 결정
+                if os.getenv("USE_KIWOOM_REST", "false").lower() == "true":
+                    price_updates = await self._fetch_prices_from_kiwoom(tickers_to_broadcast)
+                    if not price_updates:
+                        logger.warning("Failed to fetch prices from Kiwoom, no data to broadcast")
+                        await asyncio.sleep(self.interval_seconds)
+                        continue
+                else:
+                    logger.warning("Kiwoom REST API not enabled. Set USE_KIWOOM_REST=true to enable real-time prices.")
+                    await asyncio.sleep(self.interval_seconds)
+                    continue
 
                 # 브로드캐스트
                 for ticker, data in price_updates.items():
@@ -213,31 +376,13 @@ class PriceUpdateBroadcaster:
                         topic=f"price:{ticker}",
                     )
 
-                logger.debug(f"Broadcasted price updates for {len(price_updates)} tickers")
+                logger.info(f"Broadcasted price updates for {len(price_updates)} tickers")
 
             except Exception as e:
                 logger.error(f"Error in broadcast loop: {e}")
 
             # 대기
             await asyncio.sleep(self.interval_seconds)
-
-    def _generate_mock_price_updates(self) -> Dict[str, dict]:
-        """Mock 가격 업데이트 생성 (테스트용)"""
-        # TODO: 실제 데이터로 교체 필요
-        return {
-            "005930": {
-                "price": 82500,
-                "change": 500,
-                "change_rate": 0.61,
-                "volume": 15000000,
-            },
-            "000660": {
-                "price": 92000,
-                "change": -1000,
-                "change_rate": -1.08,
-                "volume": 8000000,
-            },
-        }
 
     async def start(self):
         """브로드캐스팅 시작"""

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo } from "react";
 import { useStore } from "@/store";
-import { formatPrice, getMarketGateColor, getGradeColor } from "@/lib/utils";
+import { useRealtimePrices } from "@/hooks/useWebSocket";
+import { formatPrice, formatPercent, cn, getMarketGateColor, getGradeColor } from "@/lib/utils";
 import type { MarketGateStatus, Signal, SectorItem } from "@/types";
 import { RealtimePriceGrid, WebSocketStatus } from "@/components/RealtimePriceCard";
 import { SystemHealthIndicator } from "@/components/SystemHealthIndicator";
@@ -61,6 +62,10 @@ export default function DashboardPage() {
     fetchMarketGate,
     fetchBacktestKPI,
   } = useStore();
+
+  // 시그널 종목들의 실시간 가격 조회
+  const signalTickers = useMemo(() => signals.map((s) => s.ticker), [signals]);
+  const { prices, getPrice, connected: pricesConnected } = useRealtimePrices(signalTickers);
 
   useEffect(() => {
     fetchSignals();
@@ -337,7 +342,7 @@ export default function DashboardPage() {
         {/* VCP Signals */}
         <section>
           <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
-            활성 VCP 시그널
+            활성 VCP 시그널 {pricesConnected && <span className="text-sm text-green-500 ml-2">● 실시간</span>}
           </h2>
           {loadingSignals ? (
             <Card>
@@ -355,28 +360,81 @@ export default function DashboardPage() {
                     <TableHead>시그널</TableHead>
                     <TableHead>점수</TableHead>
                     <TableHead>등급</TableHead>
-                    <TableHead>진입가</TableHead>
-                    <TableHead>목표가</TableHead>
+                    <TableHead className="text-right">현재가</TableHead>
+                    <TableHead className="text-right">전일비</TableHead>
+                    <TableHead className="text-right">등락률</TableHead>
+                    <TableHead className="text-right">진입가</TableHead>
+                    <TableHead className="text-right">목표가</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {signals.map((signal) => (
-                    <TableRow key={signal.ticker}>
-                      <TableCell className="font-medium">{signal.ticker}</TableCell>
-                      <TableCell>{signal.name}</TableCell>
-                      <TableCell>{signal.signal_type}</TableCell>
-                      <TableCell>
-                        {typeof signal.score === "number"
-                          ? signal.score.toFixed(1)
-                          : signal.score?.total?.toFixed(1) ?? "0"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getGradeColor(signal.grade)}>{signal.grade}</Badge>
-                      </TableCell>
-                      <TableCell>{signal.entry_price ? formatPrice(signal.entry_price) : "-"}</TableCell>
-                      <TableCell>{signal.target_price ? formatPrice(signal.target_price) : "-"}</TableCell>
-                    </TableRow>
-                  ))}
+                  {signals.map((signal) => {
+                    const realtimePrice = getPrice(signal.ticker);
+                    const isPositive = realtimePrice?.change ?? 0 > 0;
+                    const isNegative = realtimePrice?.change ?? 0 < 0;
+
+                    return (
+                      <TableRow key={signal.ticker}>
+                        <TableCell className="font-medium">{signal.ticker}</TableCell>
+                        <TableCell>{signal.name}</TableCell>
+                        <TableCell>{signal.signal_type}</TableCell>
+                        <TableCell>
+                          {typeof signal.score === "number"
+                            ? signal.score.toFixed(1)
+                            : signal.score?.total?.toFixed(1) ?? "0"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getGradeColor(signal.grade)}>{signal.grade}</Badge>
+                        </TableCell>
+                        {/* 실시간 현재가 */}
+                        <TableCell className="text-right font-medium">
+                          {realtimePrice ? (
+                            <span className={cn(
+                              isPositive ? "text-red-600 dark:text-red-400" :
+                              isNegative ? "text-blue-600 dark:text-blue-400" :
+                              "text-gray-900 dark:text-gray-100"
+                            )}>
+                              {formatPrice(realtimePrice.price)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </TableCell>
+                        {/* 전일비 */}
+                        <TableCell className="text-right">
+                          {realtimePrice ? (
+                            <span className={cn(
+                              "font-medium",
+                              isPositive ? "text-red-600 dark:text-red-400" :
+                              isNegative ? "text-blue-600 dark:text-blue-400" :
+                              "text-gray-600 dark:text-gray-400"
+                            )}>
+                              {isPositive ? "+" : ""}{formatPrice(realtimePrice.change)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </TableCell>
+                        {/* 등락률 */}
+                        <TableCell className="text-right">
+                          {realtimePrice ? (
+                            <span className={cn(
+                              "font-medium",
+                              isPositive ? "text-red-600 dark:text-red-400" :
+                              isNegative ? "text-blue-600 dark:text-blue-400" :
+                              "text-gray-600 dark:text-gray-400"
+                            )}>
+                              {isPositive ? "+" : ""}{formatPercent(realtimePrice.change_rate)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">{signal.entry_price ? formatPrice(signal.entry_price) : "-"}</TableCell>
+                        <TableCell className="text-right">{signal.target_price ? formatPrice(signal.target_price) : "-"}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </Card>

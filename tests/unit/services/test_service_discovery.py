@@ -23,8 +23,8 @@ class TestServiceRegistry:
         # Arrange
         service_info = ServiceInfo(
             name="test-service",
-            url="http://test-service:8000",
-            health_check_url="http://test-service:8000/health",
+            url="http://test-service:5111",
+            health_check_url="http://test-service:5111/health",
         )
 
         # Act
@@ -40,7 +40,7 @@ class TestServiceRegistry:
         # Arrange
         service_info = ServiceInfo(
             name="test-service",
-            url="http://test-service:8000",
+            url="http://test-service:5111",
         )
         registry.register(service_info)
 
@@ -50,7 +50,7 @@ class TestServiceRegistry:
         # Assert
         assert service is not None
         assert service["name"] == "test-service"
-        assert service["url"] == "http://test-service:8000"
+        assert service["url"] == "http://test-service:5111"
 
     def test_get_nonexistent_service(self, registry):
         """존재하지 않는 서비스 조회 테스트"""
@@ -63,8 +63,8 @@ class TestServiceRegistry:
     def test_list_all_services(self, registry):
         """전체 서비스 목록 조회 테스트"""
         # Arrange
-        registry.register(ServiceInfo(name="service-1", url="http://s1:8000"))
-        registry.register(ServiceInfo(name="service-2", url="http://s2:8000"))
+        registry.register(ServiceInfo(name="service-1", url="http://s1:5111"))
+        registry.register(ServiceInfo(name="service-2", url="http://s2:5112"))
 
         # Act
         services = registry.list_services()
@@ -79,7 +79,7 @@ class TestServiceRegistry:
         # Arrange
         service_info = ServiceInfo(
             name="test-service",
-            url="http://test-service:8000",
+            url="http://test-service:5111",
         )
         registry.register(service_info)
 
@@ -103,7 +103,7 @@ class TestServiceRegistry:
         # Arrange
         service_info = ServiceInfo(
             name="test-service",
-            url="http://test-service:8000",
+            url="http://test-service:5111",
         )
         registry.register(service_info)
 
@@ -123,10 +123,10 @@ class TestServiceRegistry:
     def test_cleanup_unhealthy_service(self, registry):
         """비정상 서비스 제거 테스트"""
         # Arrange
-        healthy_service = ServiceInfo(name="healthy-service", url="http://healthy:8000")
+        healthy_service = ServiceInfo(name="healthy-service", url="http://healthy:5111")
         healthy_service.is_healthy = True
 
-        unhealthy_service = ServiceInfo(name="unhealthy-service", url="http://unhealthy:8000")
+        unhealthy_service = ServiceInfo(name="unhealthy-service", url="http://unhealthy:5111")
         unhealthy_service.is_healthy = False
         unhealthy_service.retry_count = 5
 
@@ -144,10 +144,10 @@ class TestServiceRegistry:
     def test_get_unhealthy_services(self, registry):
         """비정상 서비스 목록 조회 테스트"""
         # Arrange
-        healthy_service = ServiceInfo(name="healthy-service", url="http://healthy:8000")
+        healthy_service = ServiceInfo(name="healthy-service", url="http://healthy:5111")
         healthy_service.is_healthy = True
 
-        unhealthy_service = ServiceInfo(name="unhealthy-service", url="http://unhealthy:8000")
+        unhealthy_service = ServiceInfo(name="unhealthy-service", url="http://unhealthy:5111")
         unhealthy_service.is_healthy = False
 
         registry.register(healthy_service)
@@ -224,7 +224,7 @@ class TestServiceConfiguration:
         # Arrange & Act
         service = ServiceInfo(
             name="test-service",
-            url="http://test:8000",
+            url="http://test:5111",
             timeout=10.0
         )
 
@@ -236,7 +236,7 @@ class TestServiceConfiguration:
         # Arrange & Act
         service = ServiceInfo(
             name="test-service",
-            url="http://test:8000",
+            url="http://test:5111",
             max_retries=5
         )
 

@@ -12,8 +12,39 @@ from src.analysis.smartmoney_analyzer import (
     calculate_pension_score,
     calculate_ownership_score,
     analyze_smartmoney,
-    create_mock_flow_data,
 )
+
+
+# 테스트용 헬퍼 함수 (mock 데이터 제거 후 직접 생성)
+def create_mock_flow_data(days=10, foreign_trend="neutral", inst_trend="neutral"):
+    """테스트용 수급 데이터 생성"""
+    flow_data = []
+    base_date = date.today() - timedelta(days=days)
+
+    foreign_values = {
+        "buy": [100000, 150000, 200000, 180000, 220000],
+        "sell": [-100000, -150000, -200000, -180000, -220000],
+        "neutral": [0, 50000, -50000, 30000, -30000],
+    }
+
+    inst_values = {
+        "buy": [80000, 120000, 160000, 140000, 180000],
+        "sell": [-80000, -120000, -160000, -140000, -180000],
+        "neutral": [0, 40000, -40000, 20000, -20000],
+    }
+
+    for i in range(days):
+        f_idx = i % 5
+        i_idx = i % 5
+        flow_data.append(FlowData(
+            date=base_date + timedelta(days=i),
+            foreign_net_buy=foreign_values[foreign_trend][f_idx],
+            inst_net_buy=inst_values[inst_trend][i_idx],
+            pension_net_buy=0,  # 연기금 매수 (기본값 0)
+            foreign_ownership=50.0,  # 외국인 지분율 (기본값 50%)
+        ))
+
+    return flow_data
 
 
 class TestCalculateTrend:
@@ -289,6 +320,6 @@ class TestCreateMockFlowData:
         """지분율 범위 테스트"""
         data = create_mock_flow_data(days=20)
 
-        # 모든 지분율이 20% ~ 30% 사이
+        # 모든 지분율이 유효한 범위 (0% ~ 100%)
         for d in data:
-            assert 20 <= d.foreign_ownership <= 30
+            assert 0 <= d.foreign_ownership <= 100

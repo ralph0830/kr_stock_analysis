@@ -38,7 +38,7 @@
 ### 3. 실시간 가격 업데이트
 - WebSocket 기반 실시간 브로드캐스팅
 - 토픽 기반 구독 관리
-- Mock 데이터 fallback
+- Kiwoom REST API 기반 실시간 데이터 수신
 
 ### 4. 데이터 수집
 - KRXCollector: pykrx 래퍼
@@ -61,14 +61,14 @@ docker compose up -d postgres redis
 ### 2. 백엔드 서비스 시작
 
 ```bash
-# API Gateway (port 8000)
-uvicorn services.api_gateway.main:app --reload
+# API Gateway (port 5111)
+uvicorn services.api_gateway.main:app --port 5111 --reload
 
-# VCP Scanner (port 8101) - Docker가 8001 사용 중
-uvicorn services.vcp_scanner.main:app --port 8101 --reload
+# VCP Scanner (port 5112)
+uvicorn services.vcp_scanner.main:app --port 5112 --reload
 
-# Signal Engine (port 8003)
-uvicorn services.signal_engine.main:app --port 8003 --reload
+# Signal Engine (port 5113)
+uvicorn services.signal_engine.main:app --port 5113 --reload
 ```
 
 ### 3. 프론트엔드 시작
@@ -80,9 +80,9 @@ npm run dev
 ```
 
 브라우저에서:
-- Frontend: http://localhost:3000
-- API Docs: http://localhost:8000/docs
-- Dashboard: http://localhost:3000/dashboard
+- Frontend: http://localhost:5110
+- API Docs: http://localhost:5111/docs
+- Dashboard: http://localhost:5110/dashboard
 
 ## 테스트
 
@@ -103,7 +103,6 @@ pytest tests/ -v
 
 - **398 passed** (단위 + 통합)
 - **20 skipped**
-- **9 failed** (일부 mock 설정 문제, 실제 코드 정상 작동)
 
 ## 프로젝트 구조
 
@@ -146,9 +145,9 @@ CELERY_BROKER_URL=redis://localhost:6380/1
 CELERY_RESULT_BACKEND=redis://localhost:6380/2
 
 # Service URLs
-VCP_SCANNER_URL=http://localhost:8101
-SIGNAL_ENGINE_URL=http://localhost:8003
-MARKET_ANALYZER_URL=http://localhost:8002
+VCP_SCANNER_URL=http://localhost:5112
+SIGNAL_ENGINE_URL=http://localhost:5113
+CHATBOT_SERVICE_URL=http://localhost:5114
 
 # Gemini API (선택사항)
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -162,7 +161,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 from src.clients.api_client import APIClient
 
 async def main():
-    client = APIClient(base_url="http://localhost:8000")
+    client = APIClient(base_url="http://localhost:5111")
 
     # 헬스 체크
     health = await client.health_check()
@@ -186,7 +185,7 @@ from src.clients.websocket_client import WebSocketClient
 async def on_price(update):
     print(f"Price update: {update.ticker} = {update.price}")
 
-client = WebSocketClient("ws://localhost:8000/ws/price")
+client = WebSocketClient("ws://localhost:5111/ws/price")
 await client.connect()
 await client.subscribe("005930")  # 삼성전자 구독
 client.on_price_update(on_price)

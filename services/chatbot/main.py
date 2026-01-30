@@ -37,6 +37,34 @@ async def lifespan(app: FastAPI):
     """애플리케이션 라이프사이클 관리"""
     # Startup
     logger.info("🚀 Chatbot Service Starting...")
+
+    # 필수 API 키 체크
+    import os
+
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    kiwoom_app_key = os.getenv("KIWOOM_APP_KEY")
+    kiwoom_secret_key = os.getenv("KIWOOM_SECRET_KEY")
+    use_kiwoom = os.getenv("USE_KIWOOM_REST", "false").lower() == "true"
+
+    # Gemini API는 필수
+    if not gemini_key:
+        logger.error("❌ GEMINI_API_KEY가 설정되지 않았습니다!")
+        logger.error("챗봇 서비스를 사용하려면 Gemini API 키가 필요합니다.")
+        logger.error("환경 변수 GEMINI_API_KEY를 설정해주세요.")
+    else:
+        logger.info("✅ GEMINI_API_KEY configured")
+
+    # Kiwoom API는 실시간 가격 조회를 위해 권장
+    if not (kiwoom_app_key and kiwoom_secret_key):
+        logger.warning("⚠️ Kiwoom API 키가 설정되지 않았습니다.")
+        logger.warning("실시간 가격 정보를 위해 Kiwoom API가 권장됩니다.")
+        logger.warning("KIWOOM_APP_KEY, KIWOOM_SECRET_KEY를 설정해주세요.")
+    elif not use_kiwoom:
+        logger.warning("⚠️ USE_KIWOOM_REST=false로 설정되어 있습니다.")
+        logger.warning("실시간 가격 조회를 위해 true로 설정해주세요.")
+    else:
+        logger.info("✅ Kiwoom REST API configured")
+
     logger.info("✅ Chatbot Service ready")
 
     yield

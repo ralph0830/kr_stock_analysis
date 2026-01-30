@@ -11,7 +11,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Next.js Frontend                         │
-│                     (http://localhost:3000)                      │
+│                     (http://localhost:5110)                      │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐   │
 │  │ VCP 시그널 │ │ 종가베팅  │ │ Market   │ │   Data Status    │   │
 │  │  /vcp    │ │/closing  │ │  Gate    │ │   /data-status   │   │
@@ -194,7 +194,7 @@ gunicorn -w 4 -b 0.0.0.0:5001 flask_app:app
 ```bash
 cd frontend
 npm install
-npm run dev    # http://localhost:3000
+npm run dev    # http://localhost:5110
 npm run build  # 프로덕션 빌드
 npm start      # 프로덕션 실행
 ```

@@ -26,7 +26,7 @@ class KRXCollector:
             self.stock = stock
         else:
             self.stock = None
-            logger.warning("pykrx not available, using mock data")
+            raise RuntimeError("pykrx 라이브러리가 설치되지 않았습니다. pip install pykrx로 설치하세요.")
 
     def _check_pykrx(self) -> bool:
         """pykrx 사용 가능 여부 확인"""
@@ -46,9 +46,6 @@ class KRXCollector:
         Returns:
             종목 정보 리스트 [{ticker, name, market, sector, marcap}]
         """
-        if not self._pykrx_available:
-            return self._get_mock_stock_list(market)
-
         try:
             tickers = self.stock.get_market_ticker_list(market=market)
             stocks = []
@@ -72,7 +69,7 @@ class KRXCollector:
 
         except Exception as e:
             logger.error(f"❌ KRX 종목 목록 조회 실패: {e}")
-            return self._get_mock_stock_list(market)
+            raise
 
     def fetch_daily_prices(
         self,
@@ -95,9 +92,6 @@ class KRXCollector:
         ticker = ticker.zfill(6)
         start_date, end_date = self._validate_date_range(start_date, end_date)
 
-        if not self._pykrx_available:
-            return self._get_mock_daily_prices(ticker, start_date, end_date)
-
         try:
             start_str = start_date.strftime("%Y%m%d")
             end_str = end_date.strftime("%Y%m%d")
@@ -115,7 +109,7 @@ class KRXCollector:
 
         except Exception as e:
             logger.error(f"❌ {ticker} 일봉 데이터 조회 실패: {e}")
-            return self._get_mock_daily_prices(ticker, start_date, end_date)
+            raise
 
     def fetch_supply_demand(
         self,
@@ -138,9 +132,6 @@ class KRXCollector:
         ticker = ticker.zfill(6)
         start_date, end_date = self._validate_date_range(start_date, end_date)
 
-        if not self._pykrx_available:
-            return self._get_mock_supply_demand(ticker, start_date, end_date)
-
         try:
             start_str = start_date.strftime("%Y%m%d")
             end_str = end_date.strftime("%Y%m%d")
@@ -159,7 +150,7 @@ class KRXCollector:
 
         except Exception as e:
             logger.error(f"❌ {ticker} 수급 데이터 조회 실패: {e}")
-            return self._get_mock_supply_demand(ticker, start_date, end_date)
+            raise
 
     def _validate_date_range(
         self,
@@ -173,65 +164,3 @@ class KRXCollector:
         if start_date is None:
             start_date = end_date - timedelta(days=default_days)
         return start_date, end_date
-
-    def _get_mock_stock_list(self, market: str) -> List[Dict[str, Any]]:
-        """목업 종목 목록 (테스트용)"""
-        return [
-            {
-                "ticker": "005930",
-                "name": "삼성전자",
-                "market": market,
-                "sector": "반도체",
-                "marcap": 500000000000,
-            },
-            {
-                "ticker": "000660",
-                "name": "SK하이닉스",
-                "market": market,
-                "sector": "반도체",
-                "marcap": 100000000000,
-            },
-        ]
-
-    def _get_mock_daily_prices(
-        self, ticker: str, start_date: date, end_date: date
-    ) -> pd.DataFrame:
-        """목업 일봉 데이터 (테스트용)"""
-        dates = pd.date_range(start_date, end_date, freq="D")
-        data = []
-
-        base_price = 70000
-        for dt in dates:
-            price = base_price + (dt.dayofyear % 1000) * 10
-            data.append(
-                {
-                    "date": dt.date(),
-                    "ticker": ticker,
-                    "open": price * 0.99,
-                    "high": price * 1.01,
-                    "low": price * 0.98,
-                    "close": price,
-                    "volume": 1000000,
-                }
-            )
-
-        return pd.DataFrame(data)
-
-    def _get_mock_supply_demand(
-        self, ticker: str, start_date: date, end_date: date
-    ) -> pd.DataFrame:
-        """목업 수급 데이터 (테스트용)"""
-        dates = pd.date_range(start_date, end_date, freq="D")
-        data = []
-
-        for dt in dates:
-            data.append(
-                {
-                    "date": dt.date(),
-                    "ticker": ticker,
-                    "foreign_net_buy": 100000 * (1 if dt.day % 2 == 0 else -1),
-                    "inst_net_buy": 50000 * (1 if dt.day % 3 == 0 else -1),
-                }
-            )
-
-        return pd.DataFrame(data)

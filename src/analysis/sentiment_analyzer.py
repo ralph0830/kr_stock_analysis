@@ -64,22 +64,25 @@ class SentimentAnalyzer:
 
         Args:
             api_key: Gemini API 키 (None이면 환경 변수 사용)
+
+        Raises:
+            RuntimeError: Gemini API 키가 없는 경우
         """
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self._client = None
 
-        if self.api_key:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
-                self._client = genai.GenerativeModel("gemini-pro")
-                logger.info("✅ Gemini API initialized")
-            except ImportError:
-                logger.warning("⚠️  google-generativeai not installed")
-            except Exception as e:
-                logger.error(f"❌ Gemini API init failed: {e}")
-        else:
-            logger.warning("⚠️  GEMINI_API_KEY not set, using mock analysis")
+        if not self.api_key:
+            raise RuntimeError("GEMINI_API_KEY가 설정되지 않았습니다. 감성 분석을 사용하려면 API 키가 필요합니다.")
+
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=self.api_key)
+            self._client = genai.GenerativeModel("gemini-pro")
+            logger.info("✅ Gemini API initialized")
+        except ImportError:
+            raise RuntimeError("google-generativeai 라이브러리가 설치되지 않았습니다. pip install google-generativeai로 설치하세요.")
+        except Exception as e:
+            raise RuntimeError(f"Gemini API 초기화 실패: {e}")
 
     def analyze(self, title: str, content: str) -> SentimentResult:
         """
@@ -91,10 +94,10 @@ class SentimentAnalyzer:
 
         Returns:
             감성 분석 결과
-        """
-        if self._client is None:
-            return self._mock_analyze(title, content)
 
+        Raises:
+            RuntimeError: 분석 실패 시
+        """
         try:
             prompt = self.SENTIMENT_PROMPT.format(title=title, content=content)
 
@@ -138,7 +141,7 @@ class SentimentAnalyzer:
 
         except Exception as e:
             logger.error(f"❌ 감성 분석 실패: {e}")
-            return self._mock_analyze(title, content)
+            raise RuntimeError(f"감성 분석 실패: {e}")
 
     def analyze_batch(self, articles: List[Dict[str, str]]) -> List[SentimentResult]:
         """
@@ -155,78 +158,3 @@ class SentimentAnalyzer:
             result = self.analyze(article["title"], article.get("content", ""))
             results.append(result)
         return results
-
-    def _mock_analyze(self, title: str, content: str) -> SentimentResult:
-        """
-        목업 감성 분석 (테스트용)
-
-        간단한 키워드 기반 분석
-        """
-        # 긍정 키워드
-        positive_words = [
-            "상승",
-            "성장",
-            "호조",
-            "개선",
-            "증가",
-            "최대",
-            "기록",
-            "강세",
-            "폭등",
-            "달성",
-            "突破",
-            "초격차",
-            "혁신",
-        ]
-
-        # 부정 키워드
-        negative_words = [
-            "하락",
-            "부진",
-            "약세",
-            "감소",
-            "위기",
-            "우려",
-            "폭락",
-            "부실",
-            "적자",
-            "감사",
-            "리스크",
-            "충격",
-            "악화",
-        ]
-
-        text = (title + " " + content).lower()
-        positive_count = sum(1 for word in positive_words if word in text)
-        negative_count = sum(1 for word in negative_words if word in text)
-
-        # 감성 결정
-        if positive_count > negative_count:
-            sentiment = Sentiment.POSITIVE
-            confidence = min(0.9, 0.5 + positive_count * 0.1)
-            score = confidence
-        elif negative_count > positive_count:
-            sentiment = Sentiment.NEGATIVE
-            confidence = min(0.9, 0.5 + negative_count * 0.1)
-            score = -confidence
-        else:
-            sentiment = Sentiment.NEUTRAL
-            confidence = 0.5
-            score = 0.0
-
-        # 키워드 추출
-        keywords = []
-        all_words = positive_words + negative_words
-        for word in all_words:
-            if word in text:
-                keywords.append(word)
-                if len(keywords) >= 5:
-                    break
-
-        return SentimentResult(
-            sentiment=sentiment,
-            confidence=confidence,
-            keywords=keywords,
-            summary=f"[목업] {title[:50]}...",
-            score=score,
-        )

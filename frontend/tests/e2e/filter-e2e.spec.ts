@@ -4,7 +4,7 @@
  * 이 테스트는 백엔드 서비스가 실행 중이어야 합니다.
  *
  * Prerequisites:
- * - API Gateway (port 8000)
+ * - API Gateway (port 5111)
  * - Frontend (port 5110)
  */
 

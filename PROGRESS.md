@@ -202,10 +202,9 @@
 |--------|------|
 | Frontend (Next.js) | 5110 |
 | API Gateway | 5111 |
-| Chatbot Service | 5115 |
+| Chatbot Service | 5114 |
 | VCP Scanner | 5112 |
 | Signal Engine | 5113 |
-| Market Analyzer | 5114 |
 | PostgreSQL | 5433 |
 | Redis | 6380 |
 | Flower (Celery) | 5555 |

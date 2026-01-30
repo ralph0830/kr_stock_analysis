@@ -136,6 +136,7 @@ class AIAnalysisRepository(BaseRepository[AIAnalysis]):
         recommendation: str,
         confidence: float = 0.5,
         news_count: int = 0,
+        news_urls: List = None,
     ) -> AIAnalysis:
         """
         AI 분석 결과 저장
@@ -150,6 +151,7 @@ class AIAnalysisRepository(BaseRepository[AIAnalysis]):
             recommendation: 매수 추천 (BUY/SELL/HOLD)
             confidence: 신뢰도
             news_count: 뉴스 수
+            news_urls: 뉴스 링크 리스트 [{"title": "...", "url": "..."}]
 
         Returns:
             생성된 AIAnalysis
@@ -164,6 +166,7 @@ class AIAnalysisRepository(BaseRepository[AIAnalysis]):
             keywords=keywords,
             recommendation=recommendation,
             news_count=news_count,
+            news_urls=news_urls or [],
         )
         self.session.add(analysis)
         self.session.commit()

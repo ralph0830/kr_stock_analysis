@@ -133,6 +133,7 @@ class KnowledgeRetriever:
         """
         try:
             repo = self._get_signal_repo()
+            stock_repo = self._get_stock_repo()
 
             if ticker:
                 # 특정 종목 시그널
@@ -141,17 +142,22 @@ class KnowledgeRetriever:
                 # 전체 활성 시그널
                 signals = repo.get_active(limit=limit)
 
-            return [
-                {
+            result = []
+            for s in signals:
+                # 종목명 조회 (StockRepository)
+                stock = stock_repo.get_by_ticker(s.ticker)
+                stock_name = stock.name if stock else s.ticker
+
+                result.append({
                     "ticker": s.ticker,
-                    "name": s.name or "",  # Signal 모델에 name이 없을 수 있음
+                    "name": stock_name,
                     "signal_type": s.signal_type,
                     "score": s.score,
                     "grade": s.grade,
                     "created_at": s.signal_date.isoformat() if s.signal_date else None,
-                }
-                for s in signals
-            ]
+                })
+
+            return result
 
         except Exception as e:
             logger.error(f"시그널 검색 실패: {e}")
@@ -247,6 +253,7 @@ class KnowledgeRetriever:
                     "recommendation": a.recommendation,
                     "sentiment": a.sentiment,
                     "score": a.score,
+                    "news_urls": a.news_urls or [],  # 뉴스 링크 추가
                     "created_at": a.created_at.isoformat() if a.created_at else None,
                 }
                 for a in results
@@ -318,31 +325,34 @@ class KnowledgeRetriever:
         market_keywords = ["시장", "마켓", "kospi", "kosdaq", "지수", "현황"]
         return any(word in query.lower() for word in market_keywords)
 
-    async def get_realtime_price(self, ticker: str) -> Optional[Dict[str, Any]]:
+    async def get_realtime_price(self, ticker: str) -> Dict[str, Any]:
         """
-        Kiwoom API에서 실시간 가격 조회
+        Kiwoom API에서 실시간 가격 조회 (캐싱 적용)
 
         Args:
             ticker: 종목 코드
 
         Returns:
-            실시간 가격 정보 또는 None
+            실시간 가격 정보
+
+        Raises:
+            Exception: Kiwoom API 조회 실패 시
         """
-        if not is_kiwoom_available():
-            logger.warning("Kiwoom API not available for realtime price")
-            return None
+        from services.chatbot.price_cache import get_cached_price
+        from services.chatbot.kiwoom_integration import KiwoomAPIError
 
         try:
-            from services.chatbot.kiwoom_integration import get_kiwoom_current_price
-
-            price_data = await get_kiwoom_current_price(ticker)
+            # 캐싱 레이어를 통한 가격 조회 (Redis 캐싱 + Kiwoom API)
+            price_data = await get_cached_price(ticker)
             return price_data
-
+        except KiwoomAPIError as e:
+            logger.warning(f"Kiwoom API error for {ticker}: {e}")
+            raise
         except Exception as e:
             logger.error(f"실시간 가격 조회 실패: {e}")
-            return None
+            raise
 
-    async def get_realtime_stock_info(self, ticker: str) -> Optional[Dict[str, Any]]:
+    async def get_realtime_stock_info(self, ticker: str) -> Dict[str, Any]:
         """
         Kiwoom API에서 실시간 종목 정보 조회
 
@@ -350,21 +360,25 @@ class KnowledgeRetriever:
             ticker: 종목 코드
 
         Returns:
-            종목 정보 또는 None
+            종목 정보
+
+        Raises:
+            Exception: Kiwoom API 조회 실패 시
         """
-        if not is_kiwoom_available():
-            logger.warning("Kiwoom API not available for stock info")
-            return None
+        from services.chatbot.kiwoom_integration import (
+            get_kiwoom_stock_info,
+            KiwoomAPIError,
+        )
 
         try:
-            from services.chatbot.kiwoom_integration import get_kiwoom_stock_info
-
             stock_info = await get_kiwoom_stock_info(ticker)
             return stock_info
-
+        except KiwoomAPIError as e:
+            logger.warning(f"Kiwoom API error for {ticker} info: {e}")
+            raise
         except Exception as e:
             logger.error(f"실시간 종목 정보 조회 실패: {e}")
-            return None
+            raise
 
     async def enrich_with_kiwoom_data(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -376,17 +390,32 @@ class KnowledgeRetriever:
         Returns:
             Kiwoom 데이터가 추가된 컨텍스트
         """
-        if not is_kiwoom_available():
-            return context
+        try:
+            if not is_kiwoom_available():
+                logger.debug("Kiwoom API not available for realtime enrichment")
+                return context
 
-        # 종목이 있으면 실시간 가격 추가
-        if context.get("stocks"):
-            for stock in context["stocks"]:
-                ticker = stock.get("ticker")
-                if ticker:
-                    price_data = await self.get_realtime_price(ticker)
-                    if price_data:
-                        stock["realtime_price"] = price_data
+            # 종목이 있으면 실시간 가격 추가
+            if context.get("stocks"):
+                for stock in context["stocks"]:
+                    ticker = stock.get("ticker")
+                    if ticker:
+                        try:
+                            price_data = await self.get_realtime_price(ticker)
+                            if price_data:
+                                stock["realtime_price"] = {
+                                    "price": price_data.get("price"),
+                                    "change": price_data.get("change"),
+                                    "change_rate": price_data.get("change_rate"),
+                                    "volume": price_data.get("volume"),
+                                    "timestamp": price_data.get("timestamp"),
+                                }
+                        except Exception as e:
+                            logger.warning(f"Failed to enrich {ticker} with realtime data: {e}")
+                            # API 실패해도 컨텍스트는 계속 진행
+
+        except Exception as e:
+            logger.warning(f"Kiwoom data enrichment failed: {e}")
 
         return context
 
