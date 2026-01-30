@@ -61,6 +61,8 @@ from services.api_gateway.schemas import (
     SignalHistoryResponse,
     BacktestStatsItem,
     BacktestKPIResponse,
+    NewsItem,
+    NewsListResponse,
 )
 
 
@@ -261,6 +263,10 @@ app = FastAPI(
             "name": "performance",
             "description": "누적 수익률 및 성과 분석",
         },
+        {
+            "name": "news",
+            "description": "종목 뉴스 조회",
+        },
     ],
 
     # Contact 정보
@@ -347,6 +353,11 @@ print("✅ Chatbot routes registered")
 from services.api_gateway.routes.performance import router as performance_router
 app.include_router(performance_router)
 print("✅ Performance routes registered")
+
+# News 라우터 포함 (Phase 6: GREEN)
+from services.api_gateway.routes.news import router as news_router
+app.include_router(news_router)
+print("✅ News routes registered")
 
 
 # ============================================================================

@@ -425,3 +425,28 @@ class ScanStatusResponse(BaseModel):
     last_signal_generation: Optional[str] = None  # ISO format timestamp
     current_operation: Optional[str] = None  # 현재 진행 중인 작업
     progress_percentage: Optional[float] = None  # 진행률 (0-100)
+
+
+# ============================================================================
+# News Models (Phase 6)
+# ============================================================================
+
+
+class NewsItem(BaseModel):
+    """뉴스 항목 모델 (Phase 6: GREEN)"""
+
+    title: str  # 뉴스 제목
+    url: str  # 뉴스 기사 URL
+    source: Optional[str] = None  # 뉴스 소스 (네이버, 연합뉴스, etc.)
+    published_at: Optional[str] = None  # ISO format timestamp
+
+
+class NewsListResponse(BaseModel):
+    """뉴스 목록 응답 모델 (Phase 6: GREEN)"""
+
+    ticker: Optional[str] = None  # 종목 코드
+    news: List[NewsItem]  # 뉴스 목록
+    total: int  # 전체 뉴스 수
+    page: int = 1  # 현재 페이지
+    limit: int = 20  # 페이지당 뉴스 수
+    has_more: bool = False  # 더 많은 뉴스 존재 여부

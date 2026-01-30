@@ -98,25 +98,67 @@ export default function HomePage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500 mb-1">KOSPI</p>
-                  <span
-                    className={cn(
-                      "px-3 py-1 rounded text-sm font-medium",
-                      getMarketGateColor(marketGate.kospi_status)
+                  <div className="flex items-center gap-2">
+                    {marketGate.kospi_close ? (
+                      <>
+                        <span className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                          {marketGate.kospi_close.toLocaleString()}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-sm font-medium",
+                            marketGate.kospi_change_pct && marketGate.kospi_change_pct >= 0
+                              ? "text-red-600"
+                              : "text-blue-600"
+                          )}
+                        >
+                          {marketGate.kospi_change_pct && marketGate.kospi_change_pct >= 0 ? "+" : ""}
+                          {marketGate.kospi_change_pct?.toFixed(2)}%
+                        </span>
+                      </>
+                    ) : (
+                      <span
+                        className={cn(
+                          "px-3 py-1 rounded text-sm font-medium",
+                          getMarketGateColor(marketGate.kospi_status)
+                        )}
+                      >
+                        {marketGate.kospi_status}
+                      </span>
                     )}
-                  >
-                    {marketGate.kospi_status}
-                  </span>
+                  </div>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 mb-1">KOSDAQ</p>
-                  <span
-                    className={cn(
-                      "px-3 py-1 rounded text-sm font-medium",
-                      getMarketGateColor(marketGate.kosdaq_status)
+                  <div className="flex items-center gap-2">
+                    {marketGate.kosdaq_close ? (
+                      <>
+                        <span className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                          {marketGate.kosdaq_close.toLocaleString()}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-sm font-medium",
+                            marketGate.kosdaq_change_pct && marketGate.kosdaq_change_pct >= 0
+                              ? "text-red-600"
+                              : "text-blue-600"
+                          )}
+                        >
+                          {marketGate.kosdaq_change_pct && marketGate.kosdaq_change_pct >= 0 ? "+" : ""}
+                          {marketGate.kosdaq_change_pct?.toFixed(2)}%
+                        </span>
+                      </>
+                    ) : (
+                      <span
+                        className={cn(
+                          "px-3 py-1 rounded text-sm font-medium",
+                          getMarketGateColor(marketGate.kosdaq_status)
+                        )}
+                      >
+                        {marketGate.kosdaq_status}
+                      </span>
                     )}
-                  >
-                    {marketGate.kosdaq_status}
-                  </span>
+                  </div>
                 </div>
               </div>
             </div>
