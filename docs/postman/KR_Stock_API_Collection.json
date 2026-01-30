@@ -1,6 +1,6 @@
 {
   "info": {
-    "name": "KR Stock API Gateway",
+    "name": "Ralph Stock API Gateway",
     "description": "한국 주식 분석 시스템 API Gateway Collection",
     "version": "2.0.0",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"

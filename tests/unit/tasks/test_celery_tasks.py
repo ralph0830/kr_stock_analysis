@@ -16,7 +16,7 @@ class TestCeleryApp:
     def test_celery_app_init(self):
         """Celery 앱 초기화 테스트"""
         assert celery_app is not None
-        assert celery_app.main == "kr_stock_tasks"
+        assert celery_app.main == "ralph_stock_tasks"
 
     def test_broker_url_configured(self):
         """브로커 URL 설정 확인"""

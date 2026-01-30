@@ -13,7 +13,7 @@ import asyncio
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 환경 변수 로드
-os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/kr_stock")
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/ralph_stock")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6380/0")
 
 # Pytest-asyncio 설정

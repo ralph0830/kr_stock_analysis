@@ -1,10 +1,10 @@
 #!/bin/bash
-# KR Stock 시스템 전체 중지 스크립트
+# Ralph Stock 시스템 전체 중지 스크립트
 
 set -e
 
 echo "========================================="
-echo "  KR Stock Analysis System 중지"
+echo "  Ralph Stock Analysis System 중지"
 echo "========================================="
 echo ""
 

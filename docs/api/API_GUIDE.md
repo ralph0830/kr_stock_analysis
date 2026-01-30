@@ -1,4 +1,4 @@
-# KR Stock API Gateway 가이드
+# Ralph Stock API Gateway 가이드
 
 한국 주식 분석 시스템 API Gateway의 공식 API 가이드 문서입니다.
 

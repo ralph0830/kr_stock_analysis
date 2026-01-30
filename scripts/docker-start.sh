@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# KR Stock Analysis - Docker 시작 스크립트
+# Ralph Stock Analysis - Docker 시작 스크립트
 # ============================================================================
 
 set -e
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 print_logo() {
     echo -e "${BLUE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║          KR Stock Analysis - Docker Manager                ║"
+    echo "║          Ralph Stock Analysis - Docker Manager                ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }

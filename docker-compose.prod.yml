@@ -4,10 +4,10 @@ services:
   # PostgreSQL + TimescaleDB (Production)
   postgres:
     image: timescale/timescaledb:latest-pg15
-    container_name: kr_stock_db_prod
+    container_name: ralph_stock_db_prod
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-kr_stock}
+      POSTGRES_DB: ${POSTGRES_DB:-ralph_stock}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TS_TUNE_MEMORY: '2GB'
@@ -23,7 +23,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     deploy:
       resources:
         limits:
@@ -41,7 +41,7 @@ services:
   # Redis (Cache + Message Broker)
   redis:
     image: redis:7-alpine
-    container_name: kr_stock_redis_prod
+    container_name: ralph_stock_redis_prod
     restart: unless-stopped
     command: >
       redis-server
@@ -60,7 +60,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     deploy:
       resources:
         limits:
@@ -81,10 +81,10 @@ services:
       context: .
       dockerfile: Dockerfile.gateway
       target: production
-    container_name: kr_stock_api_gateway_prod
+    container_name: ralph_stock_api_gateway_prod
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kr_stock}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       VCP_SCANNER_URL: http://vcp-scanner:5112
@@ -115,7 +115,7 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     deploy:
       resources:
         limits:
@@ -136,10 +136,10 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: production
-    container_name: kr_stock_vcp_scanner_prod
+    container_name: ralph_stock_vcp_scanner_prod
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kr_stock}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SERVICE_NAME: vcp-scanner
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -161,7 +161,7 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     deploy:
       resources:
         limits:
@@ -182,10 +182,10 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: production
-    container_name: kr_stock_signal_engine_prod
+    container_name: ralph_stock_signal_engine_prod
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kr_stock}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SERVICE_NAME: signal-engine
       GEMINI_API_KEY: ${GEMINI_API_KEY}
@@ -208,7 +208,7 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     deploy:
       resources:
         limits:
@@ -229,10 +229,10 @@ services:
       context: .
       dockerfile: Dockerfile.celery
       target: production
-    container_name: kr_stock_celery_worker_prod
+    container_name: ralph_stock_celery_worker_prod
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kr_stock}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
@@ -247,7 +247,7 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     healthcheck:
       test: ["CMD-SHELL", "celery -A tasks.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
       interval: 30s
@@ -274,10 +274,10 @@ services:
       context: .
       dockerfile: Dockerfile.celery
       target: production
-    container_name: kr_stock_celery_beat_prod
+    container_name: ralph_stock_celery_beat_prod
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-kr_stock}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -292,7 +292,7 @@ services:
     volumes:
       - ./logs:/app/logs
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     healthcheck:
       test: ["CMD-SHELL", "celery -A tasks.celery_app status || exit 1"]
       interval: 30s
@@ -316,7 +316,7 @@ services:
   # Flower (Celery Monitoring)
   flower:
     image: mher/flower:latest
-    container_name: kr_stock_flower_prod
+    container_name: ralph_stock_flower_prod
     restart: unless-stopped
     environment:
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
@@ -328,7 +328,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     deploy:
       resources:
         limits:
@@ -350,7 +350,7 @@ volumes:
     driver: local
 
 networks:
-  kr_stock_network:
+  ralph_stock_network:
     driver: bridge
     ipam:
       config:

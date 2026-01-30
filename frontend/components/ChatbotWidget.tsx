@@ -9,6 +9,7 @@ import { useState, useRef, useEffect } from "react";
 import apiClient from "@/lib/api-client";
 import { type IChatMessage, type IChatResponse } from "@/types";
 import { useTypingAnimation } from "@/hooks/useTypingAnimation";
+import { parseMarkdownLinks, isExternalUrl } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -104,34 +105,49 @@ export function ChatbotWidget({ initialMessage, onStockClick }: IChatbotWidgetPr
     }
   };
 
-  // 메시지에서 티커 추출 및 링크 변환
+  // 메시지에서 티커 추출 및 링크 변환 (Phase 4: 마크다운 링크 지원)
   const renderMessage = (message: IChatMessage) => {
-    // 티커 패턴 (6자리 숫자)
-    const tickerPattern = /(\d{6})/g;
-
     if (message.role === "user") {
       return <p className="text-sm whitespace-pre-wrap">{message.content}</p>;
     }
 
-    // 어시스턴트 메시지에서 티커를 링크로 변환
-    const parts = message.content.split(tickerPattern);
+    // 마크다운 링크와 티커 파싱
+    const parts = parseMarkdownLinks(message.content);
+
     const renderedParts: React.ReactNode[] = [];
 
     parts.forEach((part, index) => {
-      if (tickerPattern.test(part)) {
+      if (part.type === "link") {
+        // 마크다운 링크: [title](url)
+        const isExternal = part.url ? isExternalUrl(part.url) : false;
+
+        renderedParts.push(
+          <a
+            key={`link-${index}`}
+            href={part.url}
+            target={isExternal ? "_blank" : undefined}
+            rel={isExternal ? "noopener noreferrer" : undefined}
+            className="text-blue-600 hover:text-blue-800 underline"
+          >
+            {part.content}
+          </a>
+        );
+      } else if (part.type === "ticker") {
+        // 티커: 6자리 숫자
         renderedParts.push(
           <button
-            key={index}
-            onClick={() => handleTickerClick(part)}
+            key={`ticker-${index}`}
+            onClick={() => handleTickerClick(part.content)}
             className="text-blue-600 hover:text-blue-800 underline font-mono"
           >
-            {part}
+            {part.content}
           </button>
         );
       } else {
+        // 일반 텍스트
         renderedParts.push(
-          <span key={index} className="whitespace-pre-wrap">
-            {part}
+          <span key={`text-${index}`} className="whitespace-pre-wrap">
+            {part.content}
           </span>
         );
       }

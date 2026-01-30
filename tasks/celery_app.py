@@ -11,7 +11,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Celery 앱 생성
 celery_app = Celery(
-    "kr_stock_tasks",
+    "ralph_stock_tasks",
     broker=REDIS_URL,
     backend=REDIS_URL,
     include=[
@@ -68,19 +68,21 @@ celery_app.conf.update(
             "schedule": 60 * 60,  # 1시간 (테스트용)
             # "schedule": crontab(hour="9,15", minute=0),
         },
-        # 뉴스 수집 - 매시간 (테스트용: 1시간)
-        "collect-news-hourly": {
-            "task": "tasks.news_tasks.collect_all_stocks_news",
-            "schedule": 60 * 60,  # 1시간
-            # "schedule": crontab(minute=0),  # 매시간 정각
+        # Phase 5: 뉴스 수집 및 DB 저장 - 매일 오전 9시, 오후 3시 (운영용)
+        # 테스트용: 30분 간격
+        "news-collection-daily": {
+            "task": "tasks.news_tasks.scheduled_daily_collection",
+            "schedule": 30 * 60,  # 30분 (테스트용)
+            # "schedule": crontab(hour="9,15", minute=0),  # 운영: 오전 9시, 오후 3시
             "args": ("KOSPI", 7, 30),
         },
-        # 뉴스 감성 분석 - 2시간마다
-        "analyze-sentiment-daily": {
-            "task": "tasks.news_tasks.news_pipeline_task",
-            "schedule": 2 * 60 * 60,  # 2시간
-            # "schedule": crontab(hour="*/2"),
-            "args": ("005930", 7, 30),  # 삼성전자 예시
+        # Phase 5: KOSDAQ 뉴스 수집 - 매일 오후 2시 (운영용)
+        # 테스트용: 1시간 간격
+        "news-collection-kosdaq": {
+            "task": "tasks.news_tasks.scheduled_daily_collection",
+            "schedule": 60 * 60,  # 1시간 (테스트용)
+            # "schedule": crontab(hour=14, minute=0),  # 운영: 오후 2시
+            "args": ("KOSDAQ", 7, 30),
         },
     },
 )

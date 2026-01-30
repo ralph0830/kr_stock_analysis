@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-KR Stock Analysis - CLI Entry Point
+Ralph Stock Analysis - CLI Entry Point
 한국 주식 분석 시스템 메인 CLI 인터페이스
 """
 import asyncio
@@ -132,7 +132,7 @@ class APIClient:
 def show_header():
     """헤더 표시"""
     header = Panel(
-        "[bold cyan]KR Stock Analysis System[/bold cyan]\n"
+        "[bold cyan]Ralph Stock Analysis System[/bold cyan]\n"
         "[dim]한국 주식 분석 시스템 - CLI 인터페이스[/dim]",
         border_style="cyan",
         padding=(1, 2),

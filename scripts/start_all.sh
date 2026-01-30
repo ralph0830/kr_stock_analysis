@@ -1,10 +1,10 @@
 #!/bin/bash
-# KR Stock 시스템 전체 시작 스크립트
+# Ralph Stock 시스템 전체 시작 스크립트
 
 set -e
 
 echo "========================================="
-echo "  KR Stock Analysis System 시작"
+echo "  Ralph Stock Analysis System 시작"
 echo "========================================="
 echo ""
 

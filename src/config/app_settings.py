@@ -28,7 +28,7 @@ class AppSettings(BaseSettings):
 
     # === Database 설정 ===
     database_url: str = Field(
-        default="postgresql://postgres:postgres@localhost:5433/kr_stock",
+        default="postgresql://postgres:postgres@localhost:5433/ralph_stock",
         description="PostgreSQL 데이터베이스 연결 URL",
     )
 

@@ -231,7 +231,7 @@ def verify_migration(csv_path: str, table_name: str) -> bool:
 def main():
     """메인 마이그레이션 함수"""
     print("=" * 60)
-    print("🚀 KR Stock - CSV to DB Migration")
+    print("🚀 Ralph Stock - CSV to DB Migration")
     print("=" * 60)
     print()
 

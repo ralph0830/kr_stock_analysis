@@ -1,5 +1,5 @@
 """
-KR Stock WebSocket Client
+Ralph Stock WebSocket Client
 실시간 가격 업데이트를 위한 WebSocket 클라이언트
 """
 
@@ -53,7 +53,7 @@ class PriceUpdate:
 
 class WebSocketClient:
     """
-    KR Stock WebSocket 클라이언트
+    Ralph Stock WebSocket 클라이언트
 
     실시간 가격 업데이트를 수신하고 구독 관리를 합니다.
 

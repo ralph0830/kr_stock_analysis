@@ -478,6 +478,15 @@ export interface IChatResponse {
 }
 
 /**
+ * 마크다운 파싱 부품 타입 (Phase 4: 뉴스 링크)
+ */
+export interface IMarkdownPart {
+  type: "text" | "link" | "ticker";
+  content: string;
+  url?: string;
+}
+
+/**
  * 챗봇 컨텍스트
  */
 export interface IChatContext {

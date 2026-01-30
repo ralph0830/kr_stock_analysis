@@ -1,5 +1,5 @@
 """
-KR Stock - Database Configuration
+Ralph Stock - Database Configuration
 PostgreSQL + TimescaleDB 설정
 """
 
@@ -16,7 +16,7 @@ load_dotenv()
 # Database URL
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5433/kr_stock"  # Updated to 5433
+    "postgresql://postgres:postgres@localhost:5433/ralph_stock"  # Updated to 5433
 )
 
 # Engine 설정

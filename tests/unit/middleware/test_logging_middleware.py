@@ -257,6 +257,6 @@ class TestMiddlewareIntegration:
                 assert log_data["level"] == "INFO"
                 assert log_data["message"] == "Test message"
                 assert log_data["request_id"] == "test-req-999"
-                assert log_data["service"] == "kr_stock"
+                assert log_data["service"] == "ralph_stock"
                 assert log_data["environment"] == "development"
                 assert "custom_field" in log_data["extra"]

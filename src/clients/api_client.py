@@ -1,5 +1,5 @@
 """
-KR Stock API Client
+Ralph Stock API Client
 API Gateway와 통신하기 위한 HTTP 클라이언트
 """
 
@@ -86,7 +86,7 @@ class StockPrice:
 
 class APIClient:
     """
-    KR Stock API Gateway용 HTTP 클라이언트
+    Ralph Stock API Gateway용 HTTP 클라이언트
 
     사용 예:
         client = APIClient(base_url="http://localhost:5111")

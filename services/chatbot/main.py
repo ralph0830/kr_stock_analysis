@@ -545,7 +545,7 @@ def _generate_rag_reply(
     # 일본 인사
     if "안녕" in message or "hello" in message.lower():
         return (
-            "안녕하세요! KR Stock 챗봇입니다. "
+            "안녕하세요! Ralph Stock 챗봇입니다. "
             "VCP 패턴, 종가베팅 시그널, Market Gate 등에 대해 질문해주세요."
         )
 

@@ -120,42 +120,39 @@ class TestNaverNewsURLExtraction:
 
     # RED TEST 4: 기사 제목과 URL 함께 추출
     @pytest.mark.red
-    @patch("src.collectors.news_collector.requests.Session.get")
-    def test_extract_title_and_url_pairs(self, mock_get, collector):
+    def test_extract_title_and_url_pairs(self, collector):
         """
         기사 제목과 URL을 쌍으로 추출
 
         반환 형식: {"title": "...", "url": "..."}
         """
-        # 검색 결과 HTML
-        search_html = """
+        # Mock 응답 생성
+        search_response = Mock()
+        search_response.text = """
         <html>
         <body>
         <a href="https://n.news.naver.com/mnews/article/052/0002308140">삼성전자 뉴스</a>
         </body>
         </html>
         """
-
-        # Mock 응답 생성
-        search_response = Mock()
-        search_response.text = search_html
         search_response.status_code = 200
         search_response.raise_for_status = Mock()
 
-        mock_get.return_value = search_response
-
-        # _fetch_article_details를 mock하여 기사 상세 정보 반환
+        # 기사 상세 정보 mock (오늘 날짜 사용)
+        from datetime import datetime
+        today = datetime.now()
         mock_article_details = {
             "title": "삼성전자, 4분기 영업이익 시상초정 달성",
             "url": "https://n.news.naver.com/mnews/article/052/0002308140",
             "source": "연합뉴스",
-            "published_at": "2024-01-30T14:00:00",
+            "published_at": today.isoformat(),
             "content": "삼성전자가 4분기 영업이익 시상초정을 달성했습니다."
         }
 
-        # _wait_for_rate_limit와 _fetch_article_details mock
-        with patch.object(collector, "_wait_for_rate_limit"), \
-             patch.object(collector, "_fetch_article_details", return_value=mock_article_details):
+        # mock 순서가 중요: _fetch_article_details를 먼저 mock한 후 session.get을 mock
+        with patch.object(collector, "_fetch_article_details", return_value=mock_article_details), \
+             patch.object(collector, "_wait_for_rate_limit"), \
+             patch.object(collector.session, "get", return_value=search_response):
             articles = collector._fetch_naver_news_with_urls("삼성전자", days=7, max_articles=10)
 
         assert len(articles) > 0, "뉴스 기사가 추출되어야 함"
@@ -181,8 +178,7 @@ class TestNaverNewsURLExtraction:
 
     # RED TEST 6: 최신 뉴스 우선 정렬
     @pytest.mark.red
-    @patch("src.collectors.news_collector.requests.Session.get")
-    def test_latest_news_first(self, mock_get, collector):
+    def test_latest_news_first(self, collector):
         """최신 뉴스가 먼저 오도록 정렬"""
         # 검색 결과 HTML (두 개의 뉴스 URL 포함)
         search_html = """
@@ -199,14 +195,16 @@ class TestNaverNewsURLExtraction:
         search_response.status_code = 200
         search_response.raise_for_status = Mock()
 
-        mock_get.return_value = search_response
+        # 오늘과 어제 날짜로 두 기사의 상세 정보 생성
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
 
-        # 두 기사의 상세 정보 (다른 날짜)
         mock_article_1 = {
             "title": "오늘 뉴스",
             "url": "https://n.news.naver.com/mnews/article/052/0002308140",
             "source": "언론사1",
-            "published_at": "2024-01-30T14:00:00",
+            "published_at": today.isoformat(),
             "content": "내용1"
         }
 
@@ -214,13 +212,14 @@ class TestNaverNewsURLExtraction:
             "title": "어제 뉴스",
             "url": "https://n.news.naver.com/mnews/article/088/0000994665",
             "source": "언론사2",
-            "published_at": "2024-01-29T10:00:00",
+            "published_at": yesterday.isoformat(),
             "content": "내용2"
         }
 
-        # _fetch_article_details가 호출될 때마다 다른 기사 반환
-        with patch.object(collector, "_wait_for_rate_limit"), \
-             patch.object(collector, "_fetch_article_details", side_effect=[mock_article_1, mock_article_2]):
+        # mock 순서: _fetch_article_details를 먼저 mock
+        with patch.object(collector, "_fetch_article_details", side_effect=[mock_article_1, mock_article_2]), \
+             patch.object(collector, "_wait_for_rate_limit"), \
+             patch.object(collector.session, "get", return_value=search_response):
             articles = collector._fetch_naver_news_with_urls("삼성전자", days=7, max_articles=10)
 
         assert len(articles) >= 2, "최소 2개의 기사가 필요함"

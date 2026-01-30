@@ -1,5 +1,5 @@
 """
-KR Stock - API Gateway
+Ralph Stock - API Gateway
 FastAPI 기반 API Gateway 구현
 """
 # ruff: noqa: E402  # dotenv 로드 후 import 필요
@@ -192,7 +192,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="KR Stock API Gateway",
+    title="Ralph Stock API Gateway",
     description="""
     ## 한국 주식 분석 시스템 API Gateway
 
@@ -265,7 +265,7 @@ app = FastAPI(
 
     # Contact 정보
     contact={
-        "name": "KR Stock Team",
+        "name": "Ralph Stock Team",
         "email": "support@krstock.example.com",
     },
 
@@ -395,7 +395,7 @@ async def health_check():
             "content": {
                 "application/json": {
                     "example": {
-                        "message": "KR Stock API Gateway",
+                        "message": "Ralph Stock API Gateway",
                         "version": "2.0.0",
                         "docs": "/docs",
                         "status": "operational",
@@ -414,7 +414,7 @@ async def root():
 
 
     return {
-        "message": "KR Stock API Gateway",
+        "message": "Ralph Stock API Gateway",
         "version": "2.0.0",
         "docs": "/docs",
         "status": "operational",
@@ -1126,7 +1126,7 @@ async def get_kr_realtime_prices(request: RealtimePricesRequest):
         404: {"description": "종목을 찾을 수 없음"},
     },
 )
-async def get_kr_stock_chart(ticker: str, period: str = "6mo"):
+async def get_ralph_stock_chart(ticker: str, period: str = "6mo"):
     """
     종목 차트 데이터 조회 (레거시 호환용)
 

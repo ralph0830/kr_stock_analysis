@@ -140,7 +140,7 @@ class CacheClient:
     def __init__(
         self,
         url: str = "redis://localhost:6379/0",
-        key_prefix: str = "kr_stock:",
+        key_prefix: str = "ralph_stock:",
     ):
         self._url = url
         self._key_prefix = key_prefix

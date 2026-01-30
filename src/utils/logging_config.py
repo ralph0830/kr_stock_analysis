@@ -39,7 +39,7 @@ class JSONFormatter(logging.Formatter):
 
     def __init__(
         self,
-        service_name: str = "kr_stock",
+        service_name: str = "ralph_stock",
         environment: str = "development",
     ):
         super().__init__()
@@ -140,7 +140,7 @@ def setup_logging(
     level: str = "INFO",
     log_dir: str = None,
     json_output: bool = False,
-    service_name: str = "kr_stock",
+    service_name: str = "ralph_stock",
     environment: str = "development",
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,

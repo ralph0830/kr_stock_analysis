@@ -34,7 +34,7 @@ class TestAppSettingsDefaults:
         """Database 기본값 확인"""
         settings = AppSettings()
 
-        assert settings.database_url == "postgresql://postgres:postgres@localhost:5433/kr_stock"
+        assert settings.database_url == "postgresql://postgres:postgres@localhost:5433/ralph_stock"
 
     def test_redis_defaults(self):
         """Redis 기본값 확인"""

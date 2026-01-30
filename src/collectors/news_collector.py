@@ -426,8 +426,13 @@ class NewsCollector:
 
                     # 날짜 범위 확인
                     published_at = article_data.get("published_at")
-                    if published_at and (datetime.now() - published_at).days > days:
-                        continue
+                    if published_at:
+                        # 문자열인 경우 datetime으로 변환
+                        if isinstance(published_at, str):
+                            published_at = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
+
+                        if (datetime.now() - published_at).days > days:
+                            continue
 
                     articles.append(article_data)
 

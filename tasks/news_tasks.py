@@ -1,6 +1,10 @@
 """
 Celery News Tasks
 뉴스 수집 및 감성 분석 태스크
+
+Phase 5: 자동 뉴스 수집 스케줄
+- DB에 news_urls 자동 저장
+- Celery Beat 스케줄러 연동
 """
 
 import logging
@@ -8,10 +12,13 @@ from datetime import date, datetime
 from typing import List, Dict, Any
 
 from celery import shared_task
+from celery.schedules import crontab
 
 from src.collectors.news_collector import NewsCollector
 from src.analysis.sentiment_analyzer import SentimentAnalyzer
 from src.analysis.news_scorer import NewsScorer
+from src.database.session import get_db_session
+from src.repositories.ai_analysis_repository import AIAnalysisRepository
 
 logger = logging.getLogger(__name__)
 
@@ -303,3 +310,231 @@ def collect_and_analyze_news(ticker: str):
 
     # 감성 분석 (체이닝)
     return analyze_sentiment(ticker, articles)
+
+
+# ============================================================================
+# Phase 5: 자동 뉴스 수집 스케줄 태스크 (GREEN)
+# ============================================================================
+
+@shared_task(name="news.collect_and_save", bind=True, max_retries=3)
+def collect_and_save_task(
+    self,  # Celery task binding (self)
+    ticker: str,
+    days: int = 7,
+    max_articles: int = 30,
+) -> Dict[str, Any]:
+    """
+    뉴스 수집 및 DB 저장 태스크 (Phase 5: GREEN)
+
+    수집된 뉴스와 URL을 DB에 자동 저장
+
+    Args:
+        self: Celery task instance (bind=True)
+        ticker: 종목 코드
+        days: 수집할 날짜 범위
+        max_articles: 최대 기사 수
+
+    Returns:
+        저장 결과 딕셔너리
+    """
+    session = None
+    try:
+        logger.info(f"🔄 {ticker} 뉴스 수집 및 DB 저장 시작")
+
+        # 1. 뉴스 수집
+        collector = NewsCollector()
+        articles = collector.fetch_stock_news(
+            ticker=ticker,
+            days=days,
+            max_articles=max_articles,
+        )
+
+        if not articles:
+            logger.warning(f"⚠️  {ticker} 수집된 뉴스 없음")
+            return {
+                "ticker": ticker,
+                "success": False,
+                "reason": "no_articles",
+                "saved_count": 0,
+            }
+
+        # 2. news_urls 추출
+        news_urls = [
+            {"title": article.get("title", ""), "url": article.get("url", "")}
+            for article in articles
+            if article.get("url")  # URL이 있는 기사만
+        ]
+
+        # 3. 감성 분석
+        analyzer = SentimentAnalyzer()
+
+        # 전체 분석을 위한 텍스트 결합
+        all_titles = " ".join([a.get("title", "") for a in articles])
+        all_content = " ".join([a.get("content", "") for a in articles])
+
+        sentiment_result = analyzer.analyze(
+            title=all_titles,
+            content=all_content[:2000],  # 제한
+        )
+
+        # 4. DB 저장
+        # get_db_session()는 제너레이터, next()로 session 추출
+        session_gen = get_db_session()
+        session = next(session_gen)
+        repo = AIAnalysisRepository(session)
+
+        analysis = repo.save_analysis(
+            ticker=ticker,
+            analysis_date=date.today(),
+            sentiment=sentiment_result.sentiment.value,
+            score=sentiment_result.score,
+            summary=f"최근 {len(articles)}건의 뉴스 분석 결과입니다.",
+            keywords=sentiment_result.keywords[:5],  # 상위 5개 키워드
+            recommendation=_get_recommendation_from_sentiment(sentiment_result.sentiment.value),
+            confidence=sentiment_result.confidence,
+            news_count=len(articles),
+            news_urls=news_urls,  # 🔑 Phase 5: news_urls 저장
+        )
+
+        logger.info(
+            f"✅ {ticker} 뉴스 저장 완료 "
+            f"(기사: {len(articles)}건, URLs: {len(news_urls)}건, "
+            f"감성: {sentiment_result.sentiment.value})"
+        )
+
+        return {
+            "ticker": ticker,
+            "success": True,
+            "collected_count": len(articles),
+            "saved_count": 1,
+            "news_urls_count": len(news_urls),
+            "sentiment": sentiment_result.sentiment.value,
+            "score": sentiment_result.score,
+            "analysis_id": analysis.id,
+        }
+
+    except Exception as e:
+        logger.error(f"❌ {ticker} 뉴스 저장 실패: {e}")
+        # self.retry는 Celery task binding이 필요
+        return {
+            "ticker": ticker,
+            "success": False,
+            "error": str(e),
+        }
+
+    finally:
+        if session:
+            session.close()
+
+
+@shared_task(name="news.collect_multiple_and_save", bind=True, max_retries=3)
+def collect_multiple_and_save(
+    self,
+    tickers: List[str],
+    days: int = 7,
+    max_articles: int = 30,
+) -> Dict[str, Any]:
+    """
+    여러 종목 뉴스 수집 및 DB 저장 (Phase 5: GREEN)
+
+    Args:
+        self: Celery task instance
+        tickers: 종목 코드 리스트
+        days: 수집할 날짜 범위
+        max_articles: 종목별 최대 기사 수
+
+    Returns:
+        저장 결과 요약
+    """
+    logger.info(f"🔄 {len(tickers)}개 종목 뉴스 수집 시작")
+
+    results = []
+    success_count = 0
+    total_urls = 0
+
+    for ticker in tickers:
+        try:
+            result = collect_and_save_task(self, ticker, days, max_articles)
+            results.append({
+                "ticker": ticker,
+                "success": result.get("success", False),
+                "news_count": result.get("collected_count", 0),
+                "urls_count": result.get("news_urls_count", 0),
+            })
+
+            if result.get("success"):
+                success_count += 1
+                total_urls += result.get("news_urls_count", 0)
+
+        except Exception as e:
+            logger.error(f"❌ {ticker} 처리 실패: {e}")
+            results.append({
+                "ticker": ticker,
+                "success": False,
+                "error": str(e),
+            })
+
+    logger.info(
+        f"✅ 일괄 처리 완료 "
+        f"(성공: {success_count}/{len(tickers)}, 총 URL: {total_urls}건)"
+    )
+
+    return {
+        "total_tickers": len(tickers),
+        "success_count": success_count,
+        "total_urls": total_urls,
+        "results": results,
+        "success": True,
+    }
+
+
+@shared_task(name="news.scheduled_daily_collection", bind=True, max_retries=3)
+def scheduled_daily_collection(
+    self,
+    market: str = "KOSPI",
+    days: int = 7,
+    max_articles: int = 30,
+) -> Dict[str, Any]:
+    """
+    일일 스케줄 뉴스 수집 (Phase 5: GREEN)
+
+    Celery Beat에서 호출되는 일일 뉴스 수집 태스크
+
+    Args:
+        self: Celery task instance
+        market: 시장 구분 (KOSPI, KOSDAQ)
+        days: 수집할 날짜 범위
+        max_articles: 종목별 최대 기사 수
+
+    Returns:
+        수집 결과
+    """
+    logger.info(f"📅 {market} 일일 뉴스 수집 스케줄 실행")
+
+    # 주요 종목 리스트
+    major_stocks = {
+        "KOSPI": ["005930", "000660", "035420", "005380", "066570", "028260", "105560", "035720"],
+        "KOSDAQ": ["051910", "247540", "323410", "086520", "251270"],
+    }
+
+    tickers = major_stocks.get(market, major_stocks["KOSPI"])
+
+    return collect_multiple_and_save(self, tickers, days, max_articles)
+
+
+def _get_recommendation_from_sentiment(sentiment: str) -> str:
+    """
+    감성 분석 결과로 추천사항 생성
+
+    Args:
+        sentiment: 감성 (positive/negative/neutral)
+
+    Returns:
+        추천사항 (BUY/SELL/HOLD)
+    """
+    if sentiment == "positive":
+        return "BUY"
+    elif sentiment == "negative":
+        return "SELL"
+    else:
+        return "HOLD"

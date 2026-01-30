@@ -1,5 +1,5 @@
 """
-KR Stock - Database Models
+Ralph Stock - Database Models
 SQLAlchemy 2.0 기반 ORM 모델 정의
 """
 

@@ -141,7 +141,7 @@
 ## 최종 파일 구조
 
 ```
-kr_stock/
+ralph_stock/
 ├── src/
 │   ├── database/
 │   │   ├── models.py            ✅ Phase 1

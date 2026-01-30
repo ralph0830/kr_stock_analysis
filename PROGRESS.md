@@ -1,4 +1,4 @@
-# KR Stock Analysis - Progress
+# Ralph Stock Analysis - Progress
 
 > **마지막 업데이트**: 2026-01-29
 

@@ -1,5 +1,5 @@
 """
-KR Stock Package
+Ralph Stock Package
 """
 
 __version__ = "2.0.0"

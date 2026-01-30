@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KR Stock Analysis",
+  title: "Ralph Stock Analysis",
   description: "한국 주식 분석 시스템 - VCP 패턴, 종가베팅 V2 시그널",
 };
 

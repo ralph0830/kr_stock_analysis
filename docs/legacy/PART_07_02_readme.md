@@ -141,7 +141,7 @@ kr_market/data/
 
 ```bash
 # 1. 종목 목록
-python scripts/create_kr_stock_list.py
+python scripts/create_ralph_stock_list.py
 
 # 2. 일별 가격 (약 5분)
 python scripts/create_complete_daily_prices.py
@@ -169,7 +169,7 @@ FLASK_DEBUG=true
 FLASK_PORT=5001
 
 # === Database (optional) ===
-DATABASE_URL=postgresql://user:pass@localhost:5432/kr_stock
+DATABASE_URL=postgresql://user:pass@localhost:5432/ralph_stock
 ```
 
 ---

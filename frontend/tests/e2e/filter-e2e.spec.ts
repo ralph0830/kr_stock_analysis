@@ -62,7 +62,7 @@ test.describe("대시보드 E2E 테스트", () => {
     await page.waitForLoadState("networkidle")
 
     // 페이지 제목 확인
-    await expect(page.locator("h1")).toContainText("KR Stock 대시보드")
+    await expect(page.locator("h1")).toContainText("Ralph Stock 대시보드")
   })
 })
 

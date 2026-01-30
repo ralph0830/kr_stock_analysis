@@ -195,7 +195,7 @@ def test_metrics():
 
 def main():
     """메인 테스트 실행"""
-    print(f"\n{Colors.BOLD}🧪 KR Stock API 테스트{Colors.END}")
+    print(f"\n{Colors.BOLD}🧪 Ralph Stock API 테스트{Colors.END}")
     print(f"📅 테스트 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"🔗 API Gateway: {API_BASE_URL}")
 

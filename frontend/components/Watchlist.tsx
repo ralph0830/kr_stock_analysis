@@ -16,7 +16,7 @@ interface WatchlistItem {
   addedAt: string;
 }
 
-const WATCHLIST_STORAGE_KEY = "kr_stock_watchlist";
+const WATCHLIST_STORAGE_KEY = "ralph_stock_watchlist";
 
 export function Watchlist() {
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);

@@ -1,4 +1,4 @@
-# KR Stock Analysis System
+# Ralph Stock Analysis System
 
 한국 주식 분석 시스템 - VCP 패턴, 종가베팅 V2 시그널, 실시간 가격 업데이트
 
@@ -107,7 +107,7 @@ pytest tests/ -v
 ## 프로젝트 구조
 
 ```
-kr_stock_analysis/
+ralph_stock_analysis/
 ├── services/              # 마이크로서비스
 │   ├── api_gateway/      # API Gateway (FastAPI)
 │   ├── vcp_scanner/      # VCP Scanner (FastAPI)
@@ -135,7 +135,7 @@ kr_stock_analysis/
 
 ```bash
 # Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5433/kr_stock
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/ralph_stock
 
 # Redis
 REDIS_URL=redis://localhost:6380/0
@@ -242,4 +242,4 @@ MIT License
 
 ## 개발팀
 
-KR Stock Analysis Team
+Ralph Stock Analysis Team

@@ -89,7 +89,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                📊 KR Stock 대시보드
+                📊 Ralph Stock 대시보드
               </h1>
               <WebSocketStatus />
             </div>

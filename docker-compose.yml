@@ -1,5 +1,5 @@
 # ============================================================================
-# KR Stock Analysis - Docker Compose (Full Stack)
+# Ralph Stock Analysis - Docker Compose (Full Stack)
 # ============================================================================
 # 전체 서비스를 하나로 실행: docker compose up -d
 # ============================================================================
@@ -12,9 +12,9 @@ services:
   # PostgreSQL + TimescaleDB
   postgres:
     image: timescale/timescaledb:latest-pg15
-    container_name: kr_stock_db
+    container_name: ralph_stock_db
     environment:
-      POSTGRES_DB: kr_stock
+      POSTGRES_DB: ralph_stock
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       TZ: Asia/Seoul
@@ -28,13 +28,13 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # Redis (Cache + Message Broker)
   redis:
     image: redis:7-alpine
-    container_name: kr_stock_redis
+    container_name: ralph_stock_redis
     command: redis-server --appendonly yes
     ports:
       - "6380:6379"
@@ -46,7 +46,7 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -59,11 +59,11 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: development
-    container_name: kr_stock_api_gateway
+    container_name: ralph_stock_api_gateway
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       VCP_SCANNER_URL: http://vcp-scanner:8000
@@ -83,7 +83,7 @@ services:
       - ./services:/app/services
       - ./data:/app/data
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # VCP Scanner Service
@@ -92,9 +92,9 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: development
-    container_name: kr_stock_vcp_scanner
+    container_name: ralph_stock_vcp_scanner
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       TZ: Asia/Seoul
     ports:
@@ -110,7 +110,7 @@ services:
       - ./services:/app/services
       - ./data:/app/data
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # Signal Engine Service
@@ -119,9 +119,9 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: development
-    container_name: kr_stock_signal_engine
+    container_name: ralph_stock_signal_engine
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       TZ: Asia/Seoul
@@ -138,7 +138,7 @@ services:
       - ./services:/app/services
       - ./data:/app/data
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # Chatbot Service (WebSocket)
@@ -147,9 +147,9 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: development
-    container_name: kr_stock_chatbot
+    container_name: ralph_stock_chatbot
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       TZ: Asia/Seoul
@@ -166,7 +166,7 @@ services:
       - ./services:/app/services
       - ./data:/app/data
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -179,9 +179,9 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: development
-    container_name: kr_stock_celery_worker
+    container_name: ralph_stock_celery_worker
     environment:
-      DATABASE_URL: postgresql://postgres:postgres:postgres@postgres:5432/kr_stock
+      DATABASE_URL: postgresql://postgres:postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       TZ: Asia/Seoul
@@ -204,7 +204,7 @@ services:
       "--max-tasks-per-child=100"  # 메모리 누수 방지
     ]
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # Celery Beat (Scheduler)
@@ -213,9 +213,9 @@ services:
       context: .
       dockerfile: Dockerfile.service
       target: development
-    container_name: kr_stock_celery_beat
+    container_name: ralph_stock_celery_beat
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/kr_stock
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       TZ: Asia/Seoul
@@ -229,13 +229,13 @@ services:
       - ./tasks:/app/tasks
     command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # Flower (Celery Monitoring)
   flower:
     image: mher/flower:latest
-    container_name: kr_stock_flower
+    container_name: ralph_stock_flower
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       TZ: Asia/Seoul
@@ -244,7 +244,7 @@ services:
     depends_on:
       - redis
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ services:
     build:
       context: ./frontend
       dockerfile: ../Dockerfile.frontend.dev
-    container_name: kr_stock_frontend
+    container_name: ralph_stock_frontend
     environment:
       # 도메인 접속용: 빈 값으로 두어 브라우저가 자동으로 현재 호스트 사용
       NEXT_PUBLIC_API_URL: ""
@@ -271,7 +271,7 @@ services:
     depends_on:
       - api-gateway
     networks:
-      - kr_stock_network
+      - ralph_stock_network
     restart: unless-stopped
 
 volumes:
@@ -279,5 +279,5 @@ volumes:
   redis_data:
 
 networks:
-  kr_stock_network:
+  ralph_stock_network:
     driver: bridge
