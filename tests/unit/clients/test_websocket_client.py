@@ -324,20 +324,20 @@ class TestSubscribeToTickers:
     @pytest.mark.asyncio
     async def test_subscribe_to_tickers(self):
         """여러 종목 구독 테스트"""
-        callback = Mock()
+        def callback(update):
+            pass
 
+        # WebSocket 연결 모킹
         mock_ws = AsyncMock()
         mock_ws.closed = False
+        mock_ws.recv = AsyncMock(return_value='{"ticker": "005930", "price": 80500}')
 
-        # websockets.connect를 모킹
-        async def mock_connect_func(*args, **kwargs):
+        # websockets.connect가 모의 WebSocket을 반환하도록 설정
+        # websockets.connect는 코루틴을 반환하므로 mock을 설정해야 함
+        async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        mock_connect = AsyncMock(side_effect=mock_connect_func)
-        mock_connect_instance = Mock()
-        mock_connect_instance.__aenter__.return_value = mock_ws
-
-        with patch("websockets.connect", return_value=mock_connect_instance):
+        with patch("src.clients.websocket_client.websockets.connect", side_effect=mock_connect):
             client = await subscribe_to_tickers(
                 uri="ws://localhost:5111/ws/price",
                 tickers=["005930", "000660"],
@@ -351,18 +351,19 @@ class TestSubscribeToTickers:
     @pytest.mark.asyncio
     async def test_subscribe_to_tickers_with_custom_reconnect(self):
         """사용자 정의 재연결 간격 테스트"""
-        callback = Mock()
+        def callback(update):
+            pass
 
+        # WebSocket 연결 모킹
         mock_ws = AsyncMock()
         mock_ws.closed = False
+        mock_ws.recv = AsyncMock(return_value='{"ticker": "005930", "price": 80500}')
 
-        async def mock_connect_func(*args, **kwargs):
+        # websockets.connect가 모의 WebSocket을 반환하도록 설정
+        async def mock_connect(*args, **kwargs):
             return mock_ws
 
-        mock_connect_instance = Mock()
-        mock_connect_instance.__aenter__.return_value = mock_ws
-
-        with patch("websockets.connect", return_value=mock_connect_instance):
+        with patch("src.clients.websocket_client.websockets.connect", side_effect=mock_connect):
             client = await subscribe_to_tickers(
                 uri="ws://localhost:5111/ws/price",
                 tickers=["005930"],

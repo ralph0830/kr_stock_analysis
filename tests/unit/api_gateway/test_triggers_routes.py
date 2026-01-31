@@ -92,15 +92,19 @@ class TestTriggerRoutesUnit:
     def test_vcp_signal_item(self):
         """VCPSignalItem 모델"""
         from services.api_gateway.schemas import VCPSignalItem
+        from datetime import datetime, timezone
 
         item = VCPSignalItem(
             ticker="005930",
             name="삼성전자",
+            market="KOSPI",
             signal_type="VCP",
             score=85.5,
             grade="A",
+            signal_date="2024-01-27",
             entry_price=80000,
             target_price=88000,
+            created_at=datetime.now(timezone.utc).isoformat(),
         )
         assert item.ticker == "005930"
         assert item.grade == "A"

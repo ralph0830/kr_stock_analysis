@@ -57,19 +57,18 @@ class TestCollectAndSaveTask:
 
         수집된 뉴스 URL이 DB에 저장되어야 함
         """
-        # Mock 데이터
-        mock_articles = [
-            {
-                "title": "삼성전자 실적",
-                "url": "https://n.news.naver.com/article/123",
-                "content": "실적 호조",
-            },
-            {
-                "title": "삼성전자 주가",
-                "url": "https://n.news.naver.com/article/456",
-                "content": "주가 상승",
-            },
-        ]
+        # Mock 데이터: NewsArticle 객체 형태로 모킹 (.title, .url, .content 속성)
+        mock_article1 = Mock()
+        mock_article1.title = "삼성전자 실적"
+        mock_article1.url = "https://n.news.naver.com/article/123"
+        mock_article1.content = "실적 호조"
+
+        mock_article2 = Mock()
+        mock_article2.title = "삼성전자 주가"
+        mock_article2.url = "https://n.news.naver.com/article/456"
+        mock_article2.content = "주가 상승"
+
+        mock_articles = [mock_article1, mock_article2]
 
         # Mock collector
         mock_collector = Mock()
@@ -100,8 +99,8 @@ class TestCollectAndSaveTask:
         mock_repo.save_analysis.return_value = mock_analysis
         mock_repo_class.return_value = mock_repo
 
-        # 태스크 실행
-        result = collect_and_save_task.run(None, "005930")
+        # 태스크 실행 (bind=True이므로 self 인자로 None 전달)
+        result = collect_and_save_task(None, "005930")
 
         # 검증
         assert result["success"] is True
@@ -133,8 +132,8 @@ class TestCollectAndSaveTask:
         mock_collector.fetch_stock_news.return_value = []
         mock_collector_class.return_value = mock_collector
 
-        # 태스크 실행
-        result = collect_and_save_task.run(None, "000660")
+        # 태스크 실행 (bind=True이므로 self 인자로 None 전달)
+        result = collect_and_save_task(None, "000660")
 
         # 검증
         assert result["success"] is False
@@ -174,12 +173,12 @@ class TestScheduledCollection:
 
         beat_schedule = celery_app.conf.beat_schedule
 
-        # 뉴스 수집 스케줄 확인
-        assert "news-collection-daily" in beat_schedule
+        # 뉴스 수집 스케줄 확인 (실제 beat_schedule에 있는 키들)
+        assert "news-collection-kospi" in beat_schedule
         assert "news-collection-kosdaq" in beat_schedule
 
         # 태스크 이름 확인
-        assert beat_schedule["news-collection-daily"]["task"] == "tasks.news_tasks.scheduled_daily_collection"
+        assert beat_schedule["news-collection-kospi"]["task"] == "tasks.news_tasks.scheduled_daily_collection"
         assert beat_schedule["news-collection-kosdaq"]["task"] == "tasks.news_tasks.scheduled_daily_collection"
 
     @patch("tasks.news_tasks.collect_multiple_and_save")
@@ -200,8 +199,8 @@ class TestScheduledCollection:
             "success": True,
         }
 
-        # 태스크 실행
-        result = scheduled_daily_collection.run(None, "KOSPI")
+        # 태스크 실행 (bind=True이므로 self 인자로 None 전달)
+        result = scheduled_daily_collection(None, "KOSPI")
 
         # 검증
         mock_collect_multiple.assert_called_once()

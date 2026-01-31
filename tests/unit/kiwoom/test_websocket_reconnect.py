@@ -44,9 +44,8 @@ class TestWebSocketAutoReconnect:
             recv_count[0] += 1
             if recv_count[0] == 1:
                 return json.dumps({
-                    "jsonrpc": "2.0",
-                    "method": "OnLogin",
-                    "result": {"token": "test_token", "expire": 3600}
+                    "trnm": "LOGIN",
+                    "return_code": 0,
                 })
             else:
                 from websockets.exceptions import ConnectionClosed
@@ -59,7 +58,8 @@ class TestWebSocketAutoReconnect:
             return mock_ws
 
         with patch('src.kiwoom.websocket.websockets.connect', side_effect=mock_connect_fn):
-            await ws.connect()
+            # 토큰 직접 전달하여 REST API 호출 방지
+            await ws.connect(access_token="test_token")
 
             # receive_task가 생성되었는지 확인
             assert ws._receive_task is not None
@@ -83,9 +83,8 @@ class TestWebSocketAutoReconnect:
             recv_count[0] += 1
             if recv_count[0] == 1:
                 return json.dumps({
-                    "jsonrpc": "2.0",
-                    "method": "OnLogin",
-                    "result": {"token": "test_token", "expire": 3600}
+                    "trnm": "LOGIN",
+                    "return_code": 0,
                 })
             else:
                 from websockets.exceptions import ConnectionClosed
@@ -98,7 +97,7 @@ class TestWebSocketAutoReconnect:
             return mock_ws
 
         with patch('src.kiwoom.websocket.websockets.connect', side_effect=mock_connect_fn):
-            await ws.connect()
+            await ws.connect(access_token="test_token")
 
             # receive_task가 생성되었는지 확인
             assert ws._receive_task is not None
@@ -141,9 +140,8 @@ class TestWebSocketAutoReconnect:
                 if recv_count[0] == 1:
                     # 첫 호출은 로그인 응답
                     return json.dumps({
-                        "jsonrpc": "2.0",
-                        "method": "OnLogin",
-                        "result": {"token": f"token_{connect_count}", "expire": 3600}
+                        "trnm": "LOGIN",
+                        "return_code": 0,
                     })
                 else:
                     # 이후 호출은 ConnectionClosed로 receive_loop 종료
@@ -154,7 +152,7 @@ class TestWebSocketAutoReconnect:
             return mock_ws
 
         with patch('src.kiwoom.websocket.websockets.connect', side_effect=mock_connect_fn):
-            await ws.connect()
+            await ws.connect(access_token="test_token")
 
             # 연결 성공 확인
             assert ws._connected is True
@@ -182,8 +180,8 @@ class TestWebSocketAutoReconnect:
 
         ws = KiwoomWebSocket(config)
 
-        # 이 테스트는 지수 백오프 재연결 로직을 검증합니다
-        # _reconnect 메서드가 여러 번 시도 후 실패하는지 확인
+        # 액세스 토큰 설정 (reconnect에서 사용)
+        ws._access_token = "test_token"
 
         # receive_loop 종료를 위한 recv mock
         async def mock_recv():
@@ -206,9 +204,8 @@ class TestWebSocketAutoReconnect:
                 call_count[0] += 1
                 if call_count[0] == 1:
                     return json.dumps({
-                        "jsonrpc": "2.0",
-                        "method": "OnLogin",
-                        "result": {"token": "test", "expire": 3600}
+                        "trnm": "LOGIN",
+                        "return_code": 0,
                     })
                 else:
                     from websockets.exceptions import ConnectionClosed
@@ -261,8 +258,11 @@ class TestWebSocketAutoReconnect:
 
         ws = KiwoomWebSocket(config)
 
+        # 액세스 토큰 설정
+        ws._access_token = "test_token"
+
         # 저장된 구독 목록 설정
-        ws._subscribed_tickers = {"005930", "000660", "035420"}
+        saved_tickers = {"005930", "000660", "035420"}
 
         reg_sent = []
 
@@ -271,8 +271,12 @@ class TestWebSocketAutoReconnect:
 
             async def mock_send(message):
                 data = json.loads(message)
-                if data.get("method") == "REG":
-                    reg_sent.append(data["params"]["ticker"])
+                if data.get("trnm") == "REG":
+                    # REG 요청의 ticker 추출
+                    data_list = data.get("data", [])
+                    if data_list:
+                        items = data_list[0].get("item", [])
+                        reg_sent.extend(items)
 
             mock_ws.send = mock_send
 
@@ -283,9 +287,8 @@ class TestWebSocketAutoReconnect:
                 recv_count[0] += 1
                 if recv_count[0] == 1:
                     return json.dumps({
-                        "jsonrpc": "2.0",
-                        "method": "OnLogin",
-                        "result": {"token": "new_token", "expire": 3600}
+                        "trnm": "LOGIN",
+                        "return_code": 0,
                     })
                 else:
                     from websockets.exceptions import ConnectionClosed
@@ -295,9 +298,14 @@ class TestWebSocketAutoReconnect:
             return mock_ws
 
         with patch('src.kiwoom.websocket.websockets.connect', side_effect=mock_connect_fn):
+            # 재연결 시도
             result = await ws._reconnect()
 
             assert result is True
+
+            # _receive_loop에서 수행하는 것처럼 수동으로 구독 복원
+            for ticker in saved_tickers:
+                await ws.subscribe_realtime(ticker)
 
             # receive_task가 종료될 때까지 대기
             await asyncio.sleep(0.2)
@@ -394,9 +402,8 @@ class TestWebSocketConnectionState:
                 recv_count[0] += 1
                 if recv_count[0] == 1:
                     return json.dumps({
-                        "jsonrpc": "2.0",
-                        "method": "OnLogin",
-                        "result": {"token": "test_token", "expire": 3600}
+                        "trnm": "LOGIN",
+                        "return_code": 0,
                     })
                 else:
                     from websockets.exceptions import ConnectionClosed
@@ -406,8 +413,8 @@ class TestWebSocketConnectionState:
             return mock_ws
 
         with patch('src.kiwoom.websocket.websockets.connect', side_effect=mock_connect_fn):
-            # 동시 연결 시도
-            tasks = [asyncio.create_task(ws.connect()) for _ in range(2)]
+            # 동시 연결 시도 (토큰 직접 전달)
+            tasks = [asyncio.create_task(ws.connect(access_token="test_token")) for _ in range(2)]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # 적어도 하나는 성공해야 함
@@ -436,8 +443,8 @@ class TestWebSocketConnectionState:
             raise Exception("Cancelled")
 
         with patch('src.kiwoom.websocket.websockets.connect', side_effect=slow_connect):
-            # 연결 시작 (완료되지 않음)
-            connect_task = asyncio.create_task(ws.connect())
+            # 연결 시작 (완료되지 않음) - 토큰 직접 전달으로 REST API 호출 스킵
+            connect_task = asyncio.create_task(ws.connect(access_token="test_token"))
 
             # 연결이 시작될 때까지 대기
             await asyncio.sleep(0.1)

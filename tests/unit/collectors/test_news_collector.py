@@ -138,20 +138,26 @@ class TestNewsCollector:
     @patch("src.collectors.news_collector.requests.Session.get")
     def test_fetch_naver_news_success(self, mock_get, collector, mock_response):
         """네이버 뉴스 수집 성공 테스트"""
-        # HTML 응답 Mock
-        html = """
+        # HTML 응답 Mock (실제 네이버 뉴스 링크 형식)
+        # 최신 날짜 사용 (7일 이내)
+        from datetime import datetime, timedelta
+        recent_date = (datetime.now() - timedelta(days=1)).strftime("%Y.%m.%d %H:%M")
+
+        html = f"""
         <table class="type5">
             <tr>
                 <td class="title">
-                    <a href="https://news.naver.com/test1">테스트 뉴스 1</a>
+                    <a href="/item/news_read.naver?article_id=0001234567&office_id=001&code=005930">삼성전자 실적이 좋아서 주가가 상승할 것으로 예상됩니다</a>
                 </td>
-                <td class="info">테스트언론사 2024.01.15 10:30</td>
+                <td class="date">{recent_date}</td>
+                <td class="info">테스트언론사</td>
             </tr>
             <tr>
                 <td class="title">
-                    <a href="https://news.naver.com/test2">테스트 뉴스 2</a>
+                    <a href="/item/news_read.naver?article_id=0001234568&office_id=002&code=005930">삼성전자 관련 주요 이슈 정리 및 시장 전망 분석 리포트</a>
                 </td>
-                <td class="info">테스트언론사 2024.01.15 11:00</td>
+                <td class="date">{recent_date}</td>
+                <td class="info">테스트언론사2</td>
             </tr>
         </table>
         """
@@ -159,15 +165,14 @@ class TestNewsCollector:
         mock_response.text = html
         mock_get.return_value = mock_response
 
-        # 본문 수집 Mock
-        with patch.object(collector, "_fetch_article_content", return_value="테스트 내용"):
-            articles = collector._fetch_naver_news("005930", days=7, max_articles=10)
+        articles = collector._fetch_naver_news("005930", days=7, max_articles=10)
 
-        # 검증
+        # 검증 (본문은 빈 문자열이므로 제외)
         assert len(articles) == 2
-        assert articles[0].title == "테스트 뉴스 1"
+        assert articles[0].title == "삼성전자 실적이 좋아서 주가가 상승할 것으로 예상됩니다"
         assert articles[0].source == "테스트언론사"
-        assert articles[0].content == "테스트 내용"
+        assert articles[0].content == ""
+        assert articles[0].url == "https://n.news.naver.com/mnews/article/001/0001234567"
 
     def test_parse_naver_date_normal(self, collector):
         """일반 날짜 파싱 테스트"""

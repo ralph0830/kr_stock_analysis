@@ -33,17 +33,21 @@ class TestServiceInitialization:
             secret_key="test_secret",
             base_url="https://api.kiwoom.com",
             ws_url="wss://api.kiwoom.com:10000/api/dostk/websocket",
-            use_mock=True,
+            use_mock=False,  # Mock 모드는 더 이상 지원하지 않음
         )
 
-        with patch('src.kiwoom.service.MockKiwoomBridge') as mock_bridge_class:
-            mock_bridge = Mock()
-            mock_bridge_class.return_value = mock_bridge
+        # KiwoomWebSocket와 KiwoomRestAPI를 모의
+        mock_bridge = Mock()
+        mock_bridge.is_connected.return_value = False
+        mock_rest_api = Mock()
+
+        with patch('src.kiwoom.service.KiwoomWebSocket', return_value=mock_bridge), \
+             patch('src.kiwoom.service.KiwoomRestAPI', return_value=mock_rest_api):
 
             service = KiwoomRealtimeService.from_config(config)
 
-            mock_bridge_class.assert_called_once_with(config)
             assert service._bridge is mock_bridge
+            assert service.rest_api is mock_rest_api
 
 
 class TestServiceLifecycle:

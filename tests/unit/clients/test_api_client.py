@@ -3,6 +3,7 @@ API 클라이언트 단위 테스트
 """
 
 import pytest
+import asyncio
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from src.clients.api_client import (
     APIClient,
@@ -110,18 +111,11 @@ class TestAPIClient:
             "version": "2.0.0",
         }
 
-        mock_response = Mock()
-        mock_response.json = AsyncMock(return_value=expected_response)
+        # 비동기 mock 함수로 side_effect 사용
+        async def mock_request(*args, **kwargs):
+            return expected_response
 
-        mock_httpx_client = AsyncMock()
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
-
-        # Mock async context manager
-        mock_client_instance = MagicMock()
-        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_httpx_client)
-        mock_client_instance.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("httpx.AsyncClient", return_value=mock_client_instance):
+        with patch.object(api_client, "_request", side_effect=mock_request):
             result = await api_client.health_check()
 
             assert result["status"] == "healthy"
@@ -137,17 +131,11 @@ class TestAPIClient:
             "grade": "A",
         }]
 
-        mock_response = Mock()
-        mock_response.json = AsyncMock(return_value=expected_data)
+        # 비동기 mock 함수로 side_effect 사용
+        async def mock_request(*args, **kwargs):
+            return expected_data
 
-        mock_httpx_client = AsyncMock()
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_httpx_client)
-        mock_client_instance.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("httpx.AsyncClient", return_value=mock_client_instance):
+        with patch.object(api_client, "_request", side_effect=mock_request):
             signals = await api_client.get_signals(limit=10)
 
             assert len(signals) == 1
@@ -163,17 +151,11 @@ class TestAPIClient:
             "kosdaq_status": "GREEN",
         }
 
-        mock_response = Mock()
-        mock_response.json = AsyncMock(return_value=expected_data)
+        # 비동기 mock 함수로 side_effect 사용
+        async def mock_request(*args, **kwargs):
+            return expected_data
 
-        mock_httpx_client = AsyncMock()
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_httpx_client)
-        mock_client_instance.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("httpx.AsyncClient", return_value=mock_client_instance):
+        with patch.object(api_client, "_request", side_effect=mock_request):
             status = await api_client.get_market_gate()
 
             assert status.status == "GREEN"
@@ -194,17 +176,11 @@ class TestAPIClient:
             }
         }
 
-        mock_response = Mock()
-        mock_response.json = AsyncMock(return_value=expected_data)
+        # 비동기 mock 함수로 side_effect 사용
+        async def mock_request(*args, **kwargs):
+            return expected_data
 
-        mock_httpx_client = AsyncMock()
-        mock_httpx_client.request = AsyncMock(return_value=mock_response)
-
-        mock_client_instance = MagicMock()
-        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_httpx_client)
-        mock_client_instance.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("httpx.AsyncClient", return_value=mock_client_instance):
+        with patch.object(api_client, "_request", side_effect=mock_request):
             prices = await api_client.get_realtime_prices(["005930"])
 
             assert "005930" in prices
@@ -219,7 +195,7 @@ class TestSyncAPIClient:
         client = SyncAPIClient(base_url="http://localhost:5111")
         assert client._async_client is not None
 
-    @patch("src.clients.api_client.asyncio.run")
+    @patch("asyncio.run")
     def test_health_check_sync(self, mock_run):
         """동기 헬스 체크 테스트"""
         mock_run.return_value = {

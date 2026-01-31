@@ -28,9 +28,11 @@ class TestKiwoomEnvironmentSetup:
 
     def test_kiwoom_base_url_configuration(self):
         """Kiwoom API Base URL이 설정되어야 함"""
-        base_url = os.getenv("KIWOOM_BASE_URL")
-        assert base_url is not None, "KIWOOM_BASE_URL이 설정되지 않았습니다"
-        assert base_url.startswith("https://"), "KIWOOM_BASE_URL은 HTTPS여야 합니다"
+        from services.chatbot.kiwoom_integration import KIWOOM_BASE_URL
+
+        # 모듈이 기본값을 사용하는지 확인
+        assert KIWOOM_BASE_URL is not None, "KIWOOM_BASE_URL이 설정되지 않았습니다"
+        assert KIWOOM_BASE_URL.startswith("https://"), "KIWOOM_BASE_URL은 HTTPS여야 합니다"
 
     def test_use_kiwoom_rest_flag(self):
         """USE_KIWOOM_REST 플래그 확인"""
@@ -116,20 +118,19 @@ class TestKiwoomAPIAvailability:
 
     def test_check_kiwoom_available_raises_on_no_keys(self):
         """키가 없으면 check_kiwoom_available이 예외를 발생시켜야 함"""
-        from services.chatbot.kiwoom_integration import check_kiwoom_available, KiwoomAPIError
-
-        # 환경 변수 없이 테스트
+        # 환경 변수를 빈 값으로 설정하여 테스트
         with patch.dict(os.environ, {
             "KIWOOM_APP_KEY": "",
             "KIWOOM_SECRET_KEY": "",
             "USE_KIWOOM_REST": "true"
-        }):
+        }, clear=False):
             # 모듈 재로드하여 환경 변수 변경 반영
             import importlib
             import services.chatbot.kiwoom_integration as kiwoom_integration
             importlib.reload(kiwoom_integration)
 
-            with pytest.raises(KiwoomAPIError):
+            # 재로드된 모듈의 함수와 예외 클래스 사용
+            with pytest.raises(kiwoom_integration.KiwoomAPIError):
                 kiwoom_integration.check_kiwoom_available()
 
 

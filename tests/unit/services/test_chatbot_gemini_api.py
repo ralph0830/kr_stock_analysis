@@ -59,12 +59,14 @@ class TestGeminiAPIIntegration:
         """API Key가 없으면 Mock fallback 테스트"""
         from services.chatbot.llm_client import LLMClient
 
-        # API Key 없음
-        client = LLMClient(api_key=None)
+        # 환경 변수도 명시적으로 비움
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            # API Key 없음
+            client = LLMClient(api_key=None)
 
-        # Mock 모드여야 함
-        assert client._use_mock is True, "API Key 없으면 Mock 모드여야 함"
-        assert client._client is None, "클라이언트 초기화 실패해야 함"
+            # Mock 모드여야 함
+            assert client._use_mock is True, "API Key 없으면 Mock 모드여야 함"
+            assert client._client is None, "클라이언트 초기화 실패해야 함"
 
     def test_llm_client_falls_back_to_mock_with_test_key(self):
         """테스트용 키면 Mock fallback 테스트"""
@@ -113,14 +115,17 @@ class TestGeminiAPIIntegration:
         """Gemini 사용 가능 여부 확인 테스트"""
         from services.chatbot.llm_client import LLMClient
 
-        # API Key 없음
-        client_no_key = LLMClient(api_key=None)
-        assert client_no_key.is_available() is False
+        # 환경 변수도 명시적으로 비움
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            # API Key 없음
+            client_no_key = LLMClient(api_key=None)
+            assert client_no_key.is_available() is False
 
         # API Key 있지만 Mock 모드
-        client_mock = LLMClient(api_key="test-key")
-        # Mock 모드이므로 False 반환
-        # (실제 테스트에서는 Mock 설정으로 True 반환 가능)
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            client_mock = LLMClient(api_key="test-key")
+            # Mock 모드이므로 False 반환
+            # (실제 테스트에서는 Mock 설정으로 True 반환 가능)
 
 
 # ============================================================================
@@ -187,24 +192,26 @@ class TestMockResponseQuality:
         """추천 질문 Mock 응답 품질 테스트"""
         from services.chatbot.llm_client import LLMClient
 
-        client = LLMClient(api_key=None)  # 강제 Mock 모드
-        response = client.generate_reply("삼성전자 추천해줘")
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            client = LLMClient(api_key=None)  # 강제 Mock 모드
+            response = client.generate_reply("삼성전자 추천해줘")
 
-        # 응답에 포함되어야 할 키워드
-        assert "삼성전자" in response.reply or "005930" in response.reply
-        assert "등급" in response.reply or "A등급" in response.reply or "B등급" in response.reply
-        assert len(response.suggestions) > 0
+            # 응답에 포함되어야 할 키워드
+            assert "삼성전자" in response.reply or "005930" in response.reply
+            assert "등급" in response.reply or "A등급" in response.reply or "B등급" in response.reply
+            assert len(response.suggestions) > 0
 
     def test_mock_response_for_market_query(self):
         """시장 질문 Mock 응답 품질 테스트"""
         from services.chatbot.llm_client import LLMClient
 
-        client = LLMClient(api_key=None)  # 강제 Mock 모드
-        response = client.generate_reply("시장 상태 어때?")
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            client = LLMClient(api_key=None)  # 강제 Mock 모드
+            response = client.generate_reply("시장 상태 어때?")
 
-        # 응답에 포함되어야 할 키워드
-        assert "Market Gate" in response.reply or "market" in response.reply.lower()
-        assert "KOSPI" in response.reply or "KOSDAQ" in response.reply
+            # 응답에 포함되어야 할 키워드
+            assert "Market Gate" in response.reply or "market" in response.reply.lower()
+            assert "KOSPI" in response.reply or "KOSDAQ" in response.reply
 
     def test_mock_response_suggestions_format(self):
         """제안 질문 형식 검증 테스트"""

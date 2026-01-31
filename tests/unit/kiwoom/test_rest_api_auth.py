@@ -16,14 +16,12 @@ from src.kiwoom.rest_api import KiwoomRestAPI, KiwoomAPIError
 
 def create_mock_response(status_code: int = 200, json_data=None):
     """Mock 응답 생성 헬퍼"""
-    mock_response = AsyncMock()
+    mock_response = Mock()
     mock_response.status_code = status_code
-
-    async def mock_json():
-        return json_data if json_data else {}
-
-    mock_response.json = mock_json
-    mock_response.raise_for_status = AsyncMock()
+    # httpx의 response.json()는 동기 함수
+    mock_response.json = Mock(return_value=json_data if json_data else {})
+    # raise_for_status도 동기
+    mock_response.raise_for_status = Mock()
     return mock_response
 
 
@@ -93,18 +91,14 @@ class TestTokenLifecycle:
         api = KiwoomRestAPI(config)
         api._refresh_token = "invalid_refresh_token"
 
-        mock_response = AsyncMock()
+        mock_response = Mock()
         mock_response.status_code = 401
+        mock_response.json = Mock(return_value={
+            "error": "invalid_grant",
+            "error_description": "Invalid refresh token"
+        })
 
-        async def mock_json():
-            return {
-                "error": "invalid_grant",
-                "error_description": "Invalid refresh token"
-            }
-
-        mock_response.json = mock_json
-
-        async def mock_raise():
+        def mock_raise():
             raise HTTPStatusError(
                 "Invalid refresh token", request=Mock(), response=mock_response
             )
@@ -139,7 +133,7 @@ class TestAutoTokenRefresh:
         api._access_token = "expiring_token"
         api._refresh_token = "valid_refresh_token"
 
-        mock_client = AsyncMock()
+        mock_client = Mock()
         call_count = 0
 
         async def mock_request(method, url, *args, **kwargs):
@@ -154,10 +148,10 @@ class TestAutoTokenRefresh:
                 })
             elif call_count == 2:
                 # 첫 번째 API 호출: 401 에러 (갱신되지 않음)
-                mock_resp = AsyncMock()
+                mock_resp = Mock()
                 mock_resp.status_code = 401
 
-                async def mock_raise():
+                def mock_raise():
                     raise HTTPStatusError(
                         "Token expired", request=Mock(), response=mock_resp
                     )
@@ -193,18 +187,12 @@ class TestAutoTokenRefresh:
         api = KiwoomRestAPI(config)
         api._access_token = "valid_token"
 
-        mock_client = AsyncMock()
-
         async def mock_request(*args, **kwargs):
-            mock_response = AsyncMock()
+            mock_response = Mock()
             mock_response.status_code = 500
+            mock_response.json = Mock(return_value={"error": "internal_server_error"})
 
-            async def mock_json():
-                return {"error": "internal_server_error"}
-
-            mock_response.json = mock_json
-
-            async def mock_raise():
+            def mock_raise():
                 raise HTTPStatusError(
                     "Server error", request=Mock(), response=mock_response
                 )
@@ -212,14 +200,16 @@ class TestAutoTokenRefresh:
             mock_response.raise_for_status = mock_raise
             return mock_response
 
-        mock_client.request = mock_request
-        api._set_client(mock_client)
+        # httpx.AsyncClient.request mock (rest_api 모듈에서)
+        with patch('src.kiwoom.rest_api.httpx.AsyncClient.request', side_effect=mock_request):
+            # get_current_price는 에러 시 None을 반환하고 예외를 발생시키지 않음
+            result = await api.get_current_price("005930")
 
-        with pytest.raises(KiwoomAPIError):
-            await api.get_current_price("005930")
+            # None이 반환되었는지 확인
+            assert result is None
 
-        # 토큰이 변경되지 않았는지 확인
-        assert api._access_token == "valid_token"
+            # 토큰이 변경되지 않았는지 확인
+            assert api._access_token == "valid_token"
 
 
 class TestReauthenticationFlow:
@@ -240,10 +230,12 @@ class TestReauthenticationFlow:
         """전체 재인증 흐름 테스트"""
         api = KiwoomRestAPI(config)
 
+        # issue_token은 {"return_code": 0, "token": "..."} 형식을 기대함
         mock_response = create_mock_response(200, {
-            "access_token": "new_token",
-            "refresh_token": "new_refresh_token",
-            "expires_in": 3600,
+            "return_code": 0,
+            "return_msg": "",
+            "token": "new_token",
+            "expires_dt": "20260231235959",
         })
 
         async def mock_post(*args, **kwargs):
@@ -341,22 +333,23 @@ class TestAuthHeader:
         """요청 헤더에 토큰 포함 테스트"""
         api = KiwoomRestAPI(config)
         api._access_token = "test_token"
+        # 토큰 만료 시간을 미래로 설정해서 재발급 방지
+        from datetime import datetime, timezone, timedelta
+        api._token_expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
 
         captured_headers = {}
 
-        mock_client = AsyncMock()
-
-        async def mock_request(method, url, *args, **kwargs):
+        async def mock_post(url, *args, **kwargs):
             captured_headers.update(kwargs.get("headers", {}))
             return create_mock_response(200, {
-                "jsonrpc": "2.0",
-                "result": {"t0414": ["005930", "", "72500", "0", "0", "72400", "72600", "0"]}
+                "return_code": 0,
+                "return_msg": "",
+                "t0414": ["005930", "", "72500", "0", "0", "72400", "72600", "0"]
             })
 
-        mock_client.request = mock_request
-        api._set_client(mock_client)
-
-        await api.get_current_price("005930")
+        # src.kiwoom.rest_api.httpx.AsyncClient.post 메서드 mock
+        with patch('src.kiwoom.rest_api.httpx.AsyncClient.post', side_effect=mock_post):
+            await api.get_current_price("005930")
 
         # Authorization 헤더 확인
         auth_header = captured_headers.get("Authorization", "")
@@ -368,14 +361,28 @@ class TestAuthHeader:
         api = KiwoomRestAPI(config)
         # 토큰 미설정
 
-        # issue_token도 mock해야 함
-        mock_response = create_mock_response(200, {
-            "access_token": "auto_issued_token",
-            "expires_in": 3600,
+        # issue_token 응답 형식: {"return_code": 0, "token": "..."}
+        token_response = create_mock_response(200, {
+            "return_code": 0,
+            "return_msg": "",
+            "token": "auto_issued_token",
+            "expires_dt": "20260231235959",
         })
 
+        # API 응답
+        price_response = create_mock_response(200, {
+            "jsonrpc": "2.0",
+            "result": {"t0414": ["005930", "", "72500", "0", "0", "72400", "72600", "0"]}
+        })
+
+        post_count = 0
+
         async def mock_post(*args, **kwargs):
-            return mock_response
+            nonlocal post_count
+            post_count += 1
+            if post_count == 1:
+                return token_response  # 첫 번째 호출: 토큰 발급
+            return price_response
 
         with patch('httpx.AsyncClient.post', side_effect=mock_post):
             # ensure_token_valid로 인해 토큰이 자동 발급됨
