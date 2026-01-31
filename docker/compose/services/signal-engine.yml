@@ -1,0 +1,32 @@
+# Signal Engine Service
+# Port: 5113
+
+services:
+  signal-engine:
+    build:
+      context: .
+      dockerfile: services/signal_engine/Dockerfile
+      target: development
+    image: signal-engine:dev
+    container_name: signal-engine
+    ports:
+      - "5113:5113"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./services/signal_engine:/app/services/signal_engine:ro
+      - ./src:/app/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5113/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    networks:
+      - ralph-network

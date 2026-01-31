@@ -1,0 +1,58 @@
+# Infrastructure Services
+# PostgreSQL, Redis, Networks
+
+# Common configuration anchors
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  start_period: 10s
+  retries: 5
+
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: ralph-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ralph_stock
+      TIMESCALEDB_TELEMETRY: basic
+    volumes:
+      - postgres-data:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      <<: *healthcheck-defaults
+    networks:
+      - ralph-network
+    <<: *restart-policy
+
+  redis:
+    image: redis:7-alpine
+    container_name: ralph-redis
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      <<: *healthcheck-defaults
+    networks:
+      - ralph-network
+    <<: *restart-policy
+
+networks:
+  ralph-network:
+    name: ralph-network
+    driver: bridge
+
+volumes:
+  postgres-data:
+    name: ralph-postgres-data
+  redis-data:
+    name: ralph-redis-data

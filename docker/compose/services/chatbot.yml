@@ -1,0 +1,33 @@
+# Chatbot Service
+# Port: 5114
+
+services:
+  chatbot:
+    build:
+      context: .
+      dockerfile: services/chatbot/Dockerfile
+      target: development
+    image: chatbot:dev
+    container_name: chatbot
+    ports:
+      - "5114:5114"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      REDIS_URL: redis://redis:6379/0
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    volumes:
+      - ./services/chatbot:/app/services/chatbot:ro
+      - ./src:/app/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5114/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    networks:
+      - ralph-network

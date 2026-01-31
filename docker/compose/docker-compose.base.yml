@@ -1,0 +1,68 @@
+# docker/compose/docker-compose.base.yml
+# Ralph Stock - Docker Compose 공통 설정 (인프라스트럭처)
+# 환경별 compose 파일에서 include하여 사용
+
+services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure Services
+  # ---------------------------------------------------------------------------
+
+  # PostgreSQL + TimescaleDB
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: ralph_stock_db
+    environment:
+      POSTGRES_DB: ralph_stock
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: Asia/Seoul
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/home/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ralph_stock_network
+
+  # Redis (Cache + Message Broker)
+  redis:
+    image: redis:7-alpine
+    container_name: ralph_stock_redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - ralph_stock_network
+
+  # Flower (Celery Monitoring)
+  flower:
+    image: mher/flower:latest
+    container_name: ralph_stock_flower
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      TZ: Asia/Seoul
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    networks:
+      - ralph_stock_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  ralph_stock_network:
+    driver: bridge

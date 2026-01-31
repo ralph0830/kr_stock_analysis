@@ -1,0 +1,32 @@
+# VCP Scanner Service
+# Port: 5112
+
+services:
+  vcp-scanner:
+    build:
+      context: .
+      dockerfile: services/vcp_scanner/Dockerfile
+      target: development
+    image: vcp-scanner:dev
+    container_name: vcp-scanner
+    ports:
+      - "5112:5112"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./services/vcp_scanner:/app/services/vcp_scanner:ro
+      - ./src:/app/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5112/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    networks:
+      - ralph-network

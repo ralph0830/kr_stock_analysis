@@ -1,0 +1,59 @@
+# Celery Worker & Beat Services
+# Background task processing
+
+services:
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: celery-worker:dev
+    container_name: celery-worker
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - ./tasks:/app/tasks:ro
+      - ./src:/app/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - ralph-network
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: celery-worker:dev
+    container_name: celery-beat
+    command: celery -A tasks.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - ./tasks:/app/tasks:ro
+      - ./src:/app/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - ralph-network
+
+  flower:
+    image: mher/flower:latest
+    container_name: flower
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      - redis
+    networks:
+      - ralph-network

@@ -1,283 +1,97 @@
-# ============================================================================
-# Ralph Stock Analysis - Docker Compose (Full Stack)
-# ============================================================================
-# 전체 서비스를 하나로 실행: docker compose up -d
-# ============================================================================
+# Ralph Stock Analysis - Docker Compose (Profiles-based)
+# =============================================================================
+# Profiles 기반 통합 Docker Compose 설정
+#
+# 사용법:
+#   docker compose --profile dev up -d     # 개발 환경 (핫 리로드)
+#   docker compose --profile prod up -d    # 운영 환경 (최적화)
+#   docker compose --profile dev logs -f   # 로그 보기
+#   docker compose down                    # 전체 중지
+#
+# Profiles:
+#   - dev: 개발용 (소스 마운트, 핫 리로드, 디버깅)
+#   - prod: 운영용 (빌드된 이미지, 리소스 제한)
+# =============================================================================
 
+# Include modular service files
+include:
+  - docker/compose/infra.yml
+  - docker/compose/services/api-gateway.yml
+  - docker/compose/services/vcp-scanner.yml
+  - docker/compose/services/signal-engine.yml
+  - docker/compose/services/chatbot.yml
+  - docker/compose/services/frontend.yml
+  - docker/compose/services/celery.yml
+
+# Application services with profiles
+# Build context is overridden to be project root relative
 services:
-  # ---------------------------------------------------------------------------
-  # Infrastructure Services
-  # ---------------------------------------------------------------------------
-
-  # PostgreSQL + TimescaleDB
-  postgres:
-    image: timescale/timescaledb:latest-pg15
-    container_name: ralph_stock_db
-    environment:
-      POSTGRES_DB: ralph_stock
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      TZ: Asia/Seoul
-    ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/home/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
-
-  # Redis (Cache + Message Broker)
-  redis:
-    image: redis:7-alpine
-    container_name: ralph_stock_redis
-    command: redis-server --appendonly yes
-    ports:
-      - "6380:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # Backend Services
-  # ---------------------------------------------------------------------------
-
-  # API Gateway (FastAPI)
   api-gateway:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/api-gateway.yml
+      service: api-gateway
     build:
       context: .
-      dockerfile: Dockerfile.service
-      target: development
-    container_name: ralph_stock_api_gateway
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      VCP_SCANNER_URL: http://vcp-scanner:8000
-      SIGNAL_ENGINE_URL: http://signal-engine:8000
-      MARKET_ANALYZER_URL: http://market-analyzer:8000
-      TZ: Asia/Seoul
-    ports:
-      - "5111:5111"
-    command: ["python", "-m", "uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "5111", "--reload"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./src:/app/src
-      - ./services:/app/services
-      - ./data:/app/data
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
+      dockerfile: services/api_gateway/Dockerfile
 
-  # VCP Scanner Service
   vcp-scanner:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/vcp-scanner.yml
+      service: vcp-scanner
     build:
       context: .
-      dockerfile: Dockerfile.service
-      target: development
-    container_name: ralph_stock_vcp_scanner
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
-      REDIS_URL: redis://redis:6379/0
-      TZ: Asia/Seoul
-    ports:
-      - "5112:5112"
-    command: ["python", "-m", "uvicorn", "services.vcp_scanner.main:app", "--host", "0.0.0.0", "--port", "5112", "--reload"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./src:/app/src
-      - ./services:/app/services
-      - ./data:/app/data
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
+      dockerfile: services/vcp_scanner/Dockerfile
 
-  # Signal Engine Service
   signal-engine:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/signal-engine.yml
+      service: signal-engine
     build:
       context: .
-      dockerfile: Dockerfile.service
-      target: development
-    container_name: ralph_stock_signal_engine
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
-      REDIS_URL: redis://redis:6379/0
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      TZ: Asia/Seoul
-    ports:
-      - "5113:5113"
-    command: ["python", "-m", "uvicorn", "services.signal_engine.main:app", "--host", "0.0.0.0", "--port", "5113", "--reload"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./src:/app/src
-      - ./services:/app/services
-      - ./data:/app/data
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
+      dockerfile: services/signal_engine/Dockerfile
 
-  # Chatbot Service (WebSocket)
   chatbot:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/chatbot.yml
+      service: chatbot
     build:
       context: .
-      dockerfile: Dockerfile.service
-      target: development
-    container_name: ralph_stock_chatbot
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
-      REDIS_URL: redis://redis:6379/0
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      TZ: Asia/Seoul
-    ports:
-      - "5114:5114"
-    command: ["python", "-m", "uvicorn", "services.chatbot.main:app", "--host", "0.0.0.0", "--port", "5114", "--reload"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./src:/app/src
-      - ./services:/app/services
-      - ./data:/app/data
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
+      dockerfile: services/chatbot/Dockerfile
 
-  # ---------------------------------------------------------------------------
-  # Background Processing
-  # ---------------------------------------------------------------------------
-
-  # Celery Worker (autoscale)
-  celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.service
-      target: development
-    container_name: ralph_stock_celery_worker
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres:postgres@postgres:5432/ralph_stock
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      TZ: Asia/Seoul
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./src:/app/src
-      - ./services:/app/services
-      - ./tasks:/app/tasks
-      - ./data:/app/data
-    # autoscale: 최소 2개, 최대 8개 워커
-    command: [
-      "celery", "-A", "tasks.celery_app", "worker",
-      "--loglevel=info",
-      "--concurrency=2",  # 기본 동시성
-      "--autoscale=8,2",  # 최대 8개, 최소 2개
-      "--max-tasks-per-child=100"  # 메모리 누수 방지
-    ]
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
-
-  # Celery Beat (Scheduler)
-  celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile.service
-      target: development
-    container_name: ralph_stock_celery_beat
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/0
-      TZ: Asia/Seoul
-    depends_on:
-      - postgres
-      - redis
-      - celery-worker
-    volumes:
-      - ./src:/app/src
-      - ./services:/app/services
-      - ./tasks:/app/tasks
-    command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=info"]
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
-
-  # Flower (Celery Monitoring)
-  flower:
-    image: mher/flower:latest
-    container_name: ralph_stock_flower
-    environment:
-      CELERY_BROKER_URL: redis://redis:6379/0
-      TZ: Asia/Seoul
-    ports:
-      - "5555:5555"
-    depends_on:
-      - redis
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # Frontend
-  # ---------------------------------------------------------------------------
-
-  # Frontend (Next.js) - Development Mode
   frontend:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/frontend.yml
+      service: frontend
     build:
       context: ./frontend
-      dockerfile: ../Dockerfile.frontend.dev
-    container_name: ralph_stock_frontend
-    environment:
-      # 도메인 접속용: 빈 값으로 두어 브라우저가 자동으로 현재 호스트 사용
-      NEXT_PUBLIC_API_URL: ""
-      NEXT_PUBLIC_WS_URL: ""
-      TZ: Asia/Seoul
-    ports:
-      - "5110:5110"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      # .next는 호스트와 공유하여 코드 변경 즉시 반영
-    depends_on:
-      - api-gateway
-    networks:
-      - ralph_stock_network
-    restart: unless-stopped
 
-volumes:
-  postgres_data:
-  redis_data:
+  celery-worker:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/celery.yml
+      service: celery-worker
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
 
-networks:
-  ralph_stock_network:
-    driver: bridge
+  celery-beat:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/celery.yml
+      service: celery-beat
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+
+  flower:
+    profiles: [dev, prod]
+    extends:
+      file: docker/compose/services/celery.yml
+      service: flower
+
+# Network and volumes are defined in infra.yml

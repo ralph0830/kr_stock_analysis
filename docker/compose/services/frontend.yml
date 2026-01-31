@@ -1,0 +1,29 @@
+# Frontend Service (Next.js)
+# Port: 5110
+
+services:
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    image: frontend:dev
+    container_name: frontend
+    ports:
+      - "5110:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://api-gateway:5111
+      NEXT_PUBLIC_WS_URL: ws://api-gateway:5111
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api-gateway
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - ralph-network

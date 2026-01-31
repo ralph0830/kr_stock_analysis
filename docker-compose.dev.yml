@@ -1,0 +1,97 @@
+# Docker Compose Development Overrides
+# =============================================================================
+# 개발 환경용 오버라이드 설정
+#
+# 사용법:
+#   docker compose --profile dev up -d
+# =============================================================================
+
+services:
+  # API Gateway - Development (hot reload)
+  api-gateway:
+    build:
+      target: development
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./services/api_gateway:/app/services/api_gateway:ro
+      - ./src:/app/src:ro
+    command: ["uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "5111", "--reload"]
+
+  # VCP Scanner - Development (hot reload)
+  vcp-scanner:
+    build:
+      target: development
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./services/vcp_scanner:/app/services/vcp_scanner:ro
+      - ./src:/app/src:ro
+    command: ["uvicorn", "services.vcp_scanner.main:app", "--host", "0.0.0.0", "--port", "5112", "--reload"]
+
+  # Signal Engine - Development (hot reload)
+  signal-engine:
+    build:
+      target: development
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./services/signal_engine:/app/services/signal_engine:ro
+      - ./src:/app/src:ro
+    command: ["uvicorn", "services.signal_engine.main:app", "--host", "0.0.0.0", "--port", "5113", "--reload"]
+
+  # Chatbot - Development (hot reload)
+  chatbot:
+    build:
+      target: development
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./services/chatbot:/app/services/chatbot:ro
+      - ./src:/app/src:ro
+    command: ["uvicorn", "services.chatbot.main:app", "--host", "0.0.0.0", "--port", "5114", "--reload"]
+
+  # Frontend - Development (hot reload)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5111
+      - NEXT_PUBLIC_WS_URL=ws://localhost:5111
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+  # Celery Worker - Development
+  celery-worker:
+    build:
+      target: development
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./tasks:/app/tasks:ro
+      - ./src:/app/src:ro
+
+  # Celery Beat - Development
+  celery-beat:
+    build:
+      target: development
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./tasks:/app/tasks:ro
+      - ./src:/app/src:ro
+
+  # Flower - Development (enable debug UI)
+  flower:
+    environment:
+      - FLOWER_DEBUG=1

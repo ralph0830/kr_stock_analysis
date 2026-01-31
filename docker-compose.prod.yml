@@ -1,357 +1,180 @@
-version: '3.8'
+# Docker Compose Production Overrides
+# =============================================================================
+# 운영 환경용 오버라이드 설정
+#
+# 사용법:
+#   docker compose --profile prod up -d
+# =============================================================================
 
 services:
-  # PostgreSQL + TimescaleDB (Production)
-  postgres:
-    image: timescale/timescaledb:latest-pg15
-    container_name: ralph_stock_db_prod
-    restart: unless-stopped
+  # API Gateway - Production (optimized)
+  api-gateway:
+    build:
+      target: production
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-ralph_stock}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      TS_TUNE_MEMORY: '2GB'
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres_data_prod:/home/postgresql/data
-      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks:
-      - ralph_stock_network
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: always
     deploy:
       resources:
         limits:
           cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    command: ["uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "5111"]
+    # No volumes for production
+
+  # VCP Scanner - Production (optimized)
+  vcp-scanner:
+    build:
+      target: production
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    command: ["uvicorn", "services.vcp_scanner.main:app", "--host", "0.0.0.0", "--port", "5112"]
+
+  # Signal Engine - Production (optimized)
+  signal-engine:
+    build:
+      target: production
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    command: ["uvicorn", "services.signal_engine.main:app", "--host", "0.0.0.0", "--port", "5113"]
+
+  # Chatbot - Production (optimized)
+  chatbot:
+    build:
+      target: production
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    command: ["uvicorn", "services.chatbot.main:app", "--host", "0.0.0.0", "--port", "5114"]
+
+  # Frontend - Production (optimized build)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    environment:
+      - NEXT_PUBLIC_API_URL=${PUBLIC_API_URL:-http://localhost:5111}
+      - NEXT_PUBLIC_WS_URL=${PUBLIC_WS_URL:-ws://localhost:5111}
+      - NODE_ENV=production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    # No volumes for production
+
+  # Celery Worker - Production
+  celery-worker:
+    build:
+      target: production
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=4
+      - CELERY_WORKER_MAX_TASKS_PER_CHILD=1000
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    command: [
+      "celery", "-A", "tasks.celery_app", "worker",
+      "--loglevel=info",
+      "--concurrency=4",
+      "--max-tasks-per-child=1000"
+    ]
+
+  # Celery Beat - Production
+  celery-beat:
+    build:
+      target: production
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+
+  # Flower - Production (with basic auth)
+  flower:
+    environment:
+      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+
+  # PostgreSQL - Production (resource limits)
+  postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
           memory: 2G
         reservations:
           cpus: '0.5'
-          memory: 1G
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+          memory: 512M
 
-  # Redis (Cache + Message Broker)
+  # Redis - Production (resource limits)
   redis:
-    image: redis:7-alpine
-    container_name: ralph_stock_redis_prod
-    restart: unless-stopped
-    command: >
-      redis-server
-      --appendonly yes
-      --requirepass ${REDIS_PASSWORD}
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data_prod:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-    networks:
-      - ralph_stock_network
     deploy:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # API Gateway (FastAPI)
-  api-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile.gateway
-      target: production
-    container_name: ralph_stock_api_gateway_prod
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      VCP_SCANNER_URL: http://vcp-scanner:5112
-      SIGNAL_ENGINE_URL: http://signal-engine:5113
-      CHATBOT_SERVICE_URL: http://chatbot:5114
-      KIWOOM_APP_KEY: ${KIWOOM_APP_KEY}
-      KIWOOM_SECRET_KEY: ${KIWOOM_SECRET_KEY}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ENVIRONMENT: production
-    ports:
-      - "${API_GATEWAY_PORT:-5111}:5111"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      vcp-scanner:
-        condition: service_started
-      signal-engine:
-        condition: service_started
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - ralph_stock_network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # VCP Scanner Service
-  vcp-scanner:
-    build:
-      context: .
-      dockerfile: Dockerfile.service
-      target: production
-    container_name: ralph_stock_vcp_scanner_prod
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      SERVICE_NAME: vcp-scanner
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ENVIRONMENT: production
-    ports:
-      - "${VCP_SCANNER_PORT:-5112}:5112"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - ralph_stock_network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Signal Engine Service
-  signal-engine:
-    build:
-      context: .
-      dockerfile: Dockerfile.service
-      target: production
-    container_name: ralph_stock_signal_engine_prod
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      SERVICE_NAME: signal-engine
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ENVIRONMENT: production
-    ports:
-      - "${SIGNAL_ENGINE_PORT:-5113}:5113"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - ralph_stock_network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Celery Worker (Background Tasks)
-  celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.celery
-      target: production
-    container_name: ralph_stock_celery_worker_prod
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
-      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ENVIRONMENT: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./logs:/app/logs
-      - ./data:/app/data
-    networks:
-      - ralph_stock_network
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A tasks.celery_app inspect ping -d celery@$$HOSTNAME || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Celery Beat (Scheduler)
-  celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile.celery
-      target: production
-    container_name: ralph_stock_celery_beat_prod
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ralph_stock}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ENVIRONMENT: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      celery-worker:
-        condition: service_healthy
-    volumes:
-      - ./logs:/app/logs
-    networks:
-      - ralph_stock_network
-    healthcheck:
-      test: ["CMD-SHELL", "celery -A tasks.celery_app status || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
           memory: 256M
         reservations:
           cpus: '0.1'
-          memory: 128M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  # Flower (Celery Monitoring)
-  flower:
-    image: mher/flower:latest
-    container_name: ralph_stock_flower_prod
-    restart: unless-stopped
-    environment:
-      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
-      FLOWER_BASIC_AUTH: ${FLOWER_USER:-admin}:${FLOWER_PASSWORD}
-      FLOWER_PORT: 5555
-    ports:
-      - "${FLOWER_PORT:-5555}:5555"
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - ralph_stock_network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-volumes:
-  postgres_data_prod:
-    driver: local
-  redis_data_prod:
-    driver: local
-
-networks:
-  ralph_stock_network:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
+          memory: 64M

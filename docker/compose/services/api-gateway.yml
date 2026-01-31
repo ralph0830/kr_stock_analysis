@@ -1,0 +1,47 @@
+# API Gateway Service
+# Port: 5111
+
+# Common configuration for Python services
+x-python-service-healthcheck: &python-service-healthcheck
+  test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
+  interval: 30s
+  timeout: 10s
+  start_period: 40s
+  retries: 3
+
+x-python-service-volumes: &python-service-volumes
+  - ./services/api_gateway:/app/services/api_gateway:ro
+  - ./src:/app/src:ro
+
+x-python-service-depends: &python-service-depends
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_started
+
+services:
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api_gateway/Dockerfile
+      target: development
+    image: api-gateway:dev
+    container_name: api-gateway
+    ports:
+      - "5111:5111"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      REDIS_URL: redis://redis:6379/0
+      VCP_SCANNER_URL: http://vcp-scanner:5112
+      SIGNAL_ENGINE_URL: http://signal-engine:5113
+      CHATBOT_SERVICE_URL: http://chatbot:5114
+    volumes: *python-service-volumes
+    depends_on: *python-service-depends
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5111/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    networks:
+      - ralph-network
