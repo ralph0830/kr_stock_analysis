@@ -7,10 +7,13 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from typing import Optional
 import uuid
 
-from src.websocket.server import connection_manager, price_broadcaster
+from src.websocket.server import connection_manager, price_broadcaster, get_heartbeat_manager
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# Phase 3: 하트비트 관리자 레퍼런스
+_heartbeat_manager = get_heartbeat_manager()
 
 router = APIRouter(tags=["WebSocket"])
 
@@ -96,8 +99,14 @@ async def websocket_endpoint(
                     })
 
             elif message_type == "ping":
-                # 핑/퐁방
+                # 핑/퐁응답
                 await websocket.send_json({"type": "pong"})
+
+            elif message_type == "pong":
+                # Phase 3: Pong 수신 시간 기록
+                if _heartbeat_manager:
+                    _heartbeat_manager.record_pong(client_id)
+                logger.debug(f"Pong received from {client_id}")
 
             else:
                 await websocket.send_json({
@@ -105,11 +114,27 @@ async def websocket_endpoint(
                     "message": f"Unknown message type: {message_type}",
                 })
 
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket client disconnected: {client_id}")
+    except WebSocketDisconnect as e:
+        # 상세한 종료 정보 로깅 (Phase 1: GREEN)
+        logger.info(
+            f"WebSocket client disconnected: {client_id} | "
+            f"code={e.code}, reason='{e.reason}'"
+        )
+        # Phase 3: 하트비트 관리자에서 클라이언트 제거
+        if _heartbeat_manager:
+            _heartbeat_manager.remove_client(client_id)
+        # ConnectionManager에 종료 정보 전달
+        connection_manager.disconnect(client_id, code=e.code, reason=e.reason)
     except Exception as e:
-        logger.error(f"WebSocket error for {client_id}: {e}")
-    finally:
+        # 예외 타입과 메시지 로깅 (Phase 1: GREEN)
+        import traceback
+        logger.error(
+            f"WebSocket error for {client_id}: {type(e).__name__}: {e}\n"
+            f"Traceback: {traceback.format_exc()[-500:]}"  # 최근 500자만 로깅
+        )
+        # Phase 3: 하트비트 관리자에서 클라이언트 제거
+        if _heartbeat_manager:
+            _heartbeat_manager.remove_client(client_id)
         connection_manager.disconnect(client_id)
 
 
@@ -129,6 +154,8 @@ async def websocket_stats():
         },
         "broadcaster_running": price_broadcaster.is_running(),
         "active_tickers": list(price_broadcaster.get_active_tickers()),
+        # Phase 3: 하트비트 상태
+        "heartbeat_running": _heartbeat_manager.is_running() if _heartbeat_manager else False,
     }
 
     return stats

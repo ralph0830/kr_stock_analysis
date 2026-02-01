@@ -5,6 +5,7 @@ WebSocket 서버
 
 import asyncio
 import os
+import time
 from typing import Dict, Set, Optional
 from fastapi import WebSocket
 from datetime import datetime, timezone
@@ -67,12 +68,14 @@ class ConnectionManager:
         self.active_connections[client_id] = websocket
         logger.info(f"WebSocket connected: {client_id}")
 
-    def disconnect(self, client_id: str) -> None:
+    def disconnect(self, client_id: str, code: int = None, reason: str = None) -> None:
         """
         클라이언트 연결 종료
 
         Args:
             client_id: 클라이언트 ID
+            code: 종료 코드 (선택 사항, Phase 1: GREEN)
+            reason: 종료 사유 (선택 사항, Phase 1: GREEN)
         """
         # 모든 구독에서 클라이언트 제거
         for topic in list(self.subscriptions.keys()):
@@ -81,7 +84,10 @@ class ConnectionManager:
         # 연결 제거
         if client_id in self.active_connections:
             del self.active_connections[client_id]
-            logger.info(f"WebSocket disconnected: {client_id}")
+            # 상세한 종료 정보 로깅 (Phase 1: GREEN)
+            code_str = f", code={code}" if code is not None else ""
+            reason_str = f", reason='{reason}'" if reason else ""
+            logger.info(f"WebSocket disconnected: {client_id}{code_str}{reason_str}")
 
     async def send_personal_message(self, message: dict, client_id: str) -> bool:
         """
@@ -413,6 +419,219 @@ class PriceUpdateBroadcaster:
         """실행 중 여부 반환"""
         return self._is_running
 
+    def _generate_mock_price_updates(self) -> Dict[str, dict]:
+        """
+        Mock 가격 업데이트 생성 (테스트용)
+
+        Returns:
+            종목코드 -> 가격데이터 매핑
+        """
+        import random
+
+        mock_data = {}
+
+        for ticker in self.DEFAULT_TICKERS:
+            # 기반 가격 (종목별 다른 범위)
+            base_prices = {
+                "005930": 75000,  # 삼성전자
+                "000660": 150000,  # SK하이닉스
+                "035420": 250000,  # NAVER
+                "005380": 240000,  # 현대차
+                "051910": 80000,   # LG화학
+                "068270": 700000,  # 셀트리온
+            }
+            base = base_prices.get(ticker, 50000)
+
+            # 랜덤 변동
+            change = random.randint(-2000, 2000)
+            price = base + change
+            change_rate = (change / base * 100) if base > 0 else 0
+
+            mock_data[ticker] = {
+                "price": price,
+                "change": change,
+                "change_rate": round(change_rate, 2),
+                "volume": random.randint(100000, 10000000),
+            }
+
+        return mock_data
+
 
 # 전역 브로드캐스터 인스턴스
 price_broadcaster = PriceUpdateBroadcaster(interval_seconds=5)
+
+
+# Phase 3: 하트비트/핑퐁 메커니즘 (Keep-Alive)
+class HeartbeatManager:
+    """
+    WebSocket 하트비트 관리자
+
+    연결된 클라이언트에게 주기적으로 ping을 전송하고
+    응답하지 않는 클라이언트를 연결 해지합니다.
+
+    Usage:
+        heartbeat = HeartbeatManager(connection_manager)
+        await heartbeat.start()
+        await heartbeat.stop()
+    """
+
+    def __init__(self, connection_manager: 'ConnectionManager'):
+        """
+        초기화
+
+        Args:
+            connection_manager: ConnectionManager 인스턴스
+        """
+        self.connection_manager = connection_manager
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._is_running = False
+
+        # 하트비트 설정
+        self.ping_interval_seconds = 30  # 30초마다 ping
+        self.pong_timeout_seconds = 90  # 90초간 pong 없으면 연결 종료
+
+        # 클라이언트별 마지막 pong 수신 시간 추적
+        self._last_pong_time: Dict[str, float] = {}
+
+    async def _heartbeat_loop(self):
+        """하트비트 루프"""
+        while self._is_running:
+            try:
+                # 연결된 클라이언트 목록 가져오기
+                active_clients = list(self.connection_manager.active_connections.keys())
+
+                if not active_clients:
+                    # 활성 연결이 없으면 대기
+                    await asyncio.sleep(self.ping_interval_seconds)
+                    continue
+
+                logger.debug(f"Sending ping to {len(active_clients)} clients")
+
+                # 모든 클라이언트에게 ping 전송
+                ping_message = {
+                    "type": "ping",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+                for client_id in active_clients:
+                    await self.connection_manager.send_personal_message(
+                        ping_message,
+                        client_id
+                    )
+
+                # 타임아웃 대기
+                await asyncio.sleep(self.ping_interval_seconds)
+
+            except Exception as e:
+                logger.error(f"Error in heartbeat loop: {e}")
+                await asyncio.sleep(self.ping_interval_seconds)
+
+    async def start(self):
+        """하트비트 시작"""
+        if self._is_running:
+            logger.warning("Heartbeat is already running")
+            return
+
+        self._is_running = True
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        logger.info("WebSocket heartbeat started (30s interval)")
+
+    async def stop(self):
+        """하트비트 중지"""
+        if not self._is_running:
+            return
+
+        self._is_running = False
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+        logger.info("WebSocket heartbeat stopped")
+
+    def is_running(self) -> bool:
+        """실행 중 여부 반환"""
+        return self._is_running
+
+    def record_pong(self, client_id: str) -> None:
+        """
+        Pong 수신 시간 기록
+
+        Args:
+            client_id: 클라이언트 ID
+        """
+        self._last_pong_time[client_id] = time.time()
+        logger.debug(f"Pong received from {client_id}")
+
+    def is_client_alive(self, client_id: str) -> bool:
+        """
+        클라이언트 활성 상태 확인
+
+        Args:
+            client_id: 클라이언트 ID
+
+        Returns:
+            True if client is alive (pong 수신한지 90초 이내), False otherwise
+        """
+        if client_id not in self._last_pong_time:
+            # 아직 pong을 받지 않은 클라이언트는 새로 연결된 것으로 간주
+            return True
+
+        elapsed = time.time() - self._last_pong_time[client_id]
+        return elapsed < self.pong_timeout_seconds
+
+    def get_last_pong_time(self, client_id: str) -> Optional[float]:
+        """
+        마지막 pong 수신 시간 반환
+
+        Args:
+            client_id: 클라이언트 ID
+
+        Returns:
+            마지막 pong 수신 시간 (Unix timestamp), 없으면 None
+        """
+        return self._last_pong_time.get(client_id)
+
+    def remove_client(self, client_id: str) -> None:
+        """
+        클라이언트 제거 시 정리
+
+        Args:
+            client_id: 클라이언트 ID
+        """
+        self._last_pong_time.pop(client_id, None)
+
+
+# 전역 하트비트 관리자 인스턴스 (lazy init)
+_heartbeat_manager: Optional[HeartbeatManager] = None
+
+
+def get_heartbeat_manager() -> Optional[HeartbeatManager]:
+    """
+    하트비트 관리자 인스턴스 반환 (lazy init)
+
+    Returns:
+        HeartbeatManager 인스턴 또는 None (WebSocket이 사용되지 않으면)
+    """
+    return _heartbeat_manager
+
+
+def create_heartbeat_manager(connection_manager: 'ConnectionManager') -> HeartbeatManager:
+    """
+    하트비트 관리자 인스턴스 생성 및 시작
+
+    Args:
+        connection_manager: ConnectionManager 인스턴스
+
+    Returns:
+        생성된 HeartbeatManager 인스턴스
+    """
+    global _heartbeat_manager
+    _heartbeat_manager = HeartbeatManager(connection_manager)
+
+    # 백그라운드에서 시작 (비동기)
+    asyncio.create_task(_heartbeat_manager.start())
+
+    return _heartbeat_manager

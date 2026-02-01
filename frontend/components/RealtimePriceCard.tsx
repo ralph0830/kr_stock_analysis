@@ -198,29 +198,115 @@ export function RealtimePriceGrid({
 
 /**
  * WebSocket 연결 상태 표시 컴포넌트
+ *
+ * Phase 4: 연결 상태 UI 개선
+ * - 연결 상태 아이콘: ● (연결됨), ◐ (연결 중), ⚠️ (에러)
+ * - 재연결 횟수 표시
+ * - 에러 메시지 툴팁
+ * - 접근성 (aria-label)
+ * - 부드러운 전환 애니메이션
  */
 export function WebSocketStatus() {
-  const { connected, connecting, error, clientId } = useWebSocket({});
+  const { connected, connecting, error, clientId, reconnectCount, lastError, connectionState } = useWebSocket({});
+
+  // Phase 4: 상태별 아이콘과 색상 매핑
+  const getStatusConfig = () => {
+    if (connected) {
+      return {
+        icon: "●",
+        colorClass: "bg-green-500",
+        text: "실시간 연결됨",
+        ariaLabel: "WebSocket 연결됨",
+      };
+    }
+    if (connecting) {
+      return {
+        icon: "◐",
+        colorClass: "bg-yellow-500 animate-pulse",
+        text: "연결 중...",
+        ariaLabel: "WebSocket 연결 중",
+      };
+    }
+    if (error) {
+      return {
+        icon: "⚠️",
+        colorClass: "bg-red-500",
+        text: "연결 실패",
+        ariaLabel: "WebSocket 연결 오류",
+      };
+    }
+    return {
+      icon: "○",
+      colorClass: "bg-gray-400",
+      text: "대기 중",
+      ariaLabel: "WebSocket 대기 중",
+    };
+  };
+
+  const statusConfig = getStatusConfig();
+
+  // Phase 4: 에러 메시지 생성 (툴팁용)
+  const getErrorMessage = () => {
+    if (lastError) return lastError;
+    if (error) return "연결 오류가 발생했습니다";
+    return null;
+  };
+
+  const errorMessage = getErrorMessage();
+  const hasReconnect = reconnectCount > 0;
 
   return (
-    <div className="flex items-center gap-2">
-      <div
+    <div
+      className="flex items-center gap-2 transition-all duration-300"
+      data-testid={`ws-status-${connectionState}`}
+      aria-label={statusConfig.ariaLabel}
+    >
+      {/* Phase 4: 상태 아이콘 */}
+      <span
         className={cn(
-          "w-3 h-3 rounded-full",
-          connected
-            ? "bg-green-500 animate-pulse"
-            : connecting
-            ? "bg-yellow-500 animate-pulse"
-            : error
-            ? "bg-red-500"
-            : "bg-gray-400"
+          "text-sm transition-all duration-300",
+          error && "animate-pulse"
         )}
-      />
-      <span className="text-sm text-gray-600 dark:text-gray-400">
-        {connected ? "실시간 연결됨" : connecting ? "연결 중..." : "연결 안됨"}
+        data-testid={
+          connected ? "ws-icon-connected" :
+          connecting ? "ws-icon-connecting" :
+          error ? "ws-icon-error" :
+          "ws-icon-disconnected"
+        }
+      >
+        {statusConfig.icon}
       </span>
+
+      {/* 상태 텍스트 */}
+      <span className="text-sm text-gray-600 dark:text-gray-400 transition-all duration-300">
+        {statusConfig.text}
+      </span>
+
+      {/* Phase 4: 재연결 횟수 표시 */}
+      {hasReconnect && (
+        <span
+          className="text-xs text-yellow-600 dark:text-yellow-400 font-medium transition-all duration-300"
+          data-testid="ws-reconnect-count"
+          title={`재연결 시도: ${reconnectCount}회`}
+        >
+          (재연결 {reconnectCount})
+        </span>
+      )}
+
+      {/* Phase 4: 에러 메시지 툴팁 */}
+      {errorMessage && (
+        <span
+          className="text-xs text-red-500 dark:text-red-400 cursor-help underline decoration-dotted"
+          title={errorMessage}
+          data-testid="ws-error-message"
+        >
+          {errorMessage.length > 20 ? errorMessage.substring(0, 20) + "..." : errorMessage}
+        </span>
+      )}
+
+      {/* 클라이언트 ID (있는 경우만) */}
       {clientId && (
-        <span className="text-xs text-gray-500 dark:text-gray-500">
+        <span className="text-xs text-gray-500 dark:text-gray-500 transition-all duration-300">
           (ID: {clientId.slice(0, 8)}...)
         </span>
       )}

@@ -4,6 +4,18 @@ FastAPI 기반 API Gateway 구현
 """
 # ruff: noqa: E402  # dotenv 로드 후 import 필요
 
+import sys
+import os
+from pathlib import Path
+
+# 현재 디렉토리를 sys.path에 추가 (Docker 실행 지원)
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+_project_root = str(Path(_current_dir).parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import logging
 from fastapi import FastAPI, HTTPException, status, Request, Query, Depends
 
@@ -20,50 +32,107 @@ from dotenv import load_dotenv
 # 환경변수 로드
 load_dotenv()
 
-from services.api_gateway.service_registry import get_registry
-from src.database.session import get_db_session
-from src.database.models import MarketStatus, DailyPrice
-from src.repositories.stock_repository import StockRepository
+# 유연한 import (프로젝트 루트 vs Docker)
+try:
+    from api_gateway.service_registry import get_registry
+except ImportError:
+    from services.api_gateway.service_registry import get_registry
+
+try:
+    from src.database.session import get_db_session
+    from src.database.models import MarketStatus, DailyPrice
+    from src.repositories.stock_repository import StockRepository
+except ImportError:
+    from ralph_stock_lib.database.session import get_db_session
+    from ralph_stock_lib.database.models import MarketStatus, DailyPrice
+    from ralph_stock_lib.repositories.stock_repository import StockRepository
+
 from sqlalchemy import select, desc
 
-# WebSocket, 메트릭, 미들웨어
-from src.websocket.routes import router as websocket_router
-from src.websocket.server import price_broadcaster
-from src.utils.metrics import metrics_registry
-from src.middleware.metrics_middleware import MetricsMiddleware
-from src.middleware.logging_middleware import RequestLoggingMiddleware
-from src.middleware.request_id import RequestIDMiddleware
-from src.middleware.slow_endpoint import SlowEndpointMiddleware
+# WebSocket, 메트릭, 미들웨어 (선택적 import - Docker에서는 없을 수 있음)
+try:
+    from src.websocket.routes import router as websocket_router
+    from src.websocket.server import price_broadcaster, connection_manager, create_heartbeat_manager
+    from src.utils.metrics import metrics_registry
+    from src.middleware.metrics_middleware import MetricsMiddleware
+    from src.middleware.logging_middleware import RequestLoggingMiddleware
+    from src.middleware.request_id import RequestIDMiddleware
+    from src.middleware.slow_endpoint import SlowEndpointMiddleware
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    logger.warning("WebSocket/middleware modules not available - running in standalone mode")
+    WEBSOCKET_AVAILABLE = False
+    websocket_router = None
+    price_broadcaster = None
+    connection_manager = None
+    metrics_registry = None
+    MetricsMiddleware = None
+    RequestLoggingMiddleware = None
+    RequestIDMiddleware = None
+    SlowEndpointMiddleware = None
 
-# 대시보드
-from services.api_gateway.dashboard import router as dashboard_router
+# 대시보드 (선택적)
+try:
+    from api_gateway.dashboard import router as dashboard_router
+except ImportError:
+    try:
+        from services.api_gateway.dashboard import router as dashboard_router
+    except Exception:
+        logger.warning("Dashboard router not available - skipping dashboard routes")
+        dashboard_router = None
 
-# Kiwoom 연동
-from src.api_gateway.kiwoom_integration import (
-    create_kiwoom_integration,
-    setup_kiwoom_routes,
+# Kiwoom 연동 (선택적)
+try:
+    from src.api_gateway.kiwoom_integration import (
+        create_kiwoom_integration,
+        setup_kiwoom_routes,
 )
-from src.websocket.server import connection_manager, price_broadcaster
+    KIWOOM_AVAILABLE = True
+except ImportError:
+    logger.warning("Kiwoom integration not available")
+    KIWOOM_AVAILABLE = False
+    create_kiwoom_integration = None
+    setup_kiwoom_routes = None
 
 # API 스키마
-from services.api_gateway.schemas import (
-    HealthCheckResponse,
-    SignalResponse,
-    MarketGateStatus,
-    MetricsResponse,
-    RealtimePricesRequest,
-    StockDetailResponse,
-    ChartPoint,
-    StockChartResponse,
-    FlowDataPoint,
-    StockFlowResponse,
-    SignalHistoryItem,
-    SignalHistoryResponse,
-    BacktestStatsItem,
-    BacktestKPIResponse,
-    NewsItem,
-    NewsListResponse,
-)
+try:
+    from api_gateway.schemas import (
+        HealthCheckResponse,
+        SignalResponse,
+        MarketGateStatus,
+        MetricsResponse,
+        RealtimePricesRequest,
+        StockDetailResponse,
+        ChartPoint,
+        StockChartResponse,
+        FlowDataPoint,
+        StockFlowResponse,
+        SignalHistoryItem,
+        SignalHistoryResponse,
+        BacktestStatsItem,
+        BacktestKPIResponse,
+        NewsItem,
+        NewsListResponse,
+    )
+except ImportError:
+    from services.api_gateway.schemas import (
+        HealthCheckResponse,
+        SignalResponse,
+        MarketGateStatus,
+        MetricsResponse,
+        RealtimePricesRequest,
+        StockDetailResponse,
+        ChartPoint,
+        StockChartResponse,
+        FlowDataPoint,
+        StockFlowResponse,
+        SignalHistoryItem,
+        SignalHistoryResponse,
+        BacktestStatsItem,
+        BacktestKPIResponse,
+        NewsItem,
+        NewsListResponse,
+    )
 
 
 # Lifespan 컨텍스트 매니저
@@ -72,6 +141,7 @@ async def lifespan(app: FastAPI):
     """애플리케이션 라이프사이클 관리"""
     # Kiwoom WebSocket 연결 추적
     kiwoom_ws = None
+    kiwoom_integration = None
 
     # Startup
     print("🚀 API Gateway Starting...")
@@ -79,82 +149,85 @@ async def lifespan(app: FastAPI):
     registry = get_registry()
     print(f"✅ Registered {len(registry.list_services())} services")
 
-    # Kiwoom REST API 연동 시작
-    print("📡 Initializing Kiwoom REST API integration...")
-    kiwoom_integration = create_kiwoom_integration()
-    await kiwoom_integration.startup()
+    # Kiwoom REST API 연동 시작 (선택적)
+    if KIWOOM_AVAILABLE and create_kiwoom_integration:
+        print("📡 Initializing Kiwoom REST API integration...")
+        try:
+            kiwoom_integration = create_kiwoom_integration()
+            await kiwoom_integration.startup()
 
-    # Kiwoom WebSocket 직접 연결 및 실시간 데이터 브로드캐스트 설정
-    print("📡 Connecting to Kiwoom WebSocket for real-time prices...")
-    kiwoom_pipeline = kiwoom_integration.pipeline
+            # Kiwoom WebSocket 직접 연결 및 실시간 데이터 브로드캐스트 설정
+            print("📡 Connecting to Kiwoom WebSocket for real-time prices...")
+            kiwoom_pipeline = kiwoom_integration.pipeline
 
-    if kiwoom_pipeline:
-        # Pipeline이 실행될 때까지 대기
-        import asyncio
-        for attempt in range(10):  # 최대 10초 대기
-            if kiwoom_pipeline.is_running():
-                print("✅ Kiwoom Pipeline is running")
-                break
-            print(f"⏳ Waiting for Kiwoom Pipeline... ({attempt + 1}/10)")
-            await asyncio.sleep(1)
+            if kiwoom_pipeline:
+                # Pipeline이 실행될 때까지 대기
+                import asyncio
+                for attempt in range(10):  # 최대 10초 대기
+                    if kiwoom_pipeline.is_running():
+                        print("✅ Kiwoom Pipeline is running")
+                        break
+                    print(f"⏳ Waiting for Kiwoom Pipeline... ({attempt + 1}/10)")
+                    await asyncio.sleep(1)
 
-        if kiwoom_pipeline.is_running():
-            # 실시간 데이터 브로드캐스트 콜백 등록
-            from src.kiwoom.base import KiwoomEventType
+                if kiwoom_pipeline.is_running() and WEBSOCKET_AVAILABLE:
+                    # 실시간 데이터 브로드캐스트 콜백 등록
+                    from src.kiwoom.base import KiwoomEventType
 
-            async def broadcast_price_to_frontend(price_data):
-                """Kiwoom 실시간 데이터를 프론트엔드 WebSocket으로 브로드캐스트"""
-                try:
-                    await connection_manager.broadcast(
-                        {
-                            "type": "price_update",
-                            "ticker": price_data.ticker,
-                            "data": {
-                                "price": price_data.price,
-                                "change": price_data.change,
-                                "change_rate": price_data.change_rate,
-                                "volume": price_data.volume,
-                                "bid_price": price_data.bid_price,
-                                "ask_price": price_data.ask_price,
-                            },
-                            "timestamp": price_data.timestamp,
-                            "source": "kiwoom_ws",
-                        },
-                        topic=f"price:{price_data.ticker}",
+                    async def broadcast_price_to_frontend(price_data):
+                        """Kiwoom 실시간 데이터를 프론트엔드 WebSocket으로 브로드캐스트"""
+                        try:
+                            await connection_manager.broadcast(
+                                {
+                                    "type": "price_update",
+                                    "ticker": price_data.ticker,
+                                    "data": {
+                                        "price": price_data.price,
+                                        "change": price_data.change,
+                                        "change_rate": price_data.change_rate,
+                                        "volume": price_data.volume,
+                                        "bid_price": price_data.bid_price,
+                                        "ask_price": price_data.ask_price,
+                                    },
+                                    "timestamp": price_data.timestamp,
+                                    "source": "kiwoom_ws",
+                                },
+                                topic=f"price:{price_data.ticker}",
+                            )
+                            logger.debug(f"Broadcasted Kiwoom price: {price_data.ticker} = {price_data.price}")
+                        except Exception as e:
+                            logger.error(f"Error broadcasting price: {e}")
+
+                    # 이벤트 핸들러 등록
+                    kiwoom_pipeline.register_event_handler(
+                        KiwoomEventType.RECEIVE_REAL_DATA,
+                        broadcast_price_to_frontend
                     )
-                    logger = logging.getLogger(__name__)
-                    logger.debug(f"Broadcasted Kiwoom price: {price_data.ticker} = {price_data.price}")
-                except Exception as e:
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"Error broadcasting price: {e}")
+                    print("✅ Kiwoom price broadcast handler registered")
 
-            # 이벤트 핸들러 등록
-            kiwoom_pipeline.register_event_handler(
-                KiwoomEventType.RECEIVE_REAL_DATA,
-                broadcast_price_to_frontend
-            )
-            print("✅ Kiwoom price broadcast handler registered")
+                    # 기본 종목 구독 (삼성전자, SK하이닉스, NAVER, 현대차)
+                    default_tickers = ["005930", "000660", "035420", "005380"]
+                    for ticker in default_tickers:
+                        try:
+                            await kiwoom_pipeline.subscribe(ticker)
+                            if price_broadcaster:
+                                price_broadcaster.add_ticker(ticker)
+                            print(f"✅ Subscribed to {ticker}")
+                        except Exception as e:
+                            print(f"⚠️ Failed to subscribe to {ticker}: {e}")
 
-            # 기본 종목 구독 (삼성전자, SK하이닉스, NAVER, 현대차)
-            default_tickers = ["005930", "000660", "035420", "005380"]
-            for ticker in default_tickers:
-                try:
-                    await kiwoom_pipeline.subscribe(ticker)
-                    price_broadcaster.add_ticker(ticker)
-                    print(f"✅ Subscribed to {ticker}")
-                except Exception as e:
-                    print(f"⚠️ Failed to subscribe to {ticker}: {e}")
+                    # Kiwoom WebSocket Bridge 연결 (기존 호환성 유지)
+                    try:
+                        from src.websocket.kiwoom_bridge import init_kiwoom_ws_bridge
+                        await init_kiwoom_ws_bridge(kiwoom_pipeline)
+                        print("✅ Kiwoom WebSocket Bridge connected")
+                    except Exception as e:
+                        print(f"⚠️ Kiwoom WebSocket Bridge: {e}")
 
-            # Kiwoom WebSocket Bridge 연결 (기존 호환성 유지)
-            try:
-                from src.websocket.kiwoom_bridge import init_kiwoom_ws_bridge
-                await init_kiwoom_ws_bridge(kiwoom_pipeline)
-                print("✅ Kiwoom WebSocket Bridge connected")
-            except Exception as e:
-                print(f"⚠️ Kiwoom WebSocket Bridge: {e}")
-
-        else:
-            print("⚠️ Kiwoom Pipeline failed to start. Real-time prices not available.")
+                else:
+                    print("⚠️ Kiwoom Pipeline failed to start. Real-time prices not available.")
+        except Exception as e:
+            print(f"⚠️ Kiwoom initialization failed: {e}")
 
     # Kiwoom REST API가 구성된 경우 Price Broadcaster 시작 (Pipeline 상관없이)
     # WebSocket 연결 문제로 우회: REST API로만 가격 조회 후 브로드캐스트
@@ -162,12 +235,20 @@ async def lifespan(app: FastAPI):
     use_kiwoom_rest = os.getenv("USE_KIWOOM_REST", "false").lower() == "true"
     has_api_keys = bool(os.getenv("KIWOOM_APP_KEY") and os.getenv("KIWOOM_SECRET_KEY"))
 
-    if use_kiwoom_rest and has_api_keys:
+    if use_kiwoom_rest and has_api_keys and price_broadcaster:
         print("📡 Starting Price Broadcaster (REST API mode)...")
         await price_broadcaster.start()
         print("✅ Price Broadcaster started")
     else:
         print("⚠️ Real-time price broadcasting not available (Kiwoom REST API not configured)")
+
+    # Phase 3: 하트비트 관리자 시작
+    if WEBSOCKET_AVAILABLE and connection_manager:
+        print("💓 Starting WebSocket Heartbeat Manager...")
+        heartbeat_mgr = create_heartbeat_manager(connection_manager)
+        print("✅ Heartbeat Manager started (30s interval)")
+    else:
+        print("⚠️ WebSocket not available - heartbeat skipped")
 
     yield
 
@@ -184,13 +265,23 @@ async def lifespan(app: FastAPI):
         print(f"⚠️ Error stopping Kiwoom WebSocket Bridge: {e}")
 
     # 가격 브로드캐스터 중지
-    print("📡 Stopping Price Broadcaster...")
-    await price_broadcaster.stop()
-    print("✅ Price Broadcaster stopped")
+    if price_broadcaster:
+        print("📡 Stopping Price Broadcaster...")
+        await price_broadcaster.stop()
+        print("✅ Price Broadcaster stopped")
+
+    # Phase 3: 하트비트 관리자 중지
+    from src.websocket.server import get_heartbeat_manager
+    heartbeat_mgr = get_heartbeat_manager()
+    if heartbeat_mgr:
+        print("💓 Stopping Heartbeat Manager...")
+        await heartbeat_mgr.stop()
+        print("✅ Heartbeat Manager stopped")
 
     # Kiwoom 연동 중지
-    print("📡 Stopping Kiwoom REST API integration...")
-    await kiwoom_integration.shutdown()
+    if kiwoom_integration:
+        print("📡 Stopping Kiwoom REST API integration...")
+        await kiwoom_integration.shutdown()
 
 
 app = FastAPI(
@@ -291,73 +382,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 요청 ID 미들웨어 (가장 먼저 실행)
-app.add_middleware(RequestIDMiddleware)
+# 미들웨어 (선택적 - Docker에서 없을 수 있음)
+if WEBSOCKET_AVAILABLE:
+    app.add_middleware(RequestIDMiddleware)
+    app.add_middleware(SlowEndpointMiddleware, threshold=1.0)
+    app.add_middleware(
+        RequestLoggingMiddleware,
+        skip_paths=["/health", "/metrics", "/readiness"],
+        log_body=False,
+    )
+    app.add_middleware(MetricsMiddleware)
+    app.include_router(websocket_router)
 
-# 느린 엔드포인트 추적 미들웨어
-app.add_middleware(SlowEndpointMiddleware, threshold=1.0)
+# 대시보드 라우터 포함 (선택적)
+if dashboard_router:
+    app.include_router(dashboard_router)
 
-# 요청/응답 로깅 미들웨어 (CORS 다음, Metrics 이전)
-app.add_middleware(
-    RequestLoggingMiddleware,
-    skip_paths=["/health", "/metrics", "/readiness"],
-    log_body=False,  # 바디 로깅 비활성화 (성능 및 보안)
-)
+# 라우터 등록 (유연한 import)
+def _include_router(module_name, router_name, display_name):
+    """유연한 라우터 등록 헬퍼"""
+    try:
+        module = __import__(f"services.api_gateway.routes.{module_name}", fromlist=[router_name])
+        router = getattr(module, router_name)
+        app.include_router(router)
+        print(f"✅ {display_name} routes registered")
+        return True
+    except Exception as e:
+        print(f"⚠️ Failed to register {display_name}: {e}")
+        return False
 
-# 메트릭 수집 미들웨어
-app.add_middleware(MetricsMiddleware)
+# 백테스트, Stocks, AI, System, Triggers, Chatbot, Performance, News, Signals 라우터 포함
+_include_router("backtest", "router", "Backtest")
+_include_router("stocks", "router", "Stocks")
+_include_router("ai", "router", "AI")
+_include_router("system", "router", "System")
+_include_router("triggers", "router", "Triggers")
+_include_router("chatbot", "router", "Chatbot")
+_include_router("performance", "router", "Performance")
+_include_router("news", "router", "News")
+_include_router("signals", "router", "Signals")
 
-# WebSocket 라우터 포함
-app.include_router(websocket_router)
-
-# 대시보드 라우터 포함
-app.include_router(dashboard_router)
-
-# 백테스트 라우터 포함
-from services.api_gateway.routes.backtest import router as backtest_router
-app.include_router(backtest_router)
-print("✅ Backtest routes registered")
-
-# Stocks 라우터 포함
-from services.api_gateway.routes.stocks import router as stocks_router
-app.include_router(stocks_router)
-print("✅ Stocks routes registered")
-
-# AI 라우터 포함
-from services.api_gateway.routes.ai import router as ai_router
-app.include_router(ai_router)
-print("✅ AI routes registered")
-
-# System 라우터 포함
-from services.api_gateway.routes.system import router as system_router
-app.include_router(system_router)
-print("✅ System routes registered")
-
-# Triggers 라우터 포함
-from services.api_gateway.routes.triggers import router as triggers_router
-app.include_router(triggers_router)
-print("✅ Triggers routes registered")
-
-# Kiwoom 라우터 설정 (항상 등록, 내부에서可用性 체크)
-from src.websocket.kiwoom_bridge import get_kiwoom_ws_bridge
-ws_bridge = get_kiwoom_ws_bridge()
-setup_kiwoom_routes(app, ws_bridge=ws_bridge)
-print("✅ Kiwoom routes registered")
-
-# Chatbot 라우터 포함
-from services.api_gateway.routes.chatbot import router as chatbot_router
-app.include_router(chatbot_router)
-print("✅ Chatbot routes registered")
-
-# Performance 라우터 포함
-from services.api_gateway.routes.performance import router as performance_router
-app.include_router(performance_router)
-print("✅ Performance routes registered")
-
-# News 라우터 포함 (Phase 6: GREEN)
-from services.api_gateway.routes.news import router as news_router
-app.include_router(news_router)
-print("✅ News routes registered")
+# Kiwoom 라우터 설정 (선택적)
+if KIWOOM_AVAILABLE and setup_kiwoom_routes:
+    try:
+        from src.websocket.kiwoom_bridge import get_kiwoom_ws_bridge
+        ws_bridge = get_kiwoom_ws_bridge()
+        setup_kiwoom_routes(app, ws_bridge=ws_bridge)
+        print("✅ Kiwoom routes registered")
+    except Exception as e:
+        print(f"⚠️ Kiwoom routes registration failed: {e}")
 
 
 # ============================================================================
@@ -456,7 +529,10 @@ async def prometheus_metrics():
 
     Prometheus 텍스트 형식으로 메트릭을 반환합니다.
     """
-    metrics = metrics_registry.export()
+    if metrics_registry:
+        metrics = metrics_registry.export()
+    else:
+        metrics = "# Metrics not available in standalone mode\n"
     return PlainTextResponse(
         content=metrics,
         media_type="text/plain; version=0.0.4; charset=utf-8",
@@ -485,6 +561,13 @@ async def json_metrics(
     - **metric_type**: 필터링할 메트릭 타입 (counter, gauge, histogram)
     - **limit**: 반환할 메트릭 수
     """
+    if not metrics_registry:
+        return MetricsResponse(
+            metrics=[],
+            total=0,
+            filtered=0,
+        )
+
     all_metrics = metrics_registry.get_all_metrics()
 
     # 타입 필터링
@@ -527,8 +610,11 @@ async def reset_metrics():
 
     모든 메트릭을 0으로 리셋합니다.
     """
-    metrics_registry.reset_all()
-    return {"message": "All metrics reset"}
+    if metrics_registry:
+        metrics_registry.reset_all()
+        return {"message": "All metrics reset"}
+    else:
+        return {"message": "Metrics not available in standalone mode"}
 
 
 # ============================================================================

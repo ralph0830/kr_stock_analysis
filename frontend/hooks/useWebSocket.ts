@@ -29,7 +29,7 @@ export interface UseWebSocketOptions {
   onPriceUpdate?: (price: RealtimePrice) => void; // 가격 업데이트 콜백
   onConnected?: (clientId: string) => void; // 연결 성공 콜백
   onDisconnected?: () => void; // 연결 종료 콜백
-  onError?: () => void; // 에러 콜백
+  onError?: (error?: string) => void; // 에러 콜백 (Phase 4: error message 추가)
 }
 
 /**
@@ -62,6 +62,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   // 클라이언트 ID
   const [clientId, setClientId] = useState<string | null>(null);
+
+  // Phase 4: 재연결 횟수와 마지막 에러 메시지
+  const [reconnectCount, setReconnectCount] = useState<number>(0);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   // 실시간 가격 데이터 (종목별)
   const [prices, setPrices] = useState<Map<string, RealtimePrice>>(new Map());
@@ -146,18 +150,30 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     const unsubscribeStateChange = clientRef.current.onStateChange((state: ConnectionState) => {
       setConnectionState(state);
 
+      // Phase 4: 재연결 횟수 추적
+      if (clientRef.current) {
+        setReconnectCount(clientRef.current.reconnectCount);
+      }
+
       // 콜백 호출
       if (state === "connected") {
+        // 연결 성공 시 에러 초기화
+        setLastError(null);
         // 연결 성공은 connected 메시지에서 처리
       } else if (state === "disconnected") {
         setClientId(null);
+        setLastError("연결이 종료되었습니다");
         if (onDisconnected) {
           onDisconnected();
         }
       } else if (state === "error") {
+        setLastError("연결 오류가 발생했습니다");
         if (onError) {
-          onError();
+          onError("연결 오류");
         }
+      } else if (state === "connecting") {
+        // 연결 시도 중
+        setLastError(null);
       }
     });
 
@@ -243,6 +259,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     disconnected,
     error,
     clientId,
+
+    // Phase 4: 재연결 정보
+    reconnectCount,
+    lastError,
 
     // 실시간 가격 데이터
     prices: Object.fromEntries(prices), // Map → Plain Object 변환
