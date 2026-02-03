@@ -169,6 +169,47 @@ class KiwoomRealtimeService:
         """현재 구독 중인 종목 리스트"""
         return self._bridge.get_subscribe_list()
 
+    async def subscribe_index(self, code: str) -> bool:
+        """
+        업종지수 구독
+
+        Args:
+            code: 업종코드 (001: KOSPI, 201: KOSDAQ)
+
+        Returns:
+            구독 성공 여부
+        """
+        if not self._running:
+            logger.warning("Cannot subscribe index: service not running")
+            return False
+
+        result = await self._bridge.subscribe_index(code)
+        if result:
+            logger.info(f"Subscribed to index {code}")
+        else:
+            logger.error(f"Failed to subscribe to index {code}")
+
+        return result
+
+    async def unsubscribe_index(self, code: str) -> bool:
+        """
+        업종지수 구독 해제
+
+        Args:
+            code: 업종코드
+
+        Returns:
+            해제 성공 여부
+        """
+        result = await self._bridge.unsubscribe_index(code)
+        if result:
+            logger.info(f"Unsubscribed from index {code}")
+        return result
+
+    def get_subscribed_indices(self) -> List[str]:
+        """현재 구독 중인 지수 리스트"""
+        return self._bridge.get_index_list()
+
     # ==================== 이벤트 핸들러 관리 ====================
 
     def register_event_handler(

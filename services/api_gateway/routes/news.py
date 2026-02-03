@@ -180,10 +180,11 @@ async def get_news_by_ticker(
     db: Session = Depends(get_db_session),
 ):
     """
-    종목별 뉴스 조회 (Phase 6: GREEN)
+    종목별 뉴스 조회 (Phase 6: GREEN + Real-time)
 
     ## 설명
-    특정 종목의 AI 분석에 포함된 뉴스 목록을 반환합니다.
+    특정 종목의 뉴스 목록을 반환합니다.
+    DB에 분석 데이터가 없으면 실시간으로 네이버 뉴스를 수집합니다.
 
     ## Parameters
     - **ticker**: 종목 코드 (6자리, 예: 005930)
@@ -208,14 +209,16 @@ async def get_news_by_ticker(
         # 최신 분석 조회
         latest_analysis = repo.get_latest_analysis(ticker)
 
-        if not latest_analysis:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No analysis found for ticker: {ticker}"
-            )
+        news_items = []
 
-        # news_urls 변환
-        news_items = _convert_news_urls_to_items(latest_analysis.news_urls)
+        # DB에 뉴스가 있으면 사용
+        if latest_analysis and latest_analysis.news_urls:
+            news_items = _convert_news_urls_to_items(latest_analysis.news_urls)
+            logger.info(f"✅ {ticker} DB 뉴스 {len(news_items)}건 반환")
+        else:
+            # DB에 뉴스가 없으면 실시간 네이버 뉴스 수집
+            logger.info(f"DB에 {ticker} 뉴스 없음, 실시간 수집 시작")
+            news_items = await _fetch_realtime_naver_news(ticker, limit)
 
         # 페이지네이션 적용
         total = len(news_items)
@@ -240,3 +243,57 @@ async def get_news_by_ticker(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch news: {str(e)}"
         )
+
+
+async def _fetch_realtime_naver_news(ticker: str, limit: int) -> List[NewsItem]:
+    """
+    실시간 네이버 뉴스 수집
+
+    Args:
+        ticker: 종목 코드
+        limit: 최대 뉴스 수
+
+    Returns:
+        NewsItem 리스트
+    """
+    try:
+        from src.collectors.news_collector import NewsCollector
+
+        collector = NewsCollector()
+        articles = collector.fetch_stock_news(
+            ticker=ticker,
+            days=7,
+            max_articles=limit
+        )
+
+        if not articles:
+            logger.warning(f"{ticker} 네이버 뉴스 수집 결과 없음")
+            return []
+
+        # NewsArticle을 NewsItem으로 변환
+        news_items = []
+        for article in articles:
+            # 소스 정보가 있으면 사용, 없으면 "네이버뉴스"
+            source = article.source if article.source else "네이버뉴스"
+
+            # published_at이 datetime이면 문자열로 변환
+            published_at_str = None
+            if article.published_at:
+                if isinstance(article.published_at, datetime):
+                    published_at_str = article.published_at.isoformat()
+                else:
+                    published_at_str = str(article.published_at)
+
+            news_items.append(NewsItem(
+                title=article.title,
+                url=article.url,
+                source=source,
+                published_at=published_at_str,
+            ))
+
+        logger.info(f"✅ {ticker} 실시간 네이버 뉴스 {len(articles)}건 수집 완료")
+        return news_items
+
+    except Exception as e:
+        logger.error(f"실시간 뉴스 수집 실패 ({ticker}): {e}")
+        return []

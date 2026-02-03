@@ -9,8 +9,11 @@ services:
       target: development
     image: signal-engine:dev
     container_name: signal-engine
+    restart: unless-stopped
     ports:
       - "5113:5113"
+    env_file:
+      - ../../.env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0

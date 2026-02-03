@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 import logging
+from datetime import date
 
 # 로그 설정
 logging.basicConfig(
@@ -16,7 +17,38 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-from services.vcp_scanner.vcp_analyzer import VCPAnalyzer
+# 독립 실행을 위한 유연한 import
+import sys
+import os
+
+# 현재 파일의 디렉토리를 sys.path에 추가
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
+try:
+    # Docker/독립 실행: 현재 디렉토리에서 import
+    from vcp_analyzer import VCPAnalyzer
+except ImportError:
+    # 프로젝트 루트 실행
+    try:
+        from services.vcp_scanner.vcp_analyzer import VCPAnalyzer
+    except ImportError:
+        # 다른 방법 시도
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("vcp_analyzer", os.path.join(_current_dir, "vcp_analyzer.py"))
+        vcp_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(vcp_module)
+        VCPAnalyzer = vcp_module.VCPAnalyzer
+
+try:
+    from ralph_stock_lib.database.session import get_db_session
+    from ralph_stock_lib.database.models import Signal
+except ImportError:
+    # lib 패키지가 설치되지 않은 경우 (프로젝트 루트 실행)
+    from src.database.session import get_db_session
+    from src.database.models import Signal
+from sqlalchemy import delete
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +98,7 @@ class ScanRequest(BaseModel):
     """스캔 요청 모델"""
     market: str = "KOSPI"
     top_n: int = 30
+    min_score: float = 0.0  # 최소 VCP 점수 필터
 
 
 class ScanResponse(BaseModel):
@@ -73,6 +106,147 @@ class ScanResponse(BaseModel):
     results: List[Dict[str, Any]]
     count: int
     scanned_at: Optional[str] = None
+    saved: bool = False  # DB 저장 여부
+
+
+# ============================================================================
+# Database Save Function
+# ============================================================================
+
+
+def _get_grade_from_score(total_score: float) -> str:
+    """점수에 따른 등급 반환"""
+    if total_score >= 80:
+        return "S"
+    elif total_score >= 65:
+        return "A"
+    elif total_score >= 50:
+        return "B"
+    return "C"
+
+
+def _broadcast_signal_update(results: List[Any]) -> None:
+    """
+    VCP 시그널 업데이트를 WebSocket으로 브로드캐스트
+
+    Args:
+        results: VCPAnalyzer 결과 리스트
+    """
+    try:
+        import asyncio
+
+        # 이미 실행 중인 이벤트 루프가 있는지 확인
+        try:
+            loop = asyncio.get_running_loop()
+            # 이벤트 루프가 실행 중이면 create_task 사용
+            asyncio.create_task(_do_broadcast(results))
+        except RuntimeError:
+            # 실행 중인 이벤트 루프가 없으면 새로 생성
+            asyncio.run(_do_broadcast(results))
+
+    except Exception as e:
+        logging.warning(f"WebSocket 브로드캐스트 실패 (무시): {e}")
+
+
+async def _do_broadcast(results: List[Any]) -> None:
+    """
+    비동기 브로드캐스트 실행
+
+    Args:
+        results: VCPAnalyzer 결과 리스트
+    """
+    try:
+        from src.websocket.server import signal_broadcaster
+        await signal_broadcaster.broadcast_signal_update(results, signal_type="VCP")
+        logging.info(f"VCP 시그널 {len(results)}개 WebSocket 브로드캐스트 완료")
+    except Exception as e:
+        logging.warning(f"WebSocket 브로드캐스트 중 오류 (무시): {e}")
+
+
+def save_vcp_signals_to_db(results: List[Any], signal_date: Optional[date] = None) -> int:
+    """
+    VCP 스캔 결과를 DB에 저장
+
+    Args:
+        results: VCPAnalyzer 결과 리스트
+        signal_date: 시그널 날짜 (없으면 오늘)
+
+    Returns:
+        저장된 시그널 수
+    """
+    if not results:
+        return 0
+
+    if signal_date is None:
+        signal_date = date.today()
+
+    saved_count = 0
+
+    # SessionLocal을 직접 사용 (FastAPI Dependency Injection 아님)
+    try:
+        from ralph_stock_lib.database.session import SessionLocal
+    except ImportError:
+        try:
+            from src.database.session import SessionLocal
+        except ImportError:
+            # 런타임 import
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "session",
+                os.path.join(os.path.dirname(_current_dir), "lib", "ralph_stock_lib", "database", "session.py")
+            )
+            if spec and spec.loader:
+                session_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(session_module)
+                SessionLocal = session_module.SessionLocal
+            else:
+                raise ImportError("Cannot import SessionLocal")
+    db = SessionLocal()
+
+    try:
+        # 기존 VCP 시그널 삭제 (갱신)
+        db.execute(
+            delete(Signal).where(
+                Signal.signal_type == "VCP",
+                Signal.signal_date == signal_date
+            )
+        )
+
+        # 새 시그널 저장
+        for result in results:
+            # total_score 기반 등급 계산
+            grade = _get_grade_from_score(result.total_score)
+
+            # Signal 레코드 생성
+            signal = Signal(
+                ticker=result.ticker,
+                signal_type="VCP",
+                status="OPEN",
+                score=result.total_score,
+                grade=grade,
+                contraction_ratio=result.vcp_score / 100 if result.vcp_score else None,
+                signal_date=signal_date,
+                entry_price=int(result.current_price) if result.current_price else None,
+                foreign_net_5d=result.foreign_net_5d or 0,
+                inst_net_5d=result.inst_net_5d or 0,
+            )
+            db.add(signal)
+            saved_count += 1
+
+        db.commit()
+        logging.info(f"VCP 시그널 {saved_count}개 DB 저장 완료")
+
+        # WebSocket 브로드캐스트 (실시간 업데이트)
+        _broadcast_signal_update(results)
+
+    except Exception as e:
+        db.rollback()
+        logging.error(f"VCP 시그널 DB 저장 실패: {e}")
+        raise
+    finally:
+        db.close()
+
+    return saved_count
 
 
 # ============================================================================
@@ -139,15 +313,25 @@ async def scan_vcp_patterns(request: ScanRequest, background_tasks: BackgroundTa
         analyzer = get_analyzer()
 
         # 시장 스캔 실행
-        results = await analyzer.scan_market(market=request.market, top_n=request.top_n)
+        results = await analyzer.scan_market(
+            market=request.market,
+            top_n=request.top_n,
+            min_score=request.min_score
+        )
 
-        # TODO: 백그라운드 태스크로 DB 저장
-        # background_tasks.add_task(save_signals_to_db, results)
+        # DB 저장
+        saved_count = 0
+        try:
+            saved_count = save_vcp_signals_to_db(results)
+        except Exception as db_error:
+            logger.warning(f"DB 저장 실패 (스캔 결과는 반환): {db_error}")
 
+        from datetime import datetime
         return ScanResponse(
             results=[r.to_dict() for r in results],
             count=len(results),
-            scanned_at=None,  # TODO: 실제 스캔 시간 사용
+            scanned_at=datetime.now().isoformat(),
+            saved=saved_count > 0,
         )
 
     except Exception as e:

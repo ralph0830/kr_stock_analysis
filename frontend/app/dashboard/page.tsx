@@ -166,9 +166,9 @@ export default function DashboardPage() {
                               {marketGate.kospi_close.toLocaleString()}
                             </span>
                           )}
-                          {marketGate.kospi_change_pct !== undefined && (
+                          {marketGate.kospi_change_pct != null && (
                             <span className={`text-sm font-medium ${marketGate.kospi_change_pct >= 0 ? "text-red-500" : "text-blue-500"}`}>
-                              {marketGate.kospi_change_pct >= 0 ? "+" : ""}{marketGate.kospi_change_pct.toFixed(2)}%
+                              {marketGate.kospi_change_pct >= 0 ? "+" : ""}{Number(marketGate.kospi_change_pct).toFixed(2)}%
                             </span>
                           )}
                         </div>
@@ -181,9 +181,9 @@ export default function DashboardPage() {
                               {marketGate.kosdaq_close.toLocaleString()}
                             </span>
                           )}
-                          {marketGate.kosdaq_change_pct !== undefined && (
+                          {marketGate.kosdaq_change_pct != null && (
                             <span className={`text-sm font-medium ${marketGate.kosdaq_change_pct >= 0 ? "text-red-500" : "text-blue-500"}`}>
-                              {marketGate.kosdaq_change_pct >= 0 ? "+" : ""}{marketGate.kosdaq_change_pct.toFixed(2)}%
+                              {marketGate.kosdaq_change_pct >= 0 ? "+" : ""}{Number(marketGate.kosdaq_change_pct).toFixed(2)}%
                             </span>
                           )}
                         </div>
@@ -214,10 +214,10 @@ export default function DashboardPage() {
                     >
                       <CardContent className="p-3">
                         <div className="text-xs font-bold truncate mb-1">{sector.name}</div>
-                        <div className={`text-lg font-black ${sector.change_pct >= 0 ? "text-red-500" : "text-blue-500"}`}>
-                          {sector.change_pct >= 0 ? "+" : ""}{sector.change_pct.toFixed(2)}%
+                        <div className={`text-lg font-black ${(sector.change_pct ?? 0) >= 0 ? "text-red-500" : "text-blue-500"}`}>
+                          {(sector.change_pct ?? 0) >= 0 ? "+" : ""}{(sector.change_pct ?? 0).toFixed(2)}%
                         </div>
-                        {sector.score !== undefined && (
+                        {sector.score != null && typeof sector.score === "number" && (
                           <div className="text-[10px] text-gray-500 mt-1">
                             점수: {sector.score.toFixed(0)}
                           </div>
@@ -256,13 +256,13 @@ export default function DashboardPage() {
                       <>
                         <div className="flex items-baseline gap-2">
                           <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                            {backtestKPI.vcp.win_rate?.toFixed(1)}%
+                            {backtestKPI.vcp.win_rate != null ? backtestKPI.vcp.win_rate.toFixed(1) + "%" : "-"}
                           </span>
                           <span className="text-sm text-gray-500">승률</span>
                         </div>
                         <div className="flex items-baseline gap-2">
                           <span className={`text-lg font-semibold ${(backtestKPI.vcp.avg_return ?? 0) > 0 ? "text-red-500" : "text-blue-500"}`}>
-                            {(backtestKPI.vcp.avg_return ?? 0) >= 0 ? "+" : ""}{backtestKPI.vcp.avg_return?.toFixed(2)}%
+                            {(backtestKPI.vcp.avg_return ?? 0) >= 0 ? "+" : ""}{backtestKPI.vcp.avg_return != null ? backtestKPI.vcp.avg_return.toFixed(2) + "%" : "-"}
                           </span>
                           <span className="text-sm text-gray-500">평균 수익률</span>
                         </div>
@@ -301,13 +301,13 @@ export default function DashboardPage() {
                       <>
                         <div className="flex items-baseline gap-2">
                           <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                            {backtestKPI.closing_bet.win_rate?.toFixed(1)}%
+                            {backtestKPI.closing_bet.win_rate != null ? backtestKPI.closing_bet.win_rate.toFixed(1) + "%" : "-"}
                           </span>
                           <span className="text-sm text-gray-500">승률</span>
                         </div>
                         <div className="flex items-baseline gap-2">
                           <span className={`text-lg font-semibold ${(backtestKPI.closing_bet.avg_return ?? 0) > 0 ? "text-red-500" : "text-blue-500"}`}>
-                            {(backtestKPI.closing_bet.avg_return ?? 0) >= 0 ? "+" : ""}{backtestKPI.closing_bet.avg_return?.toFixed(2)}%
+                            {(backtestKPI.closing_bet.avg_return ?? 0) >= 0 ? "+" : ""}{backtestKPI.closing_bet.avg_return != null ? backtestKPI.closing_bet.avg_return.toFixed(2) + "%" : "-"}
                           </span>
                           <span className="text-sm text-gray-500">평균 수익률</span>
                         </div>
@@ -381,7 +381,9 @@ export default function DashboardPage() {
                         <TableCell>
                           {typeof signal.score === "number"
                             ? signal.score.toFixed(1)
-                            : signal.score?.total?.toFixed(1) ?? "0"}
+                            : signal.score?.total != null && typeof signal.score.total === "number"
+                              ? signal.score.total.toFixed(1)
+                              : "0"}
                         </TableCell>
                         <TableCell>
                           <Badge className={getGradeColor(signal.grade)}>{signal.grade}</Badge>
@@ -465,6 +467,30 @@ export default function DashboardPage() {
                   className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
                 >
                   챗봇 시작하기
+                </a>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* 내 맘대로 추천 */}
+        <section>
+          <Card className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-amber-200 dark:border-amber-800">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                    ⭐ 내 맘대로 추천
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    나만의 조건으로 맞춤 종목을 추천받아보세요
+                  </p>
+                </div>
+                <a
+                  href="/custom-recommendation"
+                  className="px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
+                >
+                  추천받기
                 </a>
               </div>
             </CardContent>

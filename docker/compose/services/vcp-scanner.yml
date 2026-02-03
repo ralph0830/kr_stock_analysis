@@ -9,8 +9,11 @@ services:
       target: development
     image: vcp-scanner:dev
     container_name: vcp-scanner
+    restart: unless-stopped
     ports:
       - "5112:5112"
+    env_file:
+      - ../../.env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0

@@ -9,7 +9,7 @@ from enum import Enum
 import logging
 
 if TYPE_CHECKING:
-    from src.repositories.daily_price_repository import DailyPriceRepository
+    from ralph_stock_lib.repositories.daily_price_repository import DailyPriceRepository
     from src.analysis.vcp_analyzer import VCPAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -97,8 +97,8 @@ class SignalScorer:
         """DailyPriceRepository lazy loading"""
         if self._daily_price_repo is None:
             try:
-                from src.repositories.daily_price_repository import DailyPriceRepository
-                from src.database.session import SessionLocal
+                from ralph_stock_lib.repositories.daily_price_repository import DailyPriceRepository
+                from ralph_stock_lib.database.session import SessionLocal
                 self._daily_price_repo = DailyPriceRepository(SessionLocal())
             except ImportError:
                 logger.warning("DailyPriceRepository import 실패")

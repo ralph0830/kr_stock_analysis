@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { apiClient } from "@/lib/api-client";
+import { useMarketIndices } from "@/hooks/useWebSocket";
 import type { MarketGateStatus, SectorItem, IBacktestKPI } from "@/types";
 
 /**
@@ -108,9 +109,9 @@ function SectorCard({ sector }: { sector: SectorItem }) {
       </div>
       <div className="flex items-center justify-between">
         <span className={`text-lg font-bold ${isBullish ? "text-green-600 dark:text-green-400" : isBearish ? "text-red-600 dark:text-red-400" : "text-gray-600"}`}>
-          {sector.change_pct > 0 ? "+" : ""}{sector.change_pct.toFixed(1)}%
+          {(sector.change_pct ?? 0) > 0 ? "+" : ""}{(sector.change_pct ?? 0).toFixed(1)}%
         </span>
-        {sector.score !== undefined && (
+        {sector.score != null && (
           <span className="text-xs text-gray-500">
             점수: {sector.score}
           </span>
@@ -201,15 +202,15 @@ function BacktestStats({
           </div>
           <div>
             <span className="text-gray-500">승률</span>
-            <p className="font-semibold text-green-600">{stats.win_rate?.toFixed(1)}%</p>
+            <p className="font-semibold text-green-600">{stats.win_rate != null ? stats.win_rate.toFixed(1) + "%" : "-"}</p>
           </div>
           <div>
             <span className="text-gray-500">수익률</span>
-            <p className="font-semibold text-blue-600">{stats.avg_return?.toFixed(1)}%</p>
+            <p className="font-semibold text-blue-600">{stats.avg_return != null ? stats.avg_return.toFixed(1) + "%" : "-"}</p>
           </div>
           <div>
             <span className="text-gray-500">PF</span>
-            <p className="font-semibold text-purple-600">{stats.profit_factor?.toFixed(2)}</p>
+            <p className="font-semibold text-purple-600">{stats.profit_factor != null ? stats.profit_factor.toFixed(2) : "-"}</p>
           </div>
         </div>
       )}
@@ -233,15 +234,27 @@ interface IBacktestStatsItem {
   message?: string;
 }
 
+// 에러 상태 인터페이스
+interface IErrorMessage {
+  title: string;
+  message: string;
+  canRetry: boolean;
+}
+
 export default function KROverviewPage() {
   const [marketGate, setMarketGate] = useState<MarketGateStatus | null>(null);
   const [backtestKPI, setBacktestKPI] = useState<IBacktestKPI | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<IErrorMessage | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
+
+  // 실시간 지수 데이터 (WebSocket)
+  const { kospi, kosdaq, connected: wsConnected } = useMarketIndices();
 
   // 데이터 로드
   const loadData = async () => {
     try {
+      setError(null); // 에러 상태 초기화
       const [gateRes, backtestRes] = await Promise.all([
         apiClient.getMarketGate(),
         apiClient.getBacktestKPI(),
@@ -251,6 +264,11 @@ export default function KROverviewPage() {
       setLastUpdated(new Date().toLocaleTimeString("ko-KR"));
     } catch (error) {
       console.error("Failed to load KR overview data:", error);
+      setError({
+        title: "데이터 로드 실패",
+        message: "시장 데이터를 불러오지 못했습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.",
+        canRetry: true,
+      });
     } finally {
       setLoading(false);
     }
@@ -277,6 +295,43 @@ export default function KROverviewPage() {
             <div className="inline-flex items-center gap-3">
               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               <p className="text-gray-600 dark:text-gray-400">한국 시장 개요를 불러오는 중...</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // 에러 상태 표시
+  if (error) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="container mx-auto px-4 py-8">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-16 text-center shadow">
+            <div className="max-w-md mx-auto">
+              <div className="text-yellow-500 text-5xl mb-4">⚠️</div>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                {error.title}
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                {error.message}
+              </p>
+              {error.canRetry && (
+                <div className="flex justify-center gap-3">
+                  <button
+                    onClick={loadData}
+                    className="px-6 py-2 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
+                  >
+                    다시 시도
+                  </button>
+                  <a
+                    href="/dashboard"
+                    className="px-6 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    대시보드로
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -349,31 +404,55 @@ export default function KROverviewPage() {
 
             {/* 지수 현황 */}
             <div className="md:col-span-2 grid grid-cols-2 gap-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow">
-                <h4 className="text-sm text-gray-500 mb-2">KOSPI</h4>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow relative">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm text-gray-500">KOSPI</h4>
+                  {wsConnected && (
+                    <span className="flex items-center gap-1 text-xs text-green-500">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                      실시간
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    {marketGate?.kospi_close?.toLocaleString() ?? "-"}
+                    {kospi?.index.toLocaleString() ?? marketGate?.kospi_close?.toLocaleString() ?? "-"}
                   </span>
-                  <span className={`text-sm ${marketGate?.kospi_change_pct && marketGate.kospi_change_pct >= 0 ? "text-red-600" : "text-blue-600"}`}>
-                    {marketGate?.kospi_change_pct && marketGate.kospi_change_pct >= 0 ? "+" : ""}
-                    {marketGate?.kospi_change_pct?.toFixed(2)}%
-                  </span>
+                  {(kospi?.change_rate != null || marketGate?.kospi_change_pct != null) && (
+                    <span className={`text-sm ${(kospi?.change_rate ?? marketGate?.kospi_change_pct ?? 0) >= 0 ? "text-red-600" : "text-blue-600"}`}>
+                      {(kospi?.change_rate ?? marketGate?.kospi_change_pct ?? 0) >= 0 ? "+" : ""}
+                      {(kospi?.change_rate ?? marketGate?.kospi_change_pct ?? 0).toFixed(2)}%
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">{marketGate?.kospi_status ?? "-"}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {kospi ? `전일대비 ${kospi.change >= 0 ? '+' : ''}${kospi.change.toFixed(2)}` : (marketGate?.kospi_status ?? "-")}
+                </p>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow">
-                <h4 className="text-sm text-gray-500 mb-2">KOSDAQ</h4>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow relative">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm text-gray-500">KOSDAQ</h4>
+                  {wsConnected && (
+                    <span className="flex items-center gap-1 text-xs text-green-500">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                      실시간
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    {marketGate?.kosdaq_close?.toLocaleString() ?? "-"}
+                    {kosdaq?.index.toLocaleString() ?? marketGate?.kosdaq_close?.toLocaleString() ?? "-"}
                   </span>
-                  <span className={`text-sm ${marketGate?.kosdaq_change_pct && marketGate.kosdaq_change_pct >= 0 ? "text-red-600" : "text-blue-600"}`}>
-                    {marketGate?.kosdaq_change_pct && marketGate.kosdaq_change_pct >= 0 ? "+" : ""}
-                    {marketGate?.kosdaq_change_pct?.toFixed(2)}%
-                  </span>
+                  {(kosdaq?.change_rate != null || marketGate?.kosdaq_change_pct != null) && (
+                    <span className={`text-sm ${(kosdaq?.change_rate ?? marketGate?.kosdaq_change_pct ?? 0) >= 0 ? "text-red-600" : "text-blue-600"}`}>
+                      {(kosdaq?.change_rate ?? marketGate?.kosdaq_change_pct ?? 0) >= 0 ? "+" : ""}
+                      {(kosdaq?.change_rate ?? marketGate?.kosdaq_change_pct ?? 0).toFixed(2)}%
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">{marketGate?.kosdaq_status ?? "-"}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {kosdaq ? `전일대비 ${kosdaq.change >= 0 ? '+' : ''}${kosdaq.change.toFixed(2)}` : (marketGate?.kosdaq_status ?? "-")}
+                </p>
               </div>
 
               {/* 백테스트 KPI 카드 */}
@@ -387,7 +466,7 @@ export default function KROverviewPage() {
                         : backtestKPI.vcp.status}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {backtestKPI.vcp.win_rate
+                      {backtestKPI.vcp.win_rate != null
                         ? `승률 ${backtestKPI.vcp.win_rate.toFixed(0)}%`
                         : "데이터 수집중"}
                     </p>
@@ -400,7 +479,7 @@ export default function KROverviewPage() {
                         : backtestKPI.closing_bet.status}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {backtestKPI.closing_bet.win_rate
+                      {backtestKPI.closing_bet.win_rate != null
                         ? `승률 ${backtestKPI.closing_bet.win_rate.toFixed(0)}%`
                         : "데이터 수집중"}
                     </p>

@@ -1,0 +1,38 @@
+{
+  "name": "Ralph Stock Frontend",
+  "dockerComposeFile": "../../docker-compose.yml",
+  "service": "frontend",
+  "workspaceFolder": "/app",
+  "overrideCompose": {
+    "services": {
+      "frontend": {
+        "command": "npm run dev -- --hostname 0.0.0.0",
+        "networks": {
+          "ralph-network": {}
+        }
+      }
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "typescript.tsdk": "useWorkspaceFolders",
+        "npm.enableRunFromFolder": true
+      }
+    }
+  },
+  "postCreateCommand": "npm install",
+  "forwardPorts": [5110],
+  "portsAttributes": {
+    "5110": {
+      "label": "Frontend",
+      "onAutoForward": "notify"
+    }
+  },
+  "remoteUser": "node"
+}

@@ -67,6 +67,7 @@ class KiwoomRestAPI:
     # API 엔드포인트
     TOKEN_URL = "/oauth2/token"           # 토큰 발급/갱신
     PRICE_URL = "/api/dostk/ka10001"      # 현재가 조회
+    STOCK_LIST_URL = "/api/dostk/stkinfo" # 종목정보 리스트 조회 (ka10099)
     ORDER_URL = "/api/dostk/t1102"        # 주문
     BALANCE_URL = "/api/dostk/t0424"      # 잔고 조회
     DEPOSIT_URL = "/api/dostk/t0425"      # 예수금 조회
@@ -1009,6 +1010,112 @@ class KiwoomRestAPI:
             logger.error(f"Get index price error: {e}")
             return None
 
+    async def get_stock_daily_chart(
+        self,
+        ticker: str,
+        days: int = 60,
+        base_date: Optional[str] = None,
+        adjusted_price: bool = True,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        주식 일봉 차트 조회 (ka10081)
+
+        kiwoom REST API ka10081 주식일봉차트조회를 사용하여 주식 일봉 데이터를 조회합니다.
+
+        Args:
+            ticker: 종목코드 (6자리)
+            days: 조회 일수 (기본 60일)
+            base_date: 기준일자 (YYYYMMDD, None이면 오늘)
+            adjusted_price: 수정주가 사용 여부 (True: 수정주가, False: 미수정)
+
+        Returns:
+            일봉 차트 데이터 리스트 [{"date": "YYYYMMDD", "open": float, "high": float, ...}]
+        """
+        try:
+            await self.ensure_token_valid()
+
+            client = await self._get_client()
+
+            # 기준일자 설정
+            from datetime import datetime, timedelta
+
+            if base_date is None:
+                base_date = datetime.now().strftime("%Y%m%d")
+
+            # 요청 파라미터 (주식용 - isu_cd_tp 없음)
+            request_data = {
+                "stk_cd": ticker,           # 종목코드
+                "base_dt": base_date,        # 기준일자 (YYYYMMDD)
+                "upd_stkpc_tp": "1" if adjusted_price else "0",  # 수정주가구분 (0:미수정, 1:수정주가)
+            }
+
+            # 헤더 설정
+            headers = {
+                "Authorization": f"Bearer {self._access_token}",
+                "api-id": "ka10081",
+                "Content-Type": "application/json;charset=UTF-8",
+                "cont-yn": "N",
+                "next-key": "",
+            }
+
+            # ka10081 엔드포인트
+            url = f"{self._config.base_url}/api/dostk/chart"
+            logger.info(f"Fetching stock chart from: {url} with ticker: {ticker}, base_dt: {base_date}")
+
+            response = await client.post(
+                url,
+                json=request_data,
+                headers=headers,
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            logger.info(f"Stock chart API response for {ticker}: return_code={result.get('return_code')}")
+
+            # return_code 확인
+            return_code = result.get("return_code", -1)
+            if return_code != 0:
+                logger.warning(f"Stock chart API returned code {return_code}: {result.get('return_msg')}")
+                return None
+
+            # 응답 파싱 (stk_dt_pole_chart_qry 배열에 일봉 데이터)
+            chart_data = result.get("stk_dt_pole_chart_qry", [])
+            if not chart_data:
+                logger.warning(f"No chart data in response for {ticker}")
+                return []
+
+            # 변환된 데이터 반환
+            parsed_data = []
+            for item in chart_data:
+                parsed_data.append({
+                    "date": item.get("dt", ""),                # 날짜 (YYYYMMDD)
+                    "open": float(item.get("open_pric", "0") or "0"),   # 시가
+                    "high": float(item.get("high_pric", "0") or "0"),   # 고가
+                    "low": float(item.get("low_pric", "0") or "0"),    # 저가
+                    "close": float(item.get("cur_prc", "0") or "0"),    # 종가
+                    "volume": int(item.get("trde_qty", "0") or "0"),   # 거래량
+                    "value": int(item.get("trde_prica", "0") or "0"),  # 거래대금
+                    "change": int(item.get("pred_pre", "0") or "0"),   # 전일대비
+                    "change_sign": item.get("pred_pre_sig", ""),      # 전일대비기호
+                    "turnover_rate": float(item.get("trde_tern_rt", "0") or "0"),  # 거래회전율
+                })
+
+            logger.info(f"Retrieved {len(parsed_data)} stock chart data points for {ticker}")
+
+            # days 만큼만 반환 (최근 데이터부터)
+            if len(parsed_data) > days:
+                parsed_data = parsed_data[-days:]
+
+            return parsed_data
+
+        except HTTPStatusError as e:
+            logger.error(f"Get stock chart failed: {e.response.status_code}, response: {e.response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"Get stock chart error: {e}")
+            return None
+
     async def get_index_daily_chart(
         self,
         index_code: str,
@@ -1158,3 +1265,166 @@ class KiwoomRestAPI:
         except Exception as e:
             logger.error(f"Get index price from chart error: {e}")
             return None
+
+    # ==================== 종목 정보 조회 ====================
+
+    async def get_stock_list(
+        self,
+        market: str = "ALL",
+    ) -> List[Dict[str, Any]]:
+        """
+        종목정보 리스트 조회 (ka10099 TR)
+
+        키움증권 REST API의 ka10099 TR을 사용하여 종목 목록을 조회합니다.
+
+        Args:
+            market: 시장 구분 ("KOSPI": 코스피, "KOSDAQ": 코스닥, "ALL": 전체)
+
+        Returns:
+            종목 정보 리스트 [{"code": str, "name": str, "market": str, ...}, ...]
+
+        예시:
+            api = KiwoomRestAPI.from_env()
+            kospi_stocks = await api.get_stock_list("KOSPI")
+            kosdaq_stocks = await api.get_stock_list("KOSDAQ")
+            all_stocks = await api.get_stock_list("ALL")
+        """
+        all_stocks = []
+
+        # 조회할 시장 목록
+        markets = []
+        if market == "KOSPI":
+            markets = [("0", "KOSPI")]
+        elif market == "KOSDAQ":
+            markets = [("10", "KOSDAQ")]
+        else:  # ALL
+            markets = [("0", "KOSPI"), ("10", "KOSDAQ")]
+
+        try:
+            await self.ensure_token_valid()
+            client = await self._get_client()
+
+            for mrkt_tp_code, market_name in markets:
+                cont_yn = "N"
+                next_key = ""
+
+                while True:
+                    # 요청 헤더
+                    headers = {
+                        "Authorization": f"Bearer {self._access_token}",
+                        "api-id": "ka10099",
+                        "Content-Type": "application/json;charset=UTF-8",
+                        "cont-yn": cont_yn,
+                    }
+                    if next_key:
+                        headers["next-key"] = next_key
+
+                    # 요청 바디
+                    request_data = {
+                        "mrkt_tp": mrkt_tp_code,  # 0: KOSPI, 10: KOSDAQ
+                    }
+
+                    # 전체 URL
+                    url = f"{self._config.base_url}{self.STOCK_LIST_URL}"
+
+                    try:
+                        response = await client.post(
+                            url,
+                            json=request_data,
+                            headers=headers,
+                            timeout=30.0,
+                        )
+
+                        response.raise_for_status()
+                        result = response.json()
+
+                        # return_code 확인
+                        return_code = result.get("return_code", -1)
+                        if return_code != 0:
+                            logger.warning(
+                                f"Stock list API returned code {return_code} for {market_name}: {result.get('return_msg')}"
+                            )
+                            break
+
+                        # 응답 파싱 - list 배열에 종목 정보
+                        stock_list = result.get("list", [])
+                        if not stock_list:
+                            logger.info(f"No stocks returned for {market_name}")
+                            break
+
+                        # 종목 정보 변환
+                        for item in stock_list:
+                            code = item.get("code", "")
+                            name = item.get("name", "")
+                            if not code:
+                                continue
+
+                            # 스팩(SPAC) 종목 확인: upName 또는 companyClassName에 '스팩' 포함
+                            up_name = item.get("upName", "")  # 업종명
+                            company_class_name = item.get("companyClassName", "")  # 회사분류명
+                            market_name_field = item.get("marketName", "")  # 시장명
+
+                            is_spac = "스팩" in up_name or "스팩" in company_class_name
+
+                            # 회사채/채권 종목 확인: name, upName 또는 marketName에 채권 관련 키워드 포함
+                            bond_keywords = ["회사채", "채권", "금융채", "은행채", "국채", "지방채", "특수채", "파생채"]
+                            is_bond = any(keyword in name for keyword in bond_keywords)
+                            is_bond = is_bond or any(keyword in up_name for keyword in bond_keywords)
+                            is_bond = is_bond or any(keyword in market_name_field for keyword in bond_keywords)
+
+                            # 제외할 ETF/ETN 패턴 확인
+                            # ETF 제공자: TIGER, SOL, ACE, KIWOOM, KODEX, TREF, 1Q, etc.
+                            excluded_prefixes = ["TIGER ", "SOL ", "ACE ", "KIWOOM ", "KODEX ", "TREF ", "KOACT ", "ARIRANG ", "HANARO ", "KB ", "TIME ", "PLUS ", "RISE ", "SOURCE ", "MAJOR ", "스팩", "1Q ", "마이티 ", "KODEX ", "메리츠"]
+                            is_excluded_etf = any(name.startswith(prefix) for prefix in excluded_prefixes)
+
+                            # 특정 키워드 포함: ETN, 인버스, TOP10, 레버리지, ETF
+                            excluded_keywords = ["ETN", "인버스", "TOP10", "TOP5", "TOP3", "레버리지", "리츠", "ETF", "액티브", "크레딧"]
+                            is_excluded_etf = is_excluded_etf or any(keyword in name for keyword in excluded_keywords)
+
+                            all_stocks.append({
+                                "ticker": code.zfill(6),  # 6자리 종목코드
+                                "name": name,
+                                "market": market_name,
+                                "list_count": item.get("listCount"),  # 상장주식수
+                                "reg_day": item.get("regDay"),  # 상장일
+                                "last_price": item.get("lastPrice"),  # 전일종가
+                                "state": item.get("state"),  # 종목상태
+                                "market_code": item.get("marketCode"),  # 시장구분코드
+                                "market_name": market_name_field,  # 시장명
+                                "up_name": up_name,  # 업종명 (스팩/채권 확인용)
+                                "company_class_name": company_class_name,  # 회사분류명 (스팩 확인용)
+                                "is_spac": is_spac,  # 스팩 종목 여부
+                                "is_bond": is_bond,  # 회사채/채권 종목 여부
+                                "is_excluded_etf": is_excluded_etf,  # 제외할 ETF/ETN 여부
+                            })
+
+                        logger.info(f"조회된 {market_name} 종목: {len(stock_list)}개")
+
+                        # 연속조회 확인
+                        cont_yn = result.get("cont-yn", "N")
+                        next_key = result.get("next-key", "")
+
+                        if cont_yn != "Y":
+                            break
+
+                    except HTTPStatusError as e:
+                        if e.response.status_code == 429:
+                            # Rate Limiting - 대기 후 재시도
+                            logger.warning(f"Rate limited, waiting 2 seconds before retry...")
+                            await asyncio.sleep(2)
+                            continue
+                        raise
+                    except Exception as e:
+                        logger.error(f"Error fetching stock list for {market_name}: {e}")
+                        break
+
+                    # 연속조회 간 딜레이 (Rate Limiting 방지)
+                    if cont_yn == "Y":
+                        await asyncio.sleep(0.2)
+
+            logger.info(f"종목 목록 조회 완료: 총 {len(all_stocks)}개 종목")
+            return all_stocks
+
+        except Exception as e:
+            logger.error(f"Get stock list error: {e}")
+            return []

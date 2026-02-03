@@ -49,6 +49,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """요청 처리 전후로 로깅"""
+        # WebSocket 요청은 미들웨어 처리 건너뛰기
+        # BaseHTTPMiddleware는 WebSocket 연결을 제대로 처리하지 못함
+        if self._is_websocket_request(request):
+            return await call_next(request)
+
         # 요청 ID 생성 및 바인딩
         request_id = self._generate_request_id(request)
         bind_request_id(request_id)
@@ -172,6 +177,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             else:
                 sanitized[key] = value
         return sanitized
+
+    def _is_websocket_request(self, request: Request) -> bool:
+        """WebSocket 요청인지 확인"""
+        # 경로로 확인
+        if request.url.path.startswith("/ws"):
+            return True
+        # 헤더로 확인
+        upgrade_header = request.headers.get("upgrade", "").lower()
+        return upgrade_header == "websocket"
 
     @staticmethod
     def sanitize_dict(data: dict) -> dict:

@@ -15,6 +15,15 @@ npm run dev
 - URL: http://localhost:5110
 - 기능: 전체 종목 목록, 시그널 현황
 
+### 차트 페이지
+- URL: http://localhost:5110/chart
+- 기능:
+  - 종목 검색 및 선택
+  - 미니 차트 (4종목 1개월 요약)
+  - 전체 차트 (가격 + 볼린저밴드 + 거래량)
+- 컴포넌트: `StockChart.tsx`, `FlowChart.tsx`, `NaverChartWidget.tsx`
+- 상세 문서: `docs/api/CHART_SYSTEM.md`
+
 ### 종목 상세 페이지
 - URL: http://localhost:5110/stock/[ticker]
 - 예: http://localhost:5110/stock/005930 (삼성전자)

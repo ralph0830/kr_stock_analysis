@@ -15,6 +15,18 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# ELW 티커 타입 체크를 위한 지연 import
+_TickerParser = None
+
+
+def _get_ticker_parser():
+    """TickerParser lazy loading"""
+    global _TickerParser
+    if _TickerParser is None:
+        from services.chatbot.ticker_parser import TickerParser
+        _TickerParser = TickerParser
+    return _TickerParser()
+
 
 @dataclass
 class NewsArticle:
@@ -78,7 +90,7 @@ class NewsCollector:
         종목 관련 뉴스 수집
 
         Args:
-            ticker: 종목코드 (예: "005930" for 삼성전자)
+            ticker: 종목코드 (예: "005930" for 삼성전자, "0001A0" for ELW)
             days: 수집할 날짜 범위 (기본 7일)
             max_articles: 최대 기사 수 (기본 50건)
 
@@ -86,6 +98,12 @@ class NewsCollector:
             뉴스 기사 리스트
         """
         logger.info(f"📰 {ticker} 뉴스 수집 시작 (최근 {days}일, 최대 {max_articles}건)")
+
+        # ELW 티커 확인 및 처리
+        parser = _get_ticker_parser()
+        if parser.is_elw(ticker):
+            logger.info(f"ELW 티커 감지: {ticker}, 네이버 뉴스 검색 사용")
+            return self._fetch_elw_news(ticker, days, max_articles)
 
         # 네이버 뉴스 수집 (주요 소스)
         articles = self._fetch_naver_news(ticker, days, max_articles)
@@ -121,58 +139,79 @@ class NewsCollector:
         max_articles: int,
     ) -> List[NewsArticle]:
         """
-        네이버 금융 뉴스 수집
+        네이버 금융 뉴스 수집 (Phase 6: iframe URL 사용)
 
-        네이버 금융 종목 페이지 뉴스 크롤링
+        네이버 금융 종목 뉴스 iframe 페이지에서 크롤링
+        URL: https://finance.naver.com/item/news_news.naver?code={ticker}
         """
         articles = []
 
         try:
-            # 네이버 금융 종목 뉴스 URL
-            url = f"https://finance.naver.com/item/news_news.nhn?code={ticker}&page=1"
+            # 네이버 금융 종목 뉴스 iframe URL
+            url = f"https://finance.naver.com/item/news_news.naver?code={ticker}&page=1&clusterId="
 
             self._wait_for_rate_limit()
-            response = self.session.get(url, timeout=10)
+            response = self.session.get(
+                url,
+                headers={"Referer": f"https://finance.naver.com/item/news.naver?code={ticker}"},
+                timeout=15
+            )
             response.raise_for_status()
 
             soup = BeautifulSoup(response.text, "html.parser")
 
-            # 뉴스 목록 추출
-            news_list = soup.select("table.type5 tr")
+            # 뉴스 링크 추출 - table 내의 td.title > a 구조
+            for a_tag in soup.find_all("a", href=True):
+                href = a_tag.get("href", "")
+                # news_read.naver 링크인지 확인
+                if "/item/news_read.naver" not in href:
+                    continue
 
-            for row in news_list:
+                # URL 파라미터에서 article_id와 office_id 추출
+                if "article_id=" not in href or "office_id=" not in href:
+                    continue
+
                 try:
-                    # 제목 및 링크
-                    title_element = row.select_one("td.title a")
-                    if not title_element:
+                    from urllib.parse import parse_qs, urlparse
+                    parsed = urlparse(href)
+                    params = parse_qs(parsed.query)
+                    article_id = params.get("article_id", [""])[0]
+                    office_id = params.get("office_id", [""])[0]
+
+                    if not article_id or not office_id:
                         continue
 
-                    title = title_element.get_text(strip=True)
-                    article_url = title_element.get("href", "")
+                    # 실제 네이버 뉴스 기사 URL 생성
+                    article_url = f"https://n.news.naver.com/mnews/article/{office_id}/{article_id}"
 
-                    # 정보원 및 날짜
-                    info_element = row.select_one("td.info")
-                    if not info_element:
+                    title = a_tag.get_text(strip=True)
+                    if not title or len(title) < 10:
                         continue
 
-                    info_text = info_element.get_text(strip=True)
-                    parts = info_text.split()
-
-                    if len(parts) < 2:
-                        continue
-
-                    source = parts[0]
-                    date_str = parts[1]
+                    # 날짜 정보 추출 (같은 행의 date 셀)
+                    date_str = ""
+                    row = a_tag.find_parent("tr")
+                    if row:
+                        date_cell = row.find("td", class_="date")
+                        if date_cell:
+                            date_str = date_cell.get_text(strip=True)
 
                     # 날짜 파싱
-                    published_at = self._parse_naver_date(date_str)
+                    published_at = self._parse_naver_date(date_str) if date_str else datetime.now()
 
                     # 날짜 범위 확인
                     if (datetime.now() - published_at).days > days:
                         continue
 
-                    # 본문 수집 (별도 요청)
-                    content = self._fetch_article_content(article_url)
+                    # 소스 추출 (같은 행의 info 셀)
+                    source = "네이버뉴스"
+                    if row:
+                        info_cell = row.find("td", class_="info")
+                        if info_cell:
+                            source = info_cell.get_text(strip=True)
+
+                    # 본문 수집 (별도 요청 - 선택사항으로 빈 문자열 허용)
+                    content = ""  # 본문 수집은 API 호출로 대체
 
                     articles.append(NewsArticle(
                         title=title,
@@ -194,6 +233,79 @@ class NewsCollector:
 
         except Exception as e:
             logger.error(f"네이버 뉴스 수집 실패: {e}")
+
+        return articles
+
+    def _fetch_elw_news(
+        self,
+        ticker: str,
+        days: int,
+        max_articles: int,
+    ) -> List[NewsArticle]:
+        """
+        ELW 티커 뉴스 수집 (네이버 뉴스 검색 사용)
+
+        네이버 금융 페이지가 ELW 티커를 지원하지 않으므로
+        네이버 뉴스 검색 URL을 사용합니다.
+
+        Args:
+            ticker: ELW 종목코드
+            days: 수집할 날짜 범위
+            max_articles: 최대 기사 수
+
+        Returns:
+            뉴스 기사 리스트
+        """
+        articles = []
+
+        try:
+            # 네이버 뉴스 검색 URL 추출
+            urls = self._extract_naver_news_urls(
+                query=ticker,  # ELW 티커 자체를 검색어로 사용
+                max_results=max_articles
+            )
+
+            # 각 URL에 대해 기사 상세 정보 수집
+            for url in urls:
+                try:
+                    article_data = self._fetch_article_details(url)
+                    if not article_data:
+                        continue
+
+                    # 날짜 범위 확인
+                    published_at_str = article_data.get("published_at")
+                    if published_at_str:
+                        try:
+                            if isinstance(published_at_str, str):
+                                published_at = datetime.fromisoformat(published_at_str.replace("Z", "+00:00"))
+                            else:
+                                published_at = published_at_str
+
+                            if (datetime.now() - published_at).days > days:
+                                continue
+                        except:
+                            pass  # 날짜 파싱 실패 시 무시
+
+                    articles.append(NewsArticle(
+                        title=article_data.get("title", ""),
+                        content=article_data.get("content", ""),
+                        source=article_data.get("source", "네이버뉴스"),
+                        url=article_data.get("url", url),
+                        published_at=published_at if 'published_at' in locals() else datetime.now(),
+                        ticker=ticker,
+                    ))
+
+                    if len(articles) >= max_articles:
+                        break
+
+                except Exception as e:
+                    logger.debug(f"ELW 뉴스 기사 수집 실패 ({url}): {e}")
+                    continue
+
+            logger.info(f"ELW 뉴스 {len(articles)}건 수집 완료")
+
+        except Exception as e:
+            logger.error(f"ELW 뉴스 수집 실패: {e}")
 
         return articles
 

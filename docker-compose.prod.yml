@@ -83,8 +83,6 @@ services:
   # Frontend - Production (optimized build)
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
       target: production
     environment:
       - NEXT_PUBLIC_API_URL=${PUBLIC_API_URL:-http://localhost:5111}
@@ -100,6 +98,7 @@ services:
           cpus: '0.1'
           memory: 64M
     # No volumes for production
+    volumes: []
 
   # Celery Worker - Production
   celery-worker:

@@ -8,10 +8,19 @@ services:
       dockerfile: Dockerfile.worker
     image: celery-worker:dev
     container_name: celery-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # Kiwoom API (종목 동기화용)
+      KIWOOM_APP_KEY: ${KIWOOM_APP_KEY}
+      KIWOOM_SECRET_KEY: ${KIWOOM_SECRET_KEY}
+      KIWOOM_BASE_URL: ${KIWOOM_BASE_URL:-https://api.kiwoom.com}
+      KIWOOM_WS_URL: ${KIWOOM_WS_URL:-wss://api.kiwoom.com:10000/api/dostk/websocket}
+      USE_KIWOOM_REST: ${USE_KIWOOM_REST:-true}
     volumes:
       - ./tasks:/app/tasks:ro
       - ./src:/app/src:ro
@@ -29,11 +38,20 @@ services:
       dockerfile: Dockerfile.worker
     image: celery-worker:dev
     container_name: celery-beat
+    restart: unless-stopped
     command: celery -A tasks.celery_app beat --loglevel=info
+    env_file:
+      - ../../.env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # Kiwoom API (종목 동기화용)
+      KIWOOM_APP_KEY: ${KIWOOM_APP_KEY}
+      KIWOOM_SECRET_KEY: ${KIWOOM_SECRET_KEY}
+      KIWOOM_BASE_URL: ${KIWOOM_BASE_URL:-https://api.kiwoom.com}
+      KIWOOM_WS_URL: ${KIWOOM_WS_URL:-wss://api.kiwoom.com:10000/api/dostk/websocket}
+      USE_KIWOOM_REST: ${USE_KIWOOM_REST:-true}
     volumes:
       - ./tasks:/app/tasks:ro
       - ./src:/app/src:ro
@@ -48,6 +66,7 @@ services:
   flower:
     image: mher/flower:latest
     container_name: flower
+    restart: unless-stopped
     ports:
       - "5555:5555"
     environment:

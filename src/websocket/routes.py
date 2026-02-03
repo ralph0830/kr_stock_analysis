@@ -1,19 +1,30 @@
 """
 WebSocket 라우터
 FastAPI WebSocket 엔드포인트
+
+kiwoom_stock_telegram 패턴 적용:
+- 타임아웃 처리 (wait_for)
+- 빈 메시지 처리
+- 명확한 예외 처리
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from typing import Optional
+import asyncio
+import json
 import uuid
+from typing import Optional
 
-from src.websocket.server import connection_manager, price_broadcaster, get_heartbeat_manager
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+
+from src.websocket.server import connection_manager, price_broadcaster, signal_broadcaster, get_heartbeat_manager
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 # Phase 3: 하트비트 관리자 레퍼런스
 _heartbeat_manager = get_heartbeat_manager()
+
+# WebSocket 설정
+WS_RECV_TIMEOUT = 60  # 메시지 수신 타임아웃 (초)
 
 router = APIRouter(tags=["WebSocket"])
 
@@ -25,6 +36,11 @@ async def websocket_endpoint(
 ):
     """
     WebSocket 엔드포인트
+
+    kiwoom_stock_telegram 패턴 적용:
+    - 타임아웃 처리로 무한 대기 방지
+    - 빈 메시지 처리
+    - 명확한 예외 처리 및 로깅
 
     Usage:
         // 기본 연결
@@ -41,9 +57,15 @@ async def websocket_endpoint(
     """
     # 클라이언트 ID 생성
     client_id = str(uuid.uuid4())
+    logger.info(f"[WebSocket] Connection attempt from {websocket.client.host}:{websocket.client.port}")
 
-    # 연결 수락
-    await connection_manager.connect(websocket, client_id)
+    # 연결 수락 (명시적으로 accept 호출)
+    await websocket.accept()
+    logger.info(f"[WebSocket] Connection accepted for {client_id}")
+
+    # ConnectionManager에 등록
+    connection_manager.active_connections[client_id] = websocket
+    logger.info(f"[WebSocket] Client {client_id} registered with manager")
 
     # 초기 구독 처리
     if subscribe:
@@ -52,43 +74,56 @@ async def websocket_endpoint(
             topic = topic.strip()
             if topic:
                 connection_manager.subscribe(client_id, topic)
-                # price:{ticker} 형식이면 ticker를 price_broadcaster에 추가
-                # (ConnectionManager.subscribe() 내부에서 처리됨)
-                await websocket.send_json({
-                    "type": "subscribed",
-                    "topic": topic,
-                    "message": f"Subscribed to {topic}",
-                })
-
-    # 환영 메시지
-    await websocket.send_json({
-        "type": "connected",
-        "client_id": client_id,
-        "message": "WebSocket connection established",
-    })
-
-    try:
-        while True:
-            # 클라이언트로부터 메시지 수신
-            data = await websocket.receive_json()
-
-            message_type = data.get("type")
-
-            if message_type == "subscribe":
-                # 토픽 구독
-                topic = data.get("topic")
-                if topic:
-                    connection_manager.subscribe(client_id, topic)
-                    # price:{ticker} 형식이면 ticker를 price_broadcaster에 추가
-                    # (ConnectionManager.subscribe() 내부에서 처리됨)
+                try:
                     await websocket.send_json({
                         "type": "subscribed",
                         "topic": topic,
                         "message": f"Subscribed to {topic}",
                     })
+                except Exception as e:
+                    logger.error(f"[WebSocket] Failed to send subscribe confirmation: {e}")
+
+    # 환영 메시지
+    try:
+        await websocket.send_json({
+            "type": "connected",
+            "client_id": client_id,
+            "message": "WebSocket connection established",
+        })
+        logger.info(f"[WebSocket] Welcome message sent to {client_id}")
+    except Exception as e:
+        logger.error(f"[WebSocket] Failed to send welcome message: {e}")
+        await connection_manager.disconnect(client_id)
+        return
+
+    # 메시지 수신 루프 (kiwoom_stock_telegram 패턴 적용)
+    while True:
+        try:
+            # 타임아웃 설정으로 메시지 대기
+            # receive_json()을 사용하되, 타임아웃은 asyncio.wait_for로 처리
+            data = await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=float(WS_RECV_TIMEOUT)
+            )
+
+            message_type = data.get("type")
+            print(f"[WS ROUTER] Received message from {client_id}: type={message_type}, data={data}")
+            logger.debug(f"[WebSocket] Received from {client_id}: {message_type}")
+
+            # 메시지 타입별 처리
+            if message_type == "subscribe":
+                topic = data.get("topic")
+                print(f"[WS ROUTER] Processing subscribe request for topic: {topic}")
+                if topic:
+                    connection_manager.subscribe(client_id, topic)
+                    await websocket.send_json({
+                        "type": "subscribed",
+                        "topic": topic,
+                        "message": f"Subscribed to {topic}",
+                    })
+                    print(f"[WS ROUTER] Sent subscribed confirmation for {topic}")
 
             elif message_type == "unsubscribe":
-                # 구독 취소
                 topic = data.get("topic")
                 if topic:
                     connection_manager.unsubscribe(client_id, topic)
@@ -99,14 +134,15 @@ async def websocket_endpoint(
                     })
 
             elif message_type == "ping":
-                # 핑/퐁응답
+                # 핑/퐁 응답 (kiwoom_stock_telegram 패턴: 그대로 돌려보냄)
                 await websocket.send_json({"type": "pong"})
+                logger.debug(f"[WebSocket] Pong sent to {client_id}")
 
             elif message_type == "pong":
                 # Phase 3: Pong 수신 시간 기록
                 if _heartbeat_manager:
                     _heartbeat_manager.record_pong(client_id)
-                logger.debug(f"Pong received from {client_id}")
+                logger.debug(f"[WebSocket] Pong received from {client_id}")
 
             else:
                 await websocket.send_json({
@@ -114,48 +150,83 @@ async def websocket_endpoint(
                     "message": f"Unknown message type: {message_type}",
                 })
 
-    except WebSocketDisconnect as e:
-        # 상세한 종료 정보 로깅 (Phase 1: GREEN)
-        logger.info(
-            f"WebSocket client disconnected: {client_id} | "
-            f"code={e.code}, reason='{e.reason}'"
-        )
-        # Phase 3: 하트비트 관리자에서 클라이언트 제거
-        if _heartbeat_manager:
-            _heartbeat_manager.remove_client(client_id)
-        # ConnectionManager에 종료 정보 전달
-        connection_manager.disconnect(client_id, code=e.code, reason=e.reason)
-    except Exception as e:
-        # 예외 타입과 메시지 로깅 (Phase 1: GREEN)
-        import traceback
-        logger.error(
-            f"WebSocket error for {client_id}: {type(e).__name__}: {e}\n"
-            f"Traceback: {traceback.format_exc()[-500:]}"  # 최근 500자만 로깅
-        )
-        # Phase 3: 하트비트 관리자에서 클라이언트 제거
-        if _heartbeat_manager:
-            _heartbeat_manager.remove_client(client_id)
-        connection_manager.disconnect(client_id)
+        except asyncio.TimeoutError:
+            # 타임아웃 시에도 연결 유지 (kiwoom_stock_telegram 패턴)
+            logger.debug(f"[WebSocket] No message from {client_id} for {WS_RECV_TIMEOUT}s, keeping connection alive")
+            continue
+
+        except WebSocketDisconnect as e:
+            # 정상/비정상 종료 처리 (kiwoom_stock_telegram 패턴)
+            if e.code == 1000:
+                logger.info(f"[WebSocket] Client {client_id} disconnected normally")
+            else:
+                logger.warning(
+                    f"[WebSocket] Client {client_id} disconnected abnormally | "
+                    f"code={e.code}, reason='{e.reason}'"
+                )
+            # 하트비트 관리자에서 클라이언트 제거
+            if _heartbeat_manager:
+                _heartbeat_manager.remove_client(client_id)
+            # ConnectionManager.disconnect() 호출 - subscriptions에서도 제거
+            connection_manager.disconnect(client_id, code=e.code, reason=e.reason)
+            break
+
+        except Exception as e:
+            # 기타 예외 처리
+            import traceback
+            logger.error(
+                f"[WebSocket] Error for {client_id}: {type(e).__name__}: {e}\n"
+                f"Traceback: {traceback.format_exc()[-500:]}"
+            )
+            # 하트비트 관리자에서 클라이언트 제거
+            if _heartbeat_manager:
+                _heartbeat_manager.remove_client(client_id)
+            # ConnectionManager.disconnect() 호출 - subscriptions에서도 제거
+            connection_manager.disconnect(client_id)
+            break
 
 
 @router.get("/ws/stats")
 async def websocket_stats():
     """
-    WebSocket 연결 통계 엔드포인트
+    WebSocket 연결 통계 엔드포인트 (모든 구독 토픽 동적 반환)
 
     Returns:
-        연결 수, 구독자 수 등의 통계 정보
+        연결 수, 모든 구독 토픽의 구독자 수 등의 통계 정보
     """
+    from src.websocket.kiwoom_bridge import get_kiwoom_ws_bridge
+
+    ws_bridge = get_kiwoom_ws_bridge()
+    bridge_running = ws_bridge is not None and ws_bridge.is_running()
+    bridge_tickers = list(ws_bridge.get_active_tickers()) if ws_bridge else []
+
+    # 모든 구독 토픽 동적으로 수집 (하드코딩된 목록 제거)
+    all_subscriptions = connection_manager.subscriptions.copy()
+
+    # 구독자 수만 추출하여 반환
+    subscriptions_dict = {
+        topic: len(subscribers)
+        for topic, subscribers in all_subscriptions.items()
+    }
+
+    # active_tickers를 bridge와 broadcaster의 합집합으로 반환
+    # KiwoomWebSocketBridge가 running이면 bridge_tickers를 포함
+    active_tickers = set(price_broadcaster.get_active_tickers())
+    if bridge_running and ws_bridge:
+        active_tickers.update(ws_bridge.get_active_tickers())
+
     stats = {
         "active_connections": connection_manager.get_connection_count(),
-        "subscriptions": {
-            topic: connection_manager.get_subscriber_count(topic)
-            for topic in ["price:005930", "price:000660", "signals", "market-gate"]
-        },
+        "subscriptions": subscriptions_dict,  # 모든 구독 토픽 반환
+        "bridge_running": bridge_running,
+        "bridge_tickers": bridge_tickers,
         "broadcaster_running": price_broadcaster.is_running(),
-        "active_tickers": list(price_broadcaster.get_active_tickers()),
+        "active_tickers": list(active_tickers),  # bridge + broadcaster 합집합
         # Phase 3: 하트비트 상태
         "heartbeat_running": _heartbeat_manager.is_running() if _heartbeat_manager else False,
+        # VCP 시그널 브로드캐스터 상태
+        "signal_broadcaster_running": signal_broadcaster.is_running(),
+        "recv_timeout": WS_RECV_TIMEOUT,
     }
 
     return stats
@@ -164,16 +235,24 @@ async def websocket_stats():
 @router.post("/ws/subscribe/{ticker}")
 async def subscribe_ticker(ticker: str):
     """
-    종목 가격 구독 추가
+    종목 가격 구독 추가 (ELW 지원)
 
     Args:
-        ticker: 종목코드 (6자리)
+        ticker: 종목코드 (6자리, ELW 포함)
 
     Returns:
         성공 메시지
     """
-    # 종목코드 형식 검증 (6자리 숫자)
-    if not ticker or not ticker.isdigit() or len(ticker) != 6:
+    # 종목코드 형식 검증 (KOSPI/KOSDAQ 6자리 숫자 또는 ELW 6자리)
+    if not ticker or len(ticker) != 6:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid ticker format. Use 6-digit code.")
+
+    # ELW 형식 검증 (숫자+알파벳 조합)
+    is_valid = ticker.isdigit() or (
+        any(c.isdigit() for c in ticker) and any(c.isalpha() for c in ticker)
+    )
+    if not is_valid:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Invalid ticker format. Use 6-digit code.")
 

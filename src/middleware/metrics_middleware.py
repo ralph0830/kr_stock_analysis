@@ -58,6 +58,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         Returns:
             Response
         """
+        # WebSocket 요청은 미들웨어 처리 건너뛰기
+        # BaseHTTPMiddleware는 WebSocket 연결을 제대로 처리하지 못함
+        if self._is_websocket_request(request):
+            return await call_next(request)
+
         # 시작 시간 기록
         start_time = time.time()
 
@@ -126,6 +131,15 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             api_active_connections.set(
                 api_active_connections.get() - 1
             )
+
+    def _is_websocket_request(self, request: Request) -> bool:
+        """WebSocket 요청인지 확인"""
+        # 경로로 확인
+        if request.url.path.startswith("/ws"):
+            return True
+        # 헤더로 확인
+        upgrade_header = request.headers.get("upgrade", "").lower()
+        return upgrade_header == "websocket"
 
 
 def get_path_label(request: Request) -> str:

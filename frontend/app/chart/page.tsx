@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { FullStockChart, MiniChart, PriceChange, PriceData } from "@/components/StockChart";
 import { apiClient } from "@/lib/api-client";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 // 인기 종목 목록
 const POPULAR_STOCKS = [
@@ -20,6 +21,13 @@ const POPULAR_STOCKS = [
   { ticker: "105560", name: "KB금융" },
 ];
 
+// 에러 메시지 타입
+interface ErrorMessage {
+  title: string;
+  message: string;
+  canRetry: boolean;
+}
+
 export default function ChartPage() {
   const [chartData, setChartData] = useState<PriceData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +35,12 @@ export default function ChartPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [miniChartsReady, setMiniChartsReady] = useState(false);
+  const [error, setError] = useState<ErrorMessage | null>(null);
+
+  // WebSocket 연결 상태 확인
+  const { connected: wsConnected } = useWebSocket({
+    autoConnect: true,
+  });
 
   // 미니 차트 데이터 상태
   const [miniChartData, setMiniChartData] = useState<Record<string, PriceData[]>>({});
@@ -90,13 +104,14 @@ export default function ChartPage() {
     // API에서 실제 데이터 가져오기
     const fetchChartData = async () => {
       setLoading(true);
+      setError(null);
       try {
-        // Kiwoom API 차트 데이터 가져오기
+        // DB 기반 차트 데이터 가져오기
         const stockChart = await apiClient.getStockChart(selectedTicker, "6mo");
 
-        // Kiwoom API 응답 (YYYYMMDD 형식)을 차트 데이터 형식으로 변환
+        // DB 응답 (YYYY-MM-DD 형식)을 차트 데이터 형식으로 변환
         const chartData: PriceData[] = (stockChart.data || []).map((item) => {
-          // 날짜 형식 변환: YYYYMMDD -> YYYY-MM-DD
+          // 날짜 형식 변환: YYYYMMDD 또는 YYYY-MM-DD -> YYYY-MM-DD
           const dateStr = item.date;
           const formattedDate = dateStr.length === 8
             ? `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`
@@ -115,11 +130,24 @@ export default function ChartPage() {
         // 시간 순서대로 정렬 (오래된 데이터 first)
         chartData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+        // 데이터가 비있으면 안내 메시지 표시
+        if (chartData.length === 0) {
+          setError({
+            title: "데이터가 없습니다",
+            message: "선택한 종목의 차트 데이터가 아직 수집되지 않았습니다. 데이터 수집 작업이 필요합니다.",
+            canRetry: true,
+          });
+        }
+
         setChartData(chartData);
-      } catch (error) {
-        console.error("차트 데이터 로드 실패:", error);
-        // API 실패 시 빈 데이터 설정 (Kiwoom REST API만 사용)
+      } catch (err) {
+        console.error("차트 데이터 로드 실패:", err);
         setChartData([]);
+        setError({
+          title: "차트 데이터 로드 실패",
+          message: "서버 연결에 실패했거나 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+          canRetry: true,
+        });
       } finally {
         setLoading(false);
       }
@@ -167,9 +195,13 @@ export default function ChartPage() {
           {/* 데이터 출처 표시 */}
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                Kiwoom 실시간 데이터 연동됨
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                wsConnected
+                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+              }`}>
+                <span className={`w-2 h-2 rounded-full mr-2 ${wsConnected ? "bg-green-500 animate-pulse" : "bg-gray-400"}`}></span>
+                {wsConnected ? "Kiwoom 실시간 데이터 연동됨" : "연결 대기 중..."}
               </span>
             </div>
           </div>
@@ -319,7 +351,31 @@ export default function ChartPage() {
         <section>
           {loading ? (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-12 shadow text-center">
-              <p className="text-gray-500 dark:text-gray-400">로딩 중...</p>
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+              <p className="text-gray-500 dark:text-gray-400">차트 데이터를 불러오는 중...</p>
+            </div>
+          ) : error ? (
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-12 shadow text-center">
+              <div className="max-w-md mx-auto">
+                <div className="text-yellow-500 text-4xl mb-4">⚠️</div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                  {error.title}
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 mb-6">
+                  {error.message}
+                </p>
+                {error.canRetry && (
+                  <button
+                    onClick={() => {
+                      // 선택된 종목 다시 선택하여 재요청 트리거
+                      setSelectedTicker(selectedTicker);
+                    }}
+                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition"
+                  >
+                    다시 시도
+                  </button>
+                )}
+              </div>
             </div>
           ) : chartData.length > 0 ? (
             <FullStockChart data={chartData} height={400} />

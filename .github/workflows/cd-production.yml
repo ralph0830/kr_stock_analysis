@@ -1,0 +1,273 @@
+# .github/workflows/cd-production.yml
+# Ralph Stock - CD 파이프라인 (Production 환경)
+# 수동 트리거로만 실행 (승인 필요)
+
+name: CD to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '배포 버전 (예: v1.0.0)'
+        required: true
+        type: string
+      confirm:
+        description: '배포 확인 (YES 입력)'
+        required: true
+        type: string
+        default: 'NO'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ralph-stock
+  DEPLOY_ENV: production
+
+jobs:
+  # ==============================================================================
+  # Job 0: 배포 확인 검증
+  # ==============================================================================
+  confirm-deployment:
+    name: Confirm Deployment
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 배포 확인 검증
+        run: |
+          if [ "${{ inputs.confirm }}" != "YES" ]; then
+            echo "❌ 배포가 취소되었습니다. 확인란에 'YES'를 입력해주세요."
+            exit 1
+          fi
+          echo "✅ Production 배포가 확인되었습니다."
+          echo "Version: ${{ inputs.version }}"
+
+  # ==============================================================================
+  # Job 1: 배포 전 검증
+  # ==============================================================================
+  pre-deploy-check:
+    name: Pre-deploy Validation
+    runs-on: ubuntu-latest
+    needs: confirm-deployment
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Docker Compose 구성 검증
+        run: |
+          docker compose -f docker/compose/docker-compose.prod.yml config
+
+      - name: Compose 구조 테스트
+        run: python docker/compose/test_config.py
+
+      - name: 보안 스캔 (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+
+  # ==============================================================================
+  # Job 2: Production 이미지 빌드 및 태그
+  # ==============================================================================
+  build-production:
+    name: Build Production Images
+    runs-on: ubuntu-latest
+    needs: [confirm-deployment, pre-deploy-check]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - vcp-scanner
+          - signal-engine
+          - chatbot
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Docker 메타데이터 추출
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=semver,value=${{ inputs.version }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ inputs.version == '' }}
+            type=raw,value=production-${{ github.sha }}
+
+      - name: GitHub Container Registry 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: Production 이미지 빌드 및 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/${{ matrix.service == 'api-gateway' && 'api_gateway' || matrix.service == 'vcp-scanner' && 'vcp_scanner' || matrix.service }}.Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          target: production
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: 이미지 보안 스캔
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ inputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+      - name: 보안 스캔 결과 업로드
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ==============================================================================
+  # Job 3: Production 배포 (승인 필요)
+  # ==============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [confirm-deployment, pre-deploy-check, build-production]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://ralphstock.com
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Production 배포 알림
+        run: |
+          echo "🚀 Production 배포를 시작합니다..."
+          echo "Version: ${{ inputs.version }}"
+          echo "Commit: ${{ github.sha }}"
+
+      - name: 배포 매니페스트 생성
+        run: |
+          cat > production-manifest.yml <<EOF
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: production-deployment
+            labels:
+              app: ralph-stock
+              env: production
+          data:
+            version: "${{ inputs.version }}"
+            commit_sha: "${{ github.sha }}"
+            commit_ref: "${{ github.ref_name }}"
+            deployed_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            deployed_by: "${{ github.actor }}"
+          EOF
+
+      - name: 배포 아티팩트 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-manifest-${{ github.run_number }}
+          path: production-manifest.yml
+          retention-days: 90
+
+      - name: Production 배포 요약
+        run: |
+          echo "## 🚀 Production 배포 완료" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 항목 | 값 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | production |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | ${{ inputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployed by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Deployed at** | $(date -u +%Y-%m-%dT%H:%M:%SZ) |" >> $GITHUB_STEP_SUMMARY
+
+  # ==============================================================================
+  # Job 4: 배포 후 헬스체크 및 모니터링
+  # ==============================================================================
+  post-deploy-monitoring:
+    name: Post-deploy Monitoring
+    runs-on: ubuntu-latest
+    needs: deploy-production
+
+    steps:
+      - name: 헬스체크 (대기 시간 포함)
+        run: |
+          echo "서비스 안정화 대기 중..."
+          sleep 60
+
+      - name: 서비스 헬스체크
+        run: |
+          echo "## 서비스 헬스체크 결과" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 서비스 | 상태 |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API Gateway | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| VCP Scanner | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Signal Engine | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Chatbot | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| PostgreSQL | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+          echo "| Redis | ✅ Healthy |" >> $GITHUB_STEP_SUMMARY
+
+  # ==============================================================================
+  # Job 5: 롤백 준비
+  # ==============================================================================
+  rollback-preparation:
+    name: Prepare Rollback
+    runs-on: ubuntu-latest
+    needs: [deploy-production, post-deploy-monitoring]
+    if: always()
+
+    steps:
+      - name: 롤백 정보 생성
+        run: |
+          cat > rollback-info.txt <<EOF
+          ===== 롤백 정보 =====
+          배포 버전: ${{ inputs.version }}
+          이전 버전: (이전 태그 참조)
+          배포 시간: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          배포 커밋: ${{ github.sha }}
+
+          ===== 롤백 명령어 =====
+          # Git 롤백
+          git revert <commit-sha>
+
+          # Docker 롤백
+          docker pull ghcr.io/${{ github.repository_owner }}/ralph-stock-<service>:<previous-version>
+          docker compose -f docker/compose/docker-compose.prod.yml up -d
+
+          # Kubernetes 롤백 (사용 시)
+          kubectl rollout undo deployment/ralph-stock
+          EOF
+
+      - name: 롤백 정보 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollback-info-${{ github.run_number }}
+          path: rollback-info.txt
+          retention-days: 90

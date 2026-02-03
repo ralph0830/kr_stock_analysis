@@ -18,6 +18,7 @@ class KiwoomEventType(Enum):
     # 실시간 시세
     RECEIVE_REAL_DATA = "OnReceiveRealData"          # 실시간 체결가
     RECEIVE_MT_REAL_DATA = "OnReceiveMTRealData"     # 실시간 호가
+    RECEIVE_INDEX_DATA = "OnReceiveIndexData"      # 실시간 업종지수
 
     # WebSocket 이벤트
     WS_CONNECTED = "WebSocketConnected"              # WebSocket 연결 완료
@@ -52,6 +53,30 @@ class RealtimePrice:
             "volume": self.volume,
             "bid_price": self.bid_price,
             "ask_price": self.ask_price,
+            "timestamp": self.timestamp,
+        }
+
+
+@dataclass
+class IndexRealtimePrice:
+    """실시간 업종지수 데이터"""
+    code: str              # 업종코드 (001: KOSPI, 201: KOSDAQ)
+    name: str              # 업종명 ("KOSPI", "KOSDAQ")
+    index: float           # 지수값
+    change: float          # 전일대비
+    change_rate: float     # 등락률 (%)
+    volume: int            # 거래량
+    timestamp: str         # 수신 시간 (ISO 8601)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """딕셔너리로 변환"""
+        return {
+            "code": self.code,
+            "name": self.name,
+            "index": self.index,
+            "change": self.change,
+            "change_rate": self.change_rate,
+            "volume": self.volume,
             "timestamp": self.timestamp,
         }
 

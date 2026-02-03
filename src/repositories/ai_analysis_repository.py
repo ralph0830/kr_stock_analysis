@@ -33,7 +33,7 @@ class AIAnalysisRepository(BaseRepository[AIAnalysis]):
         """
         query = select(AIAnalysis).where(
             AIAnalysis.ticker == ticker
-        ).order_by(desc(AIAnalysis.analysis_date)).limit(1)
+        ).order_by(desc(AIAnalysis.analysis_date), desc(AIAnalysis.id)).limit(1)
 
         result = self.session.execute(query)
         return result.scalar_one_or_none()

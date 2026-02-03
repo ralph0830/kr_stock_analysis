@@ -56,6 +56,32 @@ def get_db_session() -> Session:
         session.close()
 
 
+def get_db_session_sync():
+    """
+    동기 데이터베이스 세션 생성 (Celery Task용)
+
+    Context Manager로 사용:
+
+        with get_db_session_sync() as db:
+            repo = StockRepository(db)
+            stock = repo.get_by_ticker("005930")
+
+    Returns:
+        Session: SQLAlchemy 세션
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _session_context():
+        session = SessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    return _session_context()
+
+
 def init_db():
     """
     데이터베이스 초기화

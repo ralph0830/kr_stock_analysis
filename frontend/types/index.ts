@@ -76,20 +76,123 @@ export interface ConnectionInfo {
   broadcaster_running: boolean;
 }
 
-// WebSocket 타입
+// ============================================================================
+// WebSocket 타입 (Discriminated Union)
+// ============================================================================
+
 export type WSMessageType =
   | "connected"
   | "subscribed"
   | "unsubscribed"
   | "price_update"
+  | "index_update"
+  | "market_gate_update"
+  | "signal_update"       // VCP 시그널 실시간 업데이트
   | "error"
   | "ping"
   | "pong";
 
-export interface WSMessage {
-  type: WSMessageType;
-  [key: string]: any;
+// 연결 확인 메시지
+export interface IWSConnectedMessage {
+  type: "connected";
+  client_id: string;
+  message: string;
 }
+
+// 구독 확인 메시지
+export interface IWSSubscribedMessage {
+  type: "subscribed" | "unsubscribed";
+  topic: string;
+  message: string;
+}
+
+// 가격 업데이트 메시지
+export interface IWSPriceUpdateMessage {
+  type: "price_update";
+  ticker: string;
+  data: {
+    price: number;
+    change: number;
+    change_rate: number;
+    volume: number;
+  };
+  timestamp: string;
+}
+
+// 지수 업데이트 메시지
+export interface IWSIndexUpdateMessage {
+  type: "index_update";
+  code: string; // 001: KOSPI, 201: KOSDAQ
+  name: string; // KOSPI, KOSDAQ
+  data: {
+    index: number;
+    change: number;
+    change_rate: number;
+    volume: number;
+  };
+  timestamp: string;
+}
+
+// Market Gate 업데이트 메시지
+export interface IWSMarketGateUpdateMessage {
+  type: "market_gate_update";
+  timestamp: string;
+  data: {
+    status: "RED" | "YELLOW" | "GREEN";
+    level: number;
+    kospi: number | null;
+    kospi_change_pct: number | null;
+    kosdaq: number | null;
+    kosdaq_change_pct: number | null;
+    sectors: Array<{
+      name: string;
+      ticker: string | null;
+      change_pct: number | null;
+      signal: "bullish" | "bearish" | "neutral";
+    }>;
+  };
+}
+
+// 시그널 업데이트 메시지 (VCP 실시간 업데이트)
+export interface IWSSignalUpdateMessage {
+  type: "signal_update";
+  data: {
+    signals: Signal[];
+    count: number;
+    timestamp: string;
+  };
+}
+
+// 에러 메시지
+export interface IWSErrorMessage {
+  type: "error";
+  message: string;
+}
+
+// Ping/Pong 메시지
+export interface IWSPingMessage {
+  type: "ping";
+}
+
+export interface IWSPongMessage {
+  type: "pong";
+}
+
+// WebSocket 메시지 통합 타입 (Discriminated Union)
+export type IWSMessage =
+  | IWSConnectedMessage
+  | IWSSubscribedMessage
+  | IWSPriceUpdateMessage
+  | IWSIndexUpdateMessage
+  | IWSMarketGateUpdateMessage
+  | IWSSignalUpdateMessage
+  | IWSErrorMessage
+  | IWSPingMessage
+  | IWSPongMessage;
+
+// 레거시 호환을 위한 별칭 (추천하지 않음)
+/** @deprecated use IWSMessage instead */
+export type WSMessage = IWSMessage;
 
 export interface RealtimePrice {
   ticker: string;

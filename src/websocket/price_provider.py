@@ -151,16 +151,16 @@ class PriceDataProvider:
             포맷팅된 dict
         """
         # 전일 대비 등락률 계산
-        change = price.close - price.open
-        change_rate = (change / price.open * 100) if price.open > 0 else 0
+        change = price.close_price - price.open_price
+        change_rate = (change / price.open_price * 100) if price.open_price and price.open_price > 0 else 0
 
         return {
             "ticker": price.ticker,
             "date": price.date.isoformat(),
-            "open": float(price.open),
-            "high": float(price.high),
-            "low": float(price.low),
-            "close": float(price.close),
+            "open": float(price.open_price),
+            "high": float(price.high_price),
+            "low": float(price.low_price),
+            "close": float(price.close_price),
             "volume": int(price.volume),
             "change": round(change, 2),
             "change_rate": round(change_rate, 2),

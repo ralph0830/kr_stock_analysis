@@ -19,7 +19,7 @@ import {
   Server,
   Clock,
 } from "lucide-react"
-import { formatDistanceToNow } from "@/lib/utils"
+import { formatDistanceToNow } from "date-fns"
 
 export function SystemHealthIndicator() {
   const {

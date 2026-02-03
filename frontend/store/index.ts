@@ -13,6 +13,9 @@ interface AppState {
   loadingSignals: boolean;
   signalsError: string | null;
 
+  // 시그널 액션
+  setSignals: (signals: Signal[]) => void;
+
   // Market Gate 상태
   marketGate: MarketGateStatus | null;
   loadingMarketGate: boolean;
@@ -88,6 +91,11 @@ export const useStore = create<AppState>((set, get) => ({
         signalsError: error instanceof Error ? error.message : "시그널 조회 실패",
       });
     }
+  },
+
+  // 시그널 직접 설정 (WebSocket 업데이트용)
+  setSignals: (signals: Signal[]) => {
+    set({ signals });
   },
 
   // Market Gate 조회

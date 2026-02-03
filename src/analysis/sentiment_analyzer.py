@@ -77,7 +77,7 @@ class SentimentAnalyzer:
         try:
             import google.generativeai as genai
             genai.configure(api_key=self.api_key)
-            self._client = genai.GenerativeModel("gemini-pro")
+            self._client = genai.GenerativeModel("gemini-3-flash-preview")
             logger.info("✅ Gemini API initialized")
         except ImportError:
             raise RuntimeError("google-generativeai 라이브러리가 설치되지 않았습니다. pip install google-generativeai로 설치하세요.")

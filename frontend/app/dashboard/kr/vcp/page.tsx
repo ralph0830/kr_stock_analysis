@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { apiClient } from "@/lib/api-client";
 import { formatPrice } from "@/lib/utils";
+import { useSignals, useRealtimePrices } from "@/hooks/useWebSocket";
 import type { Signal } from "@/types";
 import type { IAIAnalysisList } from "@/types";
 
@@ -89,43 +90,6 @@ function getContractionColor(value: number | undefined): string {
   return "text-purple-400";
 }
 
-/**
- * 실시간 가격 업데이트 커스텀 훅
- */
-function useRealtimePrices(signals: Signal[], intervalMs: number = 60000) {
-  const [prices, setPrices] = useState<Record<string, number>>({});
-  const [lastUpdated, setLastUpdated] = useState<string>("");
-
-  useEffect(() => {
-    if (signals.length === 0) return;
-
-    const updatePrices = async () => {
-      try {
-        const tickers = signals.map((s) => s.ticker);
-        const priceData = await apiClient.getRealtimePrices(tickers);
-        // StockPrice 객체에서 price만 추출
-        const pricesMap: Record<string, number> = {};
-        for (const [ticker, stockPrice] of Object.entries(priceData)) {
-          pricesMap[ticker] = stockPrice.price;
-        }
-        setPrices(pricesMap);
-        setLastUpdated(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }));
-      } catch (e) {
-        console.error("Price update failed:", e);
-      }
-    };
-
-    // 초기 업데이트
-    updatePrices();
-
-    // 주기적 업데이트
-    const interval = setInterval(updatePrices, intervalMs);
-    return () => clearInterval(interval);
-  }, [signals, intervalMs]);
-
-  return { prices, lastUpdated };
-}
-
 // AI 분석 데이터 매핑 (ticker 기반)
 function mapAIAnalysisData(aiList: IAIAnalysisList): Map<string, AIAnalysisItem> {
   const map = new Map<string, AIAnalysisItem>();
@@ -140,35 +104,88 @@ function mapAIAnalysisData(aiList: IAIAnalysisList): Map<string, AIAnalysisItem>
 }
 
 export default function VCPPage() {
+  // VCP 시그널 실시간 구독 Hook
+  const {
+    signals: wsSignals,
+    setSignals: setWsSignals,
+    isRealtime: signalsRealtime,
+    connected: wsConnected,
+    lastUpdate: signalsLastUpdate,
+  } = useSignals();
+
   const [signals, setSignals] = useState<VCPSignal[]>([]);
   const [aiDataMap, setAiDataMap] = useState<Map<string, AIAnalysisItem>>(new Map());
   const [loading, setLoading] = useState(true);
   const [signalDate, setSignalDate] = useState<string>("");
 
-  // 실시간 가격 업데이트
-  const { prices, lastUpdated } = useRealtimePrices(signals);
+  // 실시간 가격 업데이트 (WebSocket 기반)
+  const tickers = useMemo(() => signals.map((s) => s.ticker), [signals]);
+  const { prices, getPrice } = useRealtimePrices(tickers);
 
-  // 데이터 로드
+  // WebSocket 시그널 업데이트 처리
   useEffect(() => {
+    if (wsSignals.length > 0) {
+      console.log("[VCP] Received signals from WebSocket:", wsSignals.length);
+      // WebSocket 시그널을 VCPSignal 형식으로 변환
+      const vcpSignals: VCPSignal[] = wsSignals.map((s) => ({
+        ...s,
+        score: typeof s.score === "number" ? s.score : s.score?.total ?? 0,
+      }));
+      setSignals(vcpSignals);
+      setLoading(false);
+
+      // 생성일 추출
+      if (wsSignals[0]?.created_at) {
+        const d = new Date(wsSignals[0].created_at);
+        setSignalDate(d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }));
+      }
+    }
+  }, [wsSignals]);
+
+  // 데이터 로드 (WebSocket 연결되지 않았거나 초기 로드 시)
+  useEffect(() => {
+    // WebSocket으로 데이터를 받고 있고, 이미 시그널이 있으면 스킵
+    // wsSignals.length 추가: WebSocket이 연결되었지만 데이터가 없는 경우 API 폴백 실행
+    if (signalsRealtime && wsSignals.length > 0) {
+      return;
+    }
+
     const loadData = async () => {
       setLoading(true);
       try {
-        const [signalsRes, aiRes] = await Promise.all([
-          apiClient.getSignals(),
-          apiClient.getAIAnalysis(),
-        ]);
+        // VCP 시그널 조회 (상위 10개)
+        const vcpResponse = await apiClient.getVCPSignals(10);
 
-        // Signal을 VCPSignal으로 타입 변환 (VCP 관련 속성이 있을 경우)
-        setSignals(signalsRes as VCPSignal[]);
+        // 디버깅: API 응답 로그
+        console.log('[VCP DEBUG] API Response:', {
+          count: vcpResponse.count,
+          signalsLength: vcpResponse.signals.length,
+          signals: vcpResponse.signals.map(s => ({ ticker: s.ticker, name: s.name, score: s.score }))
+        });
 
-        // AI 분석 데이터를 Map으로 변환
-        const aiMap = mapAIAnalysisData(aiRes);
-        setAiDataMap(aiMap);
+        // API 응답을 VCPSignal 형식으로 변환
+        const vcpSignals: VCPSignal[] = vcpResponse.signals.map((s) => ({
+          ...s,
+          score: typeof s.score === "number" ? s.score : s.score?.total ?? 0,
+          // foreign_5d, inst_5d는 이미 API 응답에 포함
+        }));
+
+        console.log('[VCP DEBUG] Signals to set:', vcpSignals.length);
+        setSignals(vcpSignals);
 
         // 생성일 추출
-        if (aiRes.analysis_date) {
-          const d = new Date(aiRes.analysis_date);
+        if (vcpResponse.generated_at) {
+          const d = new Date(vcpResponse.generated_at);
           setSignalDate(d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }));
+        }
+
+        // AI 분석 데이터 (선택적)
+        try {
+          const aiRes = await apiClient.getAIAnalysis();
+          const aiMap = mapAIAnalysisData(aiRes);
+          setAiDataMap(aiMap);
+        } catch (aiError) {
+          console.warn("AI analysis not available:", aiError);
         }
       } catch (error) {
         console.error("Failed to load VCP data:", error);
@@ -178,15 +195,17 @@ export default function VCPPage() {
     };
 
     loadData();
-  }, []);
+  }, [signalsRealtime, wsSignals.length]);  // wsSignals.length 추가: WebSocket 데이터 수신 상태 변경 시 재평가
 
   // 시그널 정렬 (점수순)
   const sortedSignals = useMemo(() => {
-    return [...signals].sort((a, b) => {
+    const sorted = [...signals].sort((a, b) => {
       const scoreA = typeof a.score === "number" ? a.score : a.score?.total ?? 0;
       const scoreB = typeof b.score === "number" ? b.score : b.score?.total ?? 0;
       return scoreB - scoreA;
     });
+    console.log('[VCP DEBUG] Sorted signals:', sorted.length, sorted.map(s => ({ ticker: s.ticker, score: s.score })));
+    return sorted;
   }, [signals]);
 
   // AI 추천 조회 헬퍼
@@ -198,8 +217,8 @@ export default function VCPPage() {
 
   // 현재가 계산 (실시간 가격 또는 entry_price)
   const getCurrentPrice = (signal: VCPSignal): number => {
-    const realtimePrice = prices[signal.ticker];
-    if (realtimePrice) return realtimePrice;
+    const realtimePrice = getPrice?.(signal.ticker);
+    if (realtimePrice) return realtimePrice.price;
     return signal.entry_price || 0;
   };
 
@@ -256,10 +275,22 @@ export default function VCPPage() {
             <span>생성일: {signalDate || "-"}</span>
             <span>•</span>
             <span>시그널: {sortedSignals.length}개</span>
-            {lastUpdated && (
+            {signalsRealtime && wsConnected && (
               <>
                 <span>•</span>
-                <span>마지막 업데이트: {lastUpdated}</span>
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                  실시간
+                </span>
+              </>
+            )}
+            {signalsLastUpdate && (
+              <>
+                <span>•</span>
+                <span>
+                  마지막 업데이트:{" "}
+                  {signalsLastUpdate.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
               </>
             )}
           </div>
@@ -320,6 +351,10 @@ export default function VCPPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {(() => {
+                    console.log('[VCP DEBUG] Rendering table rows:', sortedSignals.length);
+                    return null;
+                  })()}
                   {sortedSignals.map((signal, idx) => {
                     const currentPrice = getCurrentPrice(signal);
                     const returnPct = getReturnPct(signal);

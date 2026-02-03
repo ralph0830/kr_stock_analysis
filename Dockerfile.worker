@@ -1,0 +1,43 @@
+# Celery Worker & Beat Dockerfile
+# Background task processing for Ralph Stock Analysis
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 시스템 의존성 설치
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 의존성 설치 (Celery + Redis + DB)
+COPY lib/pyproject.toml /tmp/lib-pyproject.toml
+RUN pip install --no-cache-dir \
+    celery[redis]>=5.3.0 \
+    redis>=5.0.0 \
+    sqlalchemy>=2.0.0 \
+    psycopg2-binary>=2.9.0 \
+    python-dotenv>=1.0.0 \
+    requests>=2.31.0 \
+    httpx>=0.25.0 \
+    websockets>=12.0 \
+    beautifulsoup4>=4.12.0 \
+    lxml>=5.0.0 \
+    aiohttp>=3.9.0
+
+# 소스 코드 복사
+COPY lib/ ./lib/
+COPY tasks/ ./tasks/
+COPY src/ ./src/
+COPY services/ ./services/
+
+# lib 모듈 설치
+RUN pip install --no-cache-dir -e ./lib
+
+# PYTHONPATH 설정
+ENV PYTHONPATH=/app:$PYTHONPATH
+
+# 기본 명령어 (worker)
+CMD ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]

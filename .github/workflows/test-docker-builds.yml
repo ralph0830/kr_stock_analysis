@@ -1,0 +1,131 @@
+# .github/workflows/test-docker-builds.yml
+# Ralph Stock - Docker 빌드 테스트 워크플로우
+# 모든 PR에서 실행되어 Docker 빌드 가능성을 검증
+
+name: Test Docker Builds
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'services/**/Dockerfile'
+      - 'services/**/pyproject.toml'
+      - 'docker-compose.yml'
+      - 'docker/compose/*.yml'
+      - '.github/workflows/test-docker-builds.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ralph-stock
+
+jobs:
+  # ==============================================================================
+  # Job 1: 각 서비스 Dockerfile 빌드 테스트
+  # ==============================================================================
+  build-services:
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - vcp-scanner
+          - signal-engine
+          - chatbot
+        include:
+          - service: api-gateway
+            context: .
+            dockerfile: services/api_gateway/Dockerfile
+            target: development
+          - service: vcp-scanner
+            context: .
+            dockerfile: services/vcp_scanner/Dockerfile
+            target: development
+          - service: signal-engine
+            context: .
+            dockerfile: services/signal_engine/Dockerfile
+            target: development
+          - service: chatbot
+            context: .
+            dockerfile: services/chatbot/Dockerfile
+            target: development
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: Docker 빌드 테스트 (development)
+        run: |
+          docker build \
+            -f ${{ matrix.dockerfile }} \
+            --target ${{ matrix.target }} \
+            -t ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:test-dev \
+            ${{ matrix.context }}
+
+      - name: Docker 이미지 정보 출력
+        run: |
+          docker images ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:test-dev
+
+      - name: Docker 빌드 테스트 (production)
+        run: |
+          docker build \
+            -f ${{ matrix.dockerfile }} \
+            --target production \
+            -t ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:test-prod \
+            ${{ matrix.context }}
+
+      - name: Production 이미지 크기 확인
+        run: |
+          docker images ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:test-prod
+
+  # ==============================================================================
+  # Job 2: Docker Compose 구성 검증
+  # ==============================================================================
+  validate-compose:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: Docker Compose 구성 검증 (base)
+        run: |
+          docker compose -f docker/compose/docker-compose.base.yml config
+
+      - name: Docker Compose 구성 검증 (dev)
+        run: |
+          docker compose -f docker/compose/docker-compose.base.yml \
+                         -f docker/compose/docker-compose.dev.yml config
+
+      - name: Docker Compose 구성 검증 (prod)
+        run: |
+          docker compose -f docker/compose/docker-compose.prod.yml config
+
+      - name: Docker Compose 구성 검증 (test)
+        run: |
+          docker compose -f docker/compose/docker-compose.test.yml config
+
+  # ==============================================================================
+  # Job 3: Compose 파일 구조 테스트
+  # ==============================================================================
+  test-compose-structure:
+    name: Test Compose Structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: PyYAML 설치
+        run: pip install pyyaml
+
+      - name: Compose 구조 테스트 실행
+        run: python docker/compose/test_config.py

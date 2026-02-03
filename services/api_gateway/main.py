@@ -39,7 +39,7 @@ except ImportError:
     from services.api_gateway.service_registry import get_registry
 
 try:
-    from src.database.session import get_db_session
+    from src.database.session import get_db_session, get_db_session_sync
     from src.database.models import MarketStatus, DailyPrice
     from src.repositories.stock_repository import StockRepository
 except ImportError:
@@ -205,22 +205,61 @@ async def lifespan(app: FastAPI):
                     )
                     print("✅ Kiwoom price broadcast handler registered")
 
-                    # 기본 종목 구독 (삼성전자, SK하이닉스, NAVER, 현대차)
-                    default_tickers = ["005930", "000660", "035420", "005380"]
+                    # 지수 데이터 브로드캐스트 핸들러 등록
+                    async def broadcast_index_to_frontend(index_data):
+                        """Kiwoom 실시간 지수 데이터를 프론트엔드 WebSocket으로 브로드캐스트"""
+                        try:
+                            await connection_manager.broadcast(
+                                {
+                                    "type": "index_update",
+                                    "code": index_data.code,
+                                    "name": index_data.name,
+                                    "data": {
+                                        "index": index_data.index,
+                                        "change": index_data.change,
+                                        "change_rate": index_data.change_rate,
+                                        "volume": index_data.volume,
+                                    },
+                                    "timestamp": index_data.timestamp,
+                                    "source": "kiwoom_ws",
+                                },
+                                topic=f"market:{index_data.name.lower()}",
+                            )
+                            logger.debug(f"Broadcasted Kiwoom index: {index_data.name} = {index_data.index}")
+                        except Exception as e:
+                            logger.error(f"Error broadcasting index: {e}")
+
+                    kiwoom_pipeline.register_event_handler(
+                        KiwoomEventType.RECEIVE_INDEX_DATA,
+                        broadcast_index_to_frontend
+                    )
+                    print("✅ Kiwoom index broadcast handler registered")
+
+                    # 기본 종목 구독 (삼성전자, SK하이닉스, NAVER, 현대차, 삼성물산, 동화약품)
+                    default_tickers = ["005930", "000660", "035420", "005380", "028260", "000020"]
                     for ticker in default_tickers:
                         try:
                             await kiwoom_pipeline.subscribe(ticker)
-                            if price_broadcaster:
-                                price_broadcaster.add_ticker(ticker)
                             print(f"✅ Subscribed to {ticker}")
                         except Exception as e:
                             print(f"⚠️ Failed to subscribe to {ticker}: {e}")
 
-                    # Kiwoom WebSocket Bridge 연결 (기존 호환성 유지)
+                    # KOSPI/KOSDAQ 지수 구독
+                    default_indices = [("001", "KOSPI"), ("201", "KOSDAQ")]
+                    for code, name in default_indices:
+                        try:
+                            await kiwoom_pipeline.subscribe_index(code)
+                            print(f"✅ Subscribed to {name} index ({code})")
+                        except Exception as e:
+                            print(f"⚠️ Failed to subscribe to {name} index: {e}")
+
+                    # Kiwoom WebSocket Bridge 연결 (실시간 가격 브로드캐스트)
                     try:
                         from src.websocket.kiwoom_bridge import init_kiwoom_ws_bridge
-                        await init_kiwoom_ws_bridge(kiwoom_pipeline)
-                        print("✅ Kiwoom WebSocket Bridge connected")
+                        # 기본 종목 전달 (VCP 시그널 상위 6종목)
+                        default_tickers = ["005930", "000660", "035420", "005380", "028260", "000020"]
+                        await init_kiwoom_ws_bridge(kiwoom_pipeline, default_tickers=default_tickers)
+                        print("✅ Kiwoom WebSocket Bridge connected with default tickers")
                     except Exception as e:
                         print(f"⚠️ Kiwoom WebSocket Bridge: {e}")
 
@@ -229,18 +268,27 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"⚠️ Kiwoom initialization failed: {e}")
 
-    # Kiwoom REST API가 구성된 경우 Price Broadcaster 시작 (Pipeline 상관없이)
-    # WebSocket 연결 문제로 우회: REST API로만 가격 조회 후 브로드캐스트
+    # Price Broadcaster 시작 (Kiwoom REST API 또는 DB fallback)
+    # Kiwoom API 설정 여부와 상관없이 항상 시작하여 DB 데이터를 브로드캐스트
     import os
     use_kiwoom_rest = os.getenv("USE_KIWOOM_REST", "false").lower() == "true"
     has_api_keys = bool(os.getenv("KIWOOM_APP_KEY") and os.getenv("KIWOOM_SECRET_KEY"))
 
-    if use_kiwoom_rest and has_api_keys and price_broadcaster:
-        print("📡 Starting Price Broadcaster (REST API mode)...")
+    if price_broadcaster:
+        if use_kiwoom_rest and has_api_keys:
+            print("📡 Starting Price Broadcaster (Kiwoom REST API mode)...")
+        else:
+            print("📡 Starting Price Broadcaster (Database mode)...")
         await price_broadcaster.start()
         print("✅ Price Broadcaster started")
     else:
-        print("⚠️ Real-time price broadcasting not available (Kiwoom REST API not configured)")
+        print("⚠️ Price Broadcaster not available")
+
+    # VCP 시그널 브로드캐스터 시작
+    print("📡 Starting Signal Broadcaster...")
+    from src.websocket.server import signal_broadcaster
+    await signal_broadcaster.start()
+    print("✅ Signal Broadcaster started")
 
     # Phase 3: 하트비트 관리자 시작
     if WEBSOCKET_AVAILABLE and connection_manager:
@@ -249,6 +297,15 @@ async def lifespan(app: FastAPI):
         print("✅ Heartbeat Manager started (30s interval)")
     else:
         print("⚠️ WebSocket not available - heartbeat skipped")
+
+    # Phase 4: Redis Pub/Sub 구독자 시작 (Celery 태스크 → WebSocket 브로드캐스트)
+    if WEBSOCKET_AVAILABLE and connection_manager:
+        print("📨 Starting Redis Pub/Sub Subscriber...")
+        from src.websocket.server import create_redis_subscriber
+        create_redis_subscriber(connection_manager)
+        print("✅ Redis Pub/Sub Subscriber started")
+    else:
+        print("⚠️ WebSocket not available - Redis subscriber skipped")
 
     yield
 
@@ -270,6 +327,12 @@ async def lifespan(app: FastAPI):
         await price_broadcaster.stop()
         print("✅ Price Broadcaster stopped")
 
+    # VCP 시그널 브로드캐스터 중지
+    print("📡 Stopping Signal Broadcaster...")
+    from src.websocket.server import signal_broadcaster
+    await signal_broadcaster.stop()
+    print("✅ Signal Broadcaster stopped")
+
     # Phase 3: 하트비트 관리자 중지
     from src.websocket.server import get_heartbeat_manager
     heartbeat_mgr = get_heartbeat_manager()
@@ -277,6 +340,14 @@ async def lifespan(app: FastAPI):
         print("💓 Stopping Heartbeat Manager...")
         await heartbeat_mgr.stop()
         print("✅ Heartbeat Manager stopped")
+
+    # Phase 4: Redis Pub/Sub 구독자 중지
+    from src.websocket.server import get_redis_subscriber
+    redis_sub = get_redis_subscriber()
+    if redis_sub:
+        print("📨 Stopping Redis Pub/Sub Subscriber...")
+        await redis_sub.stop()
+        print("✅ Redis Pub/Sub Subscriber stopped")
 
     # Kiwoom 연동 중지
     if kiwoom_integration:
@@ -374,9 +445,22 @@ app = FastAPI(
 
 
 # CORS 미들웨어
+# allow_credentials=True일 때 allow_origins=["*"]는 사용 불가
+# 로컬 개발 환경 + 외부 도메인 origin 명시
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5110",
+        "http://127.0.0.1:5110",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ralphpark.com",
+        "http://ralphpark.com",
+        "https://ralphpark.com:5110",
+        "http://ralphpark.com:5110",
+        "https://ralphpark.com:5111",
+        "http://ralphpark.com:5111",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -461,6 +545,31 @@ async def health_check():
     API Gateway 헬스 체크
 
     서비스가 정상 동작 중인지 확인합니다.
+    """
+    return HealthCheckResponse(
+        status="healthy",
+        service="api-gateway",
+        version="2.0.0",
+        timestamp=datetime.now(),
+    )
+
+
+@app.get(
+    "/api/health",
+    tags=["health"],
+    response_model=HealthCheckResponse,
+    responses={
+        200: {
+            "description": "서비스 정상 (API 경로 별칭)",
+        }
+    },
+)
+async def health_check_api():
+    """
+    API Gateway 헬스 체크 (API 경로 별칭)
+
+    `/health` 엔드포인트의 API 경로 별칭입니다.
+    프론트엔드에서 `/api/*` 경로 패턴 사용 시 호환성을 제공합니다.
     """
     return HealthCheckResponse(
         status="healthy",
@@ -1091,6 +1200,7 @@ async def get_stock_detail(ticker: str, db: Session = Depends(get_db_session)):
         .limit(1)
     ).scalar_one_or_none()
 
+
     # 응답 생성
     return StockDetailResponse(
         ticker=stock.ticker,
@@ -1103,6 +1213,67 @@ async def get_stock_detail(ticker: str, db: Session = Depends(get_db_session)):
         volume=latest_price.volume if latest_price else None,
         updated_at=latest_price.date if latest_price else None,
     )
+
+
+@app.get(
+    "/api/kr/data-gap-monitor",
+    tags=["stocks"],
+    responses={
+        200: {"description": "데이터 갭 현황 반환 성공"},
+    },
+)
+async def get_data_gap_monitor(
+    days_threshold: int = Query(3, description="갭 기준일수 (기본값: 3일)"),
+):
+    """
+    데이터 갭 모니터링 엔드포인트
+
+    일정 기간 이상 업데이트되지 않은 종목 목록을 반환합니다.
+
+    Args:
+        days_threshold: 갭 기준일수 (기본값: 3일)
+
+    Returns:
+        업데이트되지 않은 종목 목록 (종목코드, 종목명, 최신 데이터일, 경과일수)
+    """
+    from src.database.models import Stock, DailyPrice
+    from sqlalchemy import func, select
+
+    # 데이터 갭 쿼리
+    with get_db_session_sync() as db:
+        query = (
+            db.execute(
+                select(
+                    Stock.ticker,
+                    Stock.name,
+                    func.max(DailyPrice.date).label("latest_date"),
+                    (func.current_date() - func.max(DailyPrice.date)).label("days_since_update"),
+                )
+                .outerjoin(DailyPrice, Stock.ticker == DailyPrice.ticker)
+                .group_by(Stock.ticker, Stock.name)
+                .having(func.current_date() - func.max(DailyPrice.date) > days_threshold)
+                .order_by(func.current_date() - func.max(DailyPrice.date).desc())
+            )
+        )
+
+        results = query.all()
+
+        # 응�답 생성
+        gaps = [
+            {
+                "ticker": row.ticker,
+                "name": row.name,
+                "latest_date": row.latest_date.isoformat() if row.latest_date else None,
+                "days_since_update": row.days_since_update,
+            }
+            for row in results
+        ]
+
+        return {
+            "total_count": len(gaps),
+            "days_threshold": days_threshold,
+            "gaps": gaps,
+        }
 
 
 @app.get(
@@ -1202,6 +1373,7 @@ async def get_kr_realtime_prices(request: RealtimePricesRequest):
 
     ## 설명
     여러 종목의 실시간 가격 정보를 일괄 조회합니다.
+    DB에 저장된 최신 일봉 데이터를 반환합니다.
 
     ## Request Body
     - **tickers**: 종목 코드 리스트
@@ -1209,8 +1381,133 @@ async def get_kr_realtime_prices(request: RealtimePricesRequest):
     ## 반환 데이터
     - **prices**: 종목별 실시간 가격 정보
     """
-    # TODO: Price Service 또는 Data Collector로 프록시
-    return {"prices": {}}
+    prices = {}
+
+    # Context Manager로 사용 가능한 get_db_session_sync() 사용
+    with get_db_session_sync() as db:
+        for ticker in request.tickers:
+            try:
+                # 최신 일봉 데이터 조회 (DB 직접 쿼리)
+                query = (
+                    select(DailyPrice)
+                    .where(DailyPrice.ticker == ticker)
+                    .order_by(desc(DailyPrice.date))
+                    .limit(1)
+                )
+                result = db.execute(query)
+                daily_price = result.scalar_one_or_none()
+
+                if daily_price:
+                    # 전일 대비 등락률 계산
+                    change = daily_price.close_price - daily_price.open_price
+                    change_rate = 0.0
+                    if daily_price.open_price and daily_price.open_price > 0:
+                        change_rate = (change / daily_price.open_price) * 100
+
+                    prices[ticker] = {
+                        "ticker": ticker,
+                        "price": daily_price.close_price,
+                        "change": change,
+                        "change_rate": change_rate,
+                        "volume": daily_price.volume,
+                        "timestamp": daily_price.date.isoformat() if daily_price.date else datetime.utcnow().isoformat(),
+                    }
+                    logger.debug(f"[RealtimePrices] {ticker}: {daily_price.close_price}")
+                else:
+                    # 데이터가 없는 경우 로그만 남기고 skip
+                    logger.warning(f"[RealtimePrices] No price data found for {ticker}")
+
+            except Exception as e:
+                logger.error(f"[RealtimePrices] Error fetching price for {ticker}: {e}")
+                # 에러가 발생해도 다른 종목은 계속 처리
+                continue
+
+    return {"prices": prices}
+
+
+@app.get(
+    "/api/kr/realtime-prices",
+    tags=["realtime"],
+    summary="실시간 가격 일괄 조회 (GET)",
+    description="여러 종목의 실시간 가격 정보를 일괄 조회합니다. Query 파라미터로 종목 코드를 콤마로 구분하여 전달합니다.",
+    responses={
+        200: {"description": "조회 성공"},
+        400: {"description": "잘못된 요청 파라미터"},
+    },
+)
+async def get_kr_realtime_prices_get(
+    tickers: str = Query(..., description="종목 코드 리스트 (콤마로 구분, 예: 005930,000660,0015N0)"),
+):
+    """
+    실시간 가격 일괄 조회 (GET 메서드)
+
+    ## 설명
+    여러 종목의 실시간 가격 정보를 일괄 조회합니다.
+    DB에 저장된 최신 일봉 데이터를 반환합니다.
+    ELW 종목(6자리 숫자+알파벳 조합)도 지원합니다.
+
+    ## Query Parameters
+    - **tickers**: 종목 코드 리스트 (콤마로 구분, 예: 005930,000660,0015N0)
+
+    ## 반환 데이터
+    - **prices**: 종목별 실시간 가격 정보
+
+    ## Example
+    ```bash
+    curl "http://localhost:5111/api/kr/realtime-prices?tickers=005930,000660,0015N0"
+    ```
+    """
+    if not tickers:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+    if not ticker_list:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="At least one ticker is required")
+
+    prices = {}
+
+    # Context Manager로 사용 가능한 get_db_session_sync() 사용
+    with get_db_session_sync() as db:
+        for ticker in ticker_list:
+            try:
+                # 최신 일봉 데이터 조회 (DB 직접 쿼리)
+                query = (
+                    select(DailyPrice)
+                    .where(DailyPrice.ticker == ticker)
+                    .order_by(desc(DailyPrice.date))
+                    .limit(1)
+                )
+                result = db.execute(query)
+                daily_price = result.scalar_one_or_none()
+
+                if daily_price:
+                    # 전일 대비 등락률 계산
+                    change = daily_price.close_price - daily_price.open_price
+                    change_rate = 0.0
+                    if daily_price.open_price and daily_price.open_price > 0:
+                        change_rate = (change / daily_price.open_price) * 100
+
+                    prices[ticker] = {
+                        "ticker": ticker,
+                        "price": daily_price.close_price,
+                        "change": change,
+                        "change_rate": change_rate,
+                        "volume": daily_price.volume,
+                        "timestamp": daily_price.date.isoformat() if daily_price.date else datetime.utcnow().isoformat(),
+                    }
+                    logger.debug(f"[RealtimePrices GET] {ticker}: {daily_price.close_price}")
+                else:
+                    # 데이터가 없는 경우 로그만 남기고 skip
+                    logger.warning(f"[RealtimePrices GET] No price data found for {ticker}")
+
+            except Exception as e:
+                logger.error(f"[RealtimePrices GET] Error fetching price for {ticker}: {e}")
+                # 에러가 발생해도 다른 종목은 계속 처리
+                continue
+
+    return {"prices": prices}
 
 
 @app.get(

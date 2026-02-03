@@ -54,11 +54,72 @@ http://localhost:5111
 | `/api/kr/market-gate/sectors` | GET | 섹터별 상태 |
 
 ### 5. 종목/차트
+> **상세 문서**: [`CHART_SYSTEM.md`](./CHART_SYSTEM.md)
+
 | 엔드포인트 | 메서드 | 설명 |
 |-----------|--------|------|
 | `/api/kr/stocks/{ticker}` | GET | 종목 상세 |
-| `/api/kr/stocks/{ticker}/chart` | GET | 종목 차트 데이터 |
-| `/api/kr/stocks/{ticker}/flow` | GET | 수급 데이터 |
+| `/api/kr/stocks/{ticker}/chart` | GET | 종목 차트 데이터 (OHLCV) |
+| `/api/kr/stocks/{ticker}/flow` | GET | 수급 데이터 (외국인/기관 순매수) |
+| `/api/kr/stocks/{ticker}/signals` | GET | 종목 시그너 히스토리 |
+| `/api/kr/kiwoom/chart/{ticker}` | GET | Kiwoom 실시간 차트 데이터 |
+
+#### 차트 데이터 요청 예시
+
+**종목 차트 (OHLCV):**
+```bash
+GET /api/kr/stocks/005930/chart?days=90
+```
+
+**응답:**
+```json
+{
+  "ticker": "005930",
+  "period": "90d",
+  "data": [
+    {
+      "date": "2026-01-01",
+      "open": 80000,
+      "high": 81000,
+      "low": 79500,
+      "close": 80500,
+      "volume": 15000000
+    }
+  ],
+  "total_points": 90
+}
+```
+
+**수급 데이터:**
+```bash
+GET /api/kr/stocks/005930/flow?days=20
+```
+
+**응답:**
+```json
+{
+  "ticker": "005930",
+  "period_days": 20,
+  "data": [
+    {
+      "date": "2026-01-20",
+      "foreign_net": 1500000,
+      "inst_net": 800000,
+      "foreign_net_amount": 120000000000,
+      "inst_net_amount": 64000000000,
+      "supply_demand_score": 65.5
+    }
+  ],
+  "smartmoney_score": 72.5,
+  "total_points": 20
+}
+```
+
+**SmartMoney 점 산출:**
+- 외국인 5일 순매수 비중: 40%
+- 기관 5일 순매수 비중: 30%
+- 외국인 연속 순매수 일수: 15%
+- 이중 매수 (외국인+기관 동시 순매수): 15%
 
 ### 6. 실시간 가격
 | 엔드포인트 | 메서드 | 설명 |

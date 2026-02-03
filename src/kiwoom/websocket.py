@@ -17,6 +17,7 @@ from src.kiwoom.base import (
     KiwoomConfig,
     KiwoomEventType,
     RealtimePrice,
+    IndexRealtimePrice,
     IKiwoomBridge
 )
 from src.utils.logging_config import get_logger
@@ -34,6 +35,7 @@ class KiwoomWebSocket(IKiwoomBridge):
     # 실시간 데이터 타입
     TYPE_STOCK_QUOTE = "0A"  # 주식기세 (체결없이 가격변경)
     TYPE_STOCK_TRADE = "0B"  # 주식체결 (실제 체결)
+    TYPE_INDEX = "0J"  # 업종지수 (KOSPI/KOSDAQ)
 
     # 기본 설정
     DEFAULT_PING_INTERVAL = None  # 키움은 ping/pong을 지원하지 않음 (서버가 PING 전송)
@@ -63,12 +65,15 @@ class KiwoomWebSocket(IKiwoomBridge):
 
         # 구독 관리
         self._subscribed_tickers: Set[str] = set()
+        self._subscribed_indices: Set[str] = set()  # KOSPI(001), KOSDAQ(201)
 
         # 이벤트 핸들러
         self._event_handlers: Dict[KiwoomEventType, List[Callable]] = {}
 
         # 현재가 캐시
         self._current_prices: Dict[str, RealtimePrice] = {}
+        # 업종지수 캐시
+        self._current_indices: Dict[str, IndexRealtimePrice] = {}
 
         # 재연결 설정
         self._max_reconnect_attempts = self.DEFAULT_MAX_RECONNECT_ATTEMPTS
@@ -340,6 +345,91 @@ class KiwoomWebSocket(IKiwoomBridge):
         """
         return self._current_prices.get(ticker)
 
+    async def subscribe_index(self, code: str) -> bool:
+        """
+        업종지수 실시간 등록 (KOSPI/KOSDAQ)
+
+        Args:
+            code: 업종코드 (001: KOSPI, 201: KOSDAQ)
+
+        Returns:
+            등록 성공 여부
+        """
+        if not self._connected or not self._authenticated:
+            logger.warning("Cannot subscribe index: not connected or authenticated")
+            return False
+
+        try:
+            # 키움 업종지수 실시간 등록 전문 (trnm: REG)
+            reg_request = {
+                "trnm": "REG",
+                "grp_no": "2",  # 종목과 그룹 번호 분리
+                "refresh": "1",
+                "data": [{
+                    "item": [code],
+                    "type": [self.TYPE_INDEX]
+                }]
+            }
+            await self._ws.send(json.dumps(reg_request))
+
+            self._subscribed_indices.add(code)
+            name = "KOSPI" if code == "001" else "KOSDAQ" if code == "201" else code
+            logger.info(f"Subscribed to index real-time data: {name} ({code})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Subscribe index failed for {code}: {e}")
+            return False
+
+    async def unsubscribe_index(self, code: str) -> bool:
+        """
+        업종지수 실시간 해제
+
+        Args:
+            code: 업종코드
+
+        Returns:
+            해제 성공 여부
+        """
+        if not self._connected:
+            return False
+
+        try:
+            # 키움 업종지수 실시간 해제 전문 (trnm: REMOVE)
+            unreg_request = {
+                "trnm": "REMOVE",
+                "grp_no": "2",
+                "data": [{
+                    "item": [code],
+                    "type": [self.TYPE_INDEX]
+                }]
+            }
+            await self._ws.send(json.dumps(unreg_request))
+
+            self._subscribed_indices.discard(code)
+            logger.info(f"Unsubscribed from index real-time data: {code}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Unsubscribe index failed for {code}: {e}")
+            return False
+
+    def get_index_list(self) -> List[str]:
+        """현재 등록된 업종지수 리스트"""
+        return list(self._subscribed_indices)
+
+    def get_current_index(self, code: str) -> Optional[IndexRealtimePrice]:
+        """
+        현재 지수 조회
+
+        Args:
+            code: 업종코드 (001: KOSPI, 201: KOSDAQ)
+
+        Returns:
+            지수 정보 또는 None
+        """
+        return self._current_indices.get(code)
+
     # ==================== 내부 메서드 ====================
 
     def _emit_event(self, event_type: KiwoomEventType, data: Any) -> None:
@@ -401,12 +491,16 @@ class KiwoomWebSocket(IKiwoomBridge):
 
                     # 기존 콜백/구독 정보 백업
                     saved_tickers = self._subscribed_tickers.copy()
+                    saved_indices = self._subscribed_indices.copy()
 
                     # 재연결 시도
                     if await self._reconnect():
                         # 종목 재등록
                         for ticker in saved_tickers:
                             await self.subscribe_realtime(ticker)
+                        # 지수 재등록
+                        for idx_code in saved_indices:
+                            await self.subscribe_index(idx_code)
                         logger.info("Reconnection and subscription restoration complete")
 
             except Exception as e:
@@ -417,9 +511,12 @@ class KiwoomWebSocket(IKiwoomBridge):
             if self._stop_requested:
                 break
 
-    async def _reconnect(self) -> bool:
+    async def _reconnect(self, max_attempts: Optional[int] = None) -> bool:
         """
         재연결 시도
+
+        Args:
+            max_attempts: 최대 재시도 횟수 (None이면 기본값 사용)
 
         Returns:
             재연결 성공 여부
@@ -428,23 +525,41 @@ class KiwoomWebSocket(IKiwoomBridge):
             logger.error("Cannot reconnect: no access token")
             return False
 
-        try:
-            # 이전 연결 정리
-            if self._ws:
-                try:
-                    await self._ws.close()
-                except Exception:
-                    pass
+        attempts = max_attempts if max_attempts is not None else self._max_reconnect_attempts
+        delay = self._reconnect_delay
 
-            self._connected = False
-            self._authenticated = False
+        for attempt in range(attempts):
+            try:
+                # 이전 연결 정리
+                if self._ws:
+                    try:
+                        await self._ws.close()
+                    except Exception:
+                        pass
 
-            # 재연결
-            return await self.connect(self._access_token)
+                self._connected = False
+                self._authenticated = False
 
-        except Exception as e:
-            logger.error(f"Reconnection failed: {e}")
-            return False
+                # 재연결
+                if await self.connect(self._access_token):
+                    # 재연결 성공 후 구독 복원은 _receive_loop에서 처리
+                    logger.info(f"Reconnection successful after {attempt + 1} attempt(s)")
+                    return True
+
+                # 실패 시 지수 백오프 대기
+                if attempt < attempts - 1:
+                    wait_time = delay * (2 ** attempt)  # 지수 백오프
+                    logger.info(f"Reconnection attempt {attempt + 1} failed, waiting {wait_time}s before retry...")
+                    await asyncio.sleep(wait_time)
+
+            except Exception as e:
+                logger.error(f"Reconnection attempt {attempt + 1} failed: {e}")
+                if attempt < attempts - 1:
+                    wait_time = delay * (2 ** attempt)
+                    await asyncio.sleep(wait_time)
+
+        logger.error(f"Reconnection failed after {attempts} attempts")
+        return False
 
     async def _handle_message(self, message: str) -> None:
         """
@@ -519,9 +634,14 @@ class KiwoomWebSocket(IKiwoomBridge):
             data_list = data.get("data", [])
 
             for item in data_list:
-                type_code = item.get("type")  # 0A (주식기세) 또는 0B (주식체결)
-                ticker = item.get("item")  # 종목코드
+                type_code = item.get("type")  # 0A (주식기세), 0B (주식체결), 0J (업종지수)
+                code = item.get("item")  # 종목코드 또는 업종코드
                 values = item.get("values", {})  # 실시간 데이터 값
+
+                # 0J (업종지수) 처리
+                if type_code == self.TYPE_INDEX:
+                    await self._on_receive_index_data(item)
+                    continue
 
                 # 0A 또는 0B만 처리
                 if type_code not in [self.TYPE_STOCK_QUOTE, self.TYPE_STOCK_TRADE]:
@@ -566,7 +686,7 @@ class KiwoomWebSocket(IKiwoomBridge):
 
                 if current_price > 0:
                     price_data = RealtimePrice(
-                        ticker=ticker,
+                        ticker=code,
                         price=current_price,
                         change=change,
                         change_rate=change_rate,
@@ -577,17 +697,91 @@ class KiwoomWebSocket(IKiwoomBridge):
                     )
 
                     # 캐시 저장
-                    self._current_prices[ticker] = price_data
+                    self._current_prices[code] = price_data
 
                     # 이벤트 발생
                     self._emit_event(KiwoomEventType.RECEIVE_REAL_DATA, price_data)
 
                     if self._debug_mode:
                         logger.info(
-                            f"Real-time [{type_code}] {ticker}: {current_price:,}원 "
+                            f"Real-time [{type_code}] {code}: {current_price:,}원 "
                             f"({change:+,}원, {change_rate:+.2f}%) "
                             f"매수:{bid_price:,} / 매도:{ask_price:,}"
                         )
 
         except Exception as e:
             logger.error(f"Error processing real data: {e}, data: {data}")
+
+    async def _on_receive_index_data(self, item: Dict[str, Any]) -> None:
+        """
+        업종지수 실시간 수신 처리 (키움 0J TR 프로토콜)
+
+        0J TR (업종지수) 필드:
+        - 10: 지수값
+        - 11: 전일대비 (가격 차이)
+        - 12: 등락율 (%)
+        - 13: 거래량
+        - 20: 체결시간 (HHMMSS)
+
+        Args:
+            item: TR 데이터 아이템 (type: 0J)
+        """
+        try:
+            code = item.get("item")  # 업종코드 (001: KOSPI, 201: KOSDAQ)
+            values = item.get("values", {})
+
+            if not values:
+                return
+
+            # 지수명 매핑
+            index_names = {
+                "001": "KOSPI",
+                "201": "KOSDAQ",
+            }
+            name = index_names.get(code, f"INDEX_{code}")
+
+            # 지수값 (10번 필드)
+            index_str = values.get("10", "0")
+            index_str = index_str.replace("+", "").replace("-", "").replace(" ", "")
+            index_value = float(index_str) if index_str else 0
+
+            # 전일대비 (11번 필드)
+            change_str = values.get("11", "0")
+            change_str = change_str.replace("+", "").replace(" ", "")
+            change = float(change_str) if change_str else 0
+
+            # 등락율 (12번 필드)
+            change_rate_str = values.get("12", "0")
+            change_rate_str = change_rate_str.replace("+", "").replace(" ", "")
+            change_rate = float(change_rate_str) if change_rate_str else 0
+
+            # 거래량 (13번 필드)
+            volume_str = values.get("13", "0")
+            volume = int(volume_str) if volume_str.isdigit() else 0
+
+            if index_value > 0:
+                index_data = IndexRealtimePrice(
+                    code=code,
+                    name=name,
+                    index=index_value,
+                    change=change,
+                    change_rate=change_rate,
+                    volume=volume,
+                    timestamp=datetime.now(timezone.utc).isoformat()
+                )
+
+                # 캐시 저장
+                self._current_indices[code] = index_data
+
+                # 이벤트 발생
+                self._emit_event(KiwoomEventType.RECEIVE_INDEX_DATA, index_data)
+
+                if self._debug_mode:
+                    logger.info(
+                        f"Index [0J] {name}: {index_value:.2f} "
+                        f"({change:+.2f}, {change_rate:+.2f}%) "
+                        f"거래량: {volume:,}"
+                    )
+
+        except Exception as e:
+            logger.error(f"Error processing index data: {e}, item: {item}")

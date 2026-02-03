@@ -159,6 +159,37 @@ class KiwoomPipelineManager:
         """현재 구독 중인 종목 리스트"""
         return self._service.get_subscribed_tickers()
 
+    async def subscribe_index(self, code: str) -> bool:
+        """
+        업종지수 구독
+
+        Args:
+            code: 업종코드 (001: KOSPI, 201: KOSDAQ)
+
+        Returns:
+            구독 성공 여부
+        """
+        if not self._running:
+            logger.warning("Cannot subscribe index: pipeline not running")
+            return False
+        return await self._service.subscribe_index(code)
+
+    async def unsubscribe_index(self, code: str) -> bool:
+        """
+        업종지수 구독 해제
+
+        Args:
+            code: 업종코드
+
+        Returns:
+            해제 성공 여부
+        """
+        return await self._service.unsubscribe_index(code)
+
+    def get_subscribed_indices(self) -> List[str]:
+        """현재 구독 중인 지수 리스트"""
+        return self._service.get_subscribed_indices()
+
     # ==================== 이벤트 핸들러 관리 ====================
 
     def register_event_handler(

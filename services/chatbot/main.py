@@ -13,17 +13,39 @@ from contextlib import asynccontextmanager
 from typing import List, Dict, Any
 import logging
 
-from services.chatbot.schemas import (
-    ChatRequest,
-    ChatResponse,
-    ContextResponse,
-    HealthCheckResponse,
-)
-from services.chatbot.session_manager import get_session_manager
-from services.chatbot.retriever import get_retriever
-from services.chatbot.prompts import build_rag_prompt
-from services.chatbot.llm_client import get_llm_client
-from services.chatbot.recommender import get_recommender
+# 독립 실행을 위한 유연한 import
+import sys
+import os
+
+# 현재 파일의 디렉토리를 sys.path에 추가
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
+try:
+    from chatbot.schemas import (
+        ChatRequest,
+        ChatResponse,
+        ContextResponse,
+        HealthCheckResponse,
+    )
+    from chatbot.session_manager import get_session_manager
+    from chatbot.retriever import get_retriever
+    from chatbot.prompts import build_rag_prompt
+    from chatbot.llm_client import get_llm_client
+    from chatbot.recommender import get_recommender
+except ImportError:
+    from services.chatbot.schemas import (
+        ChatRequest,
+        ChatResponse,
+        ContextResponse,
+        HealthCheckResponse,
+    )
+    from services.chatbot.session_manager import get_session_manager
+    from services.chatbot.retriever import get_retriever
+    from services.chatbot.prompts import build_rag_prompt
+    from services.chatbot.llm_client import get_llm_client
+    from services.chatbot.recommender import get_recommender
 
 logger = logging.getLogger(__name__)
 

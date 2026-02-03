@@ -390,3 +390,201 @@ class TestStocksRoutesUnit:
             assert result.total_signals == 0
             assert result.open_signals == 0
             assert result.closed_signals == 0
+
+
+class TestCalculateSmartMoneyScore:
+    """SmartMoney 점수 계산 단위 테스트"""
+
+    def test_calculate_smartmoney_score_empty(self):
+        """빈 데이터면 기본값 50 반환"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+
+        result = calculate_smartmoney_score([])
+        assert result == 50.0
+
+    def test_calculate_smartmoney_score_foreign_only_buying(self):
+        """외국인만 순매수 시 점수 상승"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+        from src.database.models import InstitutionalFlow
+        from datetime import date
+
+        flows = [
+            InstitutionalFlow(
+                ticker="005930",
+                date=date(2024, 1, 10),
+                foreign_net_5d=5000000,  # +500만주
+                inst_net_5d=0,
+                foreign_consecutive_days=5,
+                is_double_buy=False,
+            )
+        ]
+
+        result = calculate_smartmoney_score(flows)
+        # 외국인 점수 = min(100, 50 + 5000000/100000) = 100
+        # 기관 점수 = 50
+        # 연속일수 점수 = min(100, 5*10) = 50
+        # 이중 매수 = 0
+        # 전체 = 100*0.4 + 50*0.3 + 50*0.15 = 40 + 15 + 7.5 = 62.5
+        assert result > 60
+
+    def test_calculate_smartmoney_score_inst_only_buying(self):
+        """기관만 순매수 시 점수 상승"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+        from src.database.models import InstitutionalFlow
+        from datetime import date
+
+        flows = [
+            InstitutionalFlow(
+                ticker="005930",
+                date=date(2024, 1, 10),
+                foreign_net_5d=0,
+                inst_net_5d=3000000,  # +300만주
+                foreign_consecutive_days=0,
+                is_double_buy=False,
+            )
+        ]
+
+        result = calculate_smartmoney_score(flows)
+        # 외국인 점수 = 50
+        # 기관 점수 = min(100, 50 + 3000000/100000) = 80
+        # 연속일수 = 0
+        # 전체 = 50*0.4 + 80*0.3 = 20 + 24 = 44
+        assert result > 40
+
+    def test_calculate_smartmoney_score_double_buying(self):
+        """이중 매수(외국인+기관 동시 순매수) 시 최고 점수"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+        from src.database.models import InstitutionalFlow
+        from datetime import date
+
+        flows = [
+            InstitutionalFlow(
+                ticker="005930",
+                date=date(2024, 1, 10),
+                foreign_net_5d=2000000,
+                inst_net_5d=1500000,
+                foreign_consecutive_days=3,
+                is_double_buy=True,  # 이중 매수
+            )
+        ]
+
+        result = calculate_smartmoney_score(flows)
+        # 외국인 점수 = 50 + 20 = 70
+        # 기관 점수 = 50 + 15 = 65
+        # 연속일수 점수 = 30
+        # 이중 매수 점수 = 20
+        # 전체 = 70*0.4 + 65*0.3 + 30*0.15 + 20*0.15 = 28 + 19.5 + 4.5 + 3 = 55
+        assert result >= 55
+
+    def test_calculate_smartmoney_score_both_selling(self):
+        """외국인/기관 모두 순매도 시 점수 하락"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+        from src.database.models import InstitutionalFlow
+        from datetime import date
+
+        flows = [
+            InstitutionalFlow(
+                ticker="005930",
+                date=date(2024, 1, 10),
+                foreign_net_5d=-2000000,  # -200만주
+                inst_net_5d=-1500000,  # -150만주
+                foreign_consecutive_days=0,
+                is_double_buy=False,
+            )
+        ]
+
+        result = calculate_smartmoney_score(flows)
+        # 외국인 점수 = max(0, 50 - 20) = 30
+        # 기관 점수 = max(0, 50 - 15) = 35
+        # 연속일수 = 0
+        # 이중 매수 = 0
+        # 전체 = 30*0.4 + 35*0.3 = 12 + 10.5 = 22.5
+        assert result < 50
+
+    def test_calculate_smartmoney_score_consecutive_days(self):
+        """외국인 연속 순매수 일수 반영"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+        from src.database.models import InstitutionalFlow
+        from datetime import date
+
+        # 10일 연속 순매수
+        flows_long = [
+            InstitutionalFlow(
+                ticker="005930",
+                date=date(2024, 1, 10),
+                foreign_net_5d=1000000,
+                inst_net_5d=0,
+                foreign_consecutive_days=10,
+                is_double_buy=False,
+            )
+        ]
+
+        result = calculate_smartmoney_score(flows_long)
+        # 외국인 점수 = 60
+        # 연속일수 점수 = min(100, 10*10) = 100
+        # 전체 = 60*0.4 + 50*0.3 + 100*0.15 = 24 + 15 + 15 = 54
+        assert result >= 54
+
+    def test_calculate_smartmoney_score_range(self):
+        """점수 범위 검증: 0~100 사이"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+        from src.database.models import InstitutionalFlow
+        from datetime import date
+
+        # 다양한 시나리오 테스트
+        test_cases = [
+            # (foreign_5d, inst_5d, consecutive, is_double, expected_min, expected_max)
+            (0, 0, 0, False, 30, 40),  # 중립: 35.0 (50*0.4 + 50*0.3 + 0*0.15 + 0*0.15)
+            (10000000, 0, 0, False, 50, 60),  # 외국인 대량 순매수: 55 (100*0.4 + 50*0.3)
+            (0, 10000000, 0, False, 45, 55),  # 기관 대량 순매수: 50 (50*0.4 + 100*0.3)
+            (-10000000, 0, 0, False, 10, 20),  # 외국인 대량 순매도: 15 (0*0.4 + 50*0.3)
+            (5000000, 5000000, 5, True, 75, 90),  # 이중 매수: 80.5
+        ]
+
+        for foreign_5d, inst_5d, consecutive, is_double, exp_min, exp_max in test_cases:
+            flows = [
+                InstitutionalFlow(
+                    ticker="005930",
+                    date=date(2024, 1, 10),
+                    foreign_net_5d=foreign_5d,
+                    inst_net_5d=inst_5d,
+                    foreign_consecutive_days=consecutive,
+                    is_double_buy=is_double,
+                )
+            ]
+            result = calculate_smartmoney_score(flows)
+            assert exp_min <= result <= exp_max, f"Score {result} not in range [{exp_min}, {exp_max}] for inputs ({foreign_5d}, {inst_5d}, {consecutive}, {is_double})"
+
+    def test_calculate_smartmoney_score_multiple_days_average(self):
+        """여러 날의 평균 계산"""
+        from services.api_gateway.routes.stocks import calculate_smartmoney_score
+        from src.database.models import InstitutionalFlow
+        from datetime import date
+
+        flows = [
+            InstitutionalFlow(
+                ticker="005930",
+                date=date(2024, 1, 10),
+                foreign_net_5d=2000000,
+                inst_net_5d=1000000,
+                foreign_consecutive_days=3,
+                is_double_buy=False,
+            ),
+            InstitutionalFlow(
+                ticker="005930",
+                date=date(2024, 1, 11),
+                foreign_net_5d=3000000,
+                inst_net_5d=1500000,
+                foreign_consecutive_days=4,
+                is_double_buy=False,
+            ),
+        ]
+
+        result = calculate_smartmoney_score(flows)
+        # 평균: foreign_5d = 2500000, inst_5d = 1250000
+        # foreign_score = 50 + 25 = 75
+        # inst_score = 50 + 12.5 = 62.5
+        # 연속일수 = 4 (max)
+        # 이중 매수 = 0
+        # 전체 = 75*0.4 + 62.5*0.3 + 40*0.15 = 30 + 18.75 + 6 = 54.75
+        assert 0 <= result <= 100

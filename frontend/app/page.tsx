@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/store";
+import { useMarketGate } from "@/hooks/useWebSocket";
 import { formatPrice, formatPercent, getMarketGateColor, cn } from "@/lib/utils";
 import { RealtimePriceGrid, WebSocketStatus } from "@/components/RealtimePriceCard";
 import { Watchlist } from "@/components/Watchlist";
@@ -13,17 +14,16 @@ export default function HomePage() {
   const {
     signals,
     loadingSignals,
-    marketGate,
-    loadingMarketGate,
     fetchSignals,
-    fetchMarketGate,
   } = useStore();
 
+  // Market Gate 실시간 WebSocket Hook 사용
+  const { marketGate, isRealtime, connected, lastUpdate } = useMarketGate();
+
   useEffect(() => {
-    // 데이터 로드 (서비스 확인 없이 바로 시도)
+    // 시그널 데이터 로드
     fetchSignals();
-    fetchMarketGate();
-  }, [fetchSignals, fetchMarketGate]);
+  }, [fetchSignals]);
 
   // 실시간 가격 모니터링할 종목 목록 (시그널 종목 중 상위 6개)
   const realtimeTickers = useMemo(() => {
@@ -49,6 +49,8 @@ export default function HomePage() {
               <ThemeToggle />
               <button
                 onClick={() => setShowDashboard(!showDashboard)}
+                aria-label={showDashboard ? "간단 보기로 전환" : "전체 보기로 전환"}
+                aria-pressed={showDashboard}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
               >
                 {showDashboard ? "간단 보기" : "전체 보기"}
@@ -63,16 +65,35 @@ export default function HomePage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* 메인 컨텐츠 (3열) */}
           <div className="lg:col-span-3 space-y-8">
-            {/* Market Gate Status */}
+            {/* Market Gate Status - 실시간 WebSocket 업데이트 */}
             <section>
-          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
-            Market Gate 상태
-          </h2>
-          {loadingMarketGate ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg text-center">
-              <p className="text-gray-500">로딩 중...</p>
-            </div>
-          ) : marketGate ? (
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+              Market Gate 상태
+            </h2>
+            {/* 실시간 연결 상태 표시 */}
+            {connected && (
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
+                    isRealtime
+                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                      : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "w-2 h-2 rounded-full mr-1.5",
+                      isRealtime ? "bg-green-500 animate-pulse" : "bg-gray-400"
+                    )}
+                  />
+                  {isRealtime ? "실시간" : "연결 대기"}
+                </span>
+              </div>
+            )}
+          </div>
+          {marketGate ? (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -91,18 +112,27 @@ export default function HomePage() {
                     </span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-500">
-                  {new Date(marketGate.updated_at).toLocaleString("ko-KR")}
-                </p>
+                <div className="text-right">
+                  {lastUpdate && (
+                    <p className="text-sm text-gray-500">
+                      {lastUpdate.toLocaleString("ko-KR")}
+                    </p>
+                  )}
+                  {isRealtime && (
+                    <p className="text-xs text-green-600 dark:text-green-400">
+                      WebSocket 실시간 업데이트
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500 mb-1">KOSPI</p>
                   <div className="flex items-center gap-2">
-                    {marketGate.kospi_close ? (
+                    {marketGate.kospi ? (
                       <>
                         <span className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                          {marketGate.kospi_close.toLocaleString()}
+                          {marketGate.kospi.toLocaleString()}
                         </span>
                         <span
                           className={cn(
@@ -117,24 +147,17 @@ export default function HomePage() {
                         </span>
                       </>
                     ) : (
-                      <span
-                        className={cn(
-                          "px-3 py-1 rounded text-sm font-medium",
-                          getMarketGateColor(marketGate.kospi_status)
-                        )}
-                      >
-                        {marketGate.kospi_status}
-                      </span>
+                      <span className="text-gray-400">데이터 없음</span>
                     )}
                   </div>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 mb-1">KOSDAQ</p>
                   <div className="flex items-center gap-2">
-                    {marketGate.kosdaq_close ? (
+                    {marketGate.kosdaq ? (
                       <>
                         <span className="text-xl font-bold text-gray-900 dark:text-gray-100">
-                          {marketGate.kosdaq_close.toLocaleString()}
+                          {marketGate.kosdaq.toLocaleString()}
                         </span>
                         <span
                           className={cn(
@@ -149,14 +172,7 @@ export default function HomePage() {
                         </span>
                       </>
                     ) : (
-                      <span
-                        className={cn(
-                          "px-3 py-1 rounded text-sm font-medium",
-                          getMarketGateColor(marketGate.kosdaq_status)
-                        )}
-                      >
-                        {marketGate.kosdaq_status}
-                      </span>
+                      <span className="text-gray-400">데이터 없음</span>
                     )}
                   </div>
                 </div>
@@ -164,7 +180,7 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg text-center">
-              <p className="text-red-500">Market Gate 정보를 불러올 수 없습니다.</p>
+              <p className="text-gray-500">Market Gate 정보를 불러오는 중...</p>
             </div>
           )}
         </section>
@@ -183,7 +199,7 @@ export default function HomePage() {
         {!showDashboard && signals.length > 0 && (
           <section>
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
-              활성 VCP 시그널 (상위 5개)
+              활성 VCP 시그널 ({signals.length}개)
             </h2>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
               <div className="overflow-x-auto">
@@ -205,7 +221,7 @@ export default function HomePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {signals.slice(0, 5).map((signal) => (
+                    {signals.map((signal) => (
                       <tr key={signal.ticker} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                           {signal.ticker}

@@ -10,11 +10,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db_session
+from src.repositories.stock_repository import StockRepository
 from services.api_gateway.service_registry import ServiceRegistry
 from services.api_gateway.schemas import (
     VCPScanResponse,
     SignalGenerationResponse,
     ScanStatusResponse,
+    StockSyncResponse,
     VCPSignalItem,
 )
 
@@ -24,6 +26,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/kr/scan", tags=["triggers"])
+
+
+def _get_grade_from_score(total_score: float) -> str:
+    """점수에 따른 등급 반환"""
+    if total_score >= 80:
+        return "S"
+    elif total_score >= 65:
+        return "A"
+    elif total_score >= 50:
+        return "B"
+    return "C"
 
 # 스캔 상태 관리 (메모리 상태 - 프로덕션에서는 Redis 사용 권장)
 _scan_state = {
@@ -41,6 +54,113 @@ class VCPScanOptions(BaseModel):
     market: Optional[str] = None  # KOSPI, KOSDAQ, ALL
     min_score: Optional[float] = None  # 최소 점수
     min_grade: Optional[str] = None  # 최소 등급 (S, A, B, C)
+    sync_stocks: Optional[bool] = False  # 스캔 전 종목 동기화 여부
+
+
+async def run_stock_sync(markets: List[str] = None) -> dict:
+    """
+    종목 목록 동기화 (Kiwoom REST API에서 전체 종목 가져오기)
+
+    Args:
+        markets: 동기화할 시장 리스트 (KOSPI, KOSDAQ, KONEX)
+
+    Returns:
+        동기화 결과
+    """
+    if markets is None:
+        markets = ["KOSPI", "KOSDAQ"]
+
+    try:
+        # Kiwoom API 설정
+        from src.kiwoom.rest_api import KiwoomRestAPI
+        from src.kiwoom.base import KiwoomConfig
+        import os
+
+        app_key = os.getenv("KIWOOM_APP_KEY")
+        secret_key = os.getenv("KIWOOM_SECRET_KEY")
+        base_url = os.getenv("KIWOOM_BASE_URL", "https://api.kiwoom.com")
+        ws_url = os.getenv("KIWOOM_WS_URL", "wss://api.kiwoom.com:10000/api/dostk/websocket")
+
+        if not app_key or not secret_key:
+            raise Exception("Kiwoom API keys not configured")
+
+        config = KiwoomConfig(
+            app_key=app_key,
+            secret_key=secret_key,
+            base_url=base_url,
+            ws_url=ws_url,
+            use_mock=False,
+        )
+
+        api = KiwoomRestAPI(config)
+
+        results = {
+            "synced": 0,
+            "kospi_count": 0,
+            "kosdaq_count": 0,
+            "konex_count": 0,
+        }
+
+        try:
+            # 토큰 발급
+            await api.connect()
+
+            # 종목 목록 조회 및 저장
+            from src.database.session import SessionLocal
+            from src.repositories.stock_repository import StockRepository
+
+            # 조회할 시장 매핑
+            market_map = {
+                "KOSPI": "KOSPI",
+                "KOSDAQ": "KOSDAQ",
+                "KONEX": "KONEX",
+            }
+
+            for market in markets:
+                try:
+                    # 종목 목록 조회
+                    stocks = await api.get_stock_list(market)
+
+                    # DB 저장
+                    with SessionLocal() as session:
+                        repo = StockRepository(session)
+                        count = 0
+
+                        for stock_data in stocks:
+                            try:
+                                repo.create_if_not_exists(
+                                    ticker=stock_data["ticker"],
+                                    name=stock_data["name"],
+                                    market=stock_data["market"],
+                                    sector="",
+                                    market_cap=0,
+                                )
+                                count += 1
+                            except Exception as e:
+                                logger.error(f"❌ 종목 저장 실패 {stock_data['ticker']}: {e}")
+
+                        results["synced"] += count
+
+                        if market == "KOSPI":
+                            results["kospi_count"] = count
+                        elif market == "KOSDAQ":
+                            results["kosdaq_count"] = count
+                        elif market == "KONEX":
+                            results["konex_count"] = count
+
+                        logger.info(f"✅ {market} 종목 {count}개 동기화 완료")
+
+                except Exception as e:
+                    logger.error(f"❌ {market} 종목 동기화 실패: {e}")
+
+            return results
+
+        finally:
+            await api.disconnect()
+
+    except Exception as e:
+        logger.error(f"Stock sync error: {e}")
+        raise
 
 
 class SignalGenerationOptions(BaseModel):
@@ -68,6 +188,8 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
     Returns:
         스캔 결과
     """
+    started_at = datetime.utcnow().isoformat()
+
     try:
         update_scan_state(
             vcp_scan_status="running",
@@ -76,7 +198,7 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
         )
 
         registry = ServiceRegistry()
-        vcp_service = registry.get_service("vcp_scanner")
+        vcp_service = registry.get_service("vcp-scanner")
 
         if not vcp_service:
             raise httpx.HTTPError("VCP Scanner service not available")
@@ -84,18 +206,17 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
         vcp_url = vcp_service["url"]
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # VCP 스캔 요청
-            scan_params = {}
-            if options.market:
-                scan_params["market"] = options.market
-            if options.min_score is not None:
-                scan_params["min_score"] = options.min_score
+            # VCP 스캔 요청 (JSON body)
+            scan_request = {
+                "market": options.market or "ALL",
+                "top_n": 100,  # 상위 100개 스캔
+            }
 
             update_scan_state(progress_percentage=50.0)
 
             response = await client.post(
                 f"{vcp_url}/scan",
-                params=scan_params,
+                json=scan_request,
             )
             response.raise_for_status()
             result = response.json()
@@ -107,7 +228,41 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
             last_vcp_scan=datetime.utcnow().isoformat(),
         )
 
-        return result
+        # 결과 파싱 - VCP Scanner 응답 형식에 맞춤 변환
+        results = result.get("results", [])
+        saved = result.get("saved", False)
+
+        # VCPSignalItem 형식으로 변환
+        signal_items = []
+        for r in results:
+            analysis_date = r.get("analysis_date", "")
+            item = VCPSignalItem(
+                ticker=r.get("ticker"),
+                name=r.get("name"),
+                market="KOSPI",  # 기본값
+                signal_type="VCP",
+                score=r.get("total_score", 0),
+                grade=_get_grade_from_score(r.get("total_score", 0)),
+                signal_date=analysis_date,
+                entry_price=r.get("current_price"),
+                target_price=None,
+                current_price=r.get("current_price"),
+                contraction_ratio=r.get("vcp_score", 0) / 100 if r.get("vcp_score") else None,
+                foreign_5d=r.get("foreign_net_5d", 0) or 0,
+                inst_5d=r.get("inst_net_5d", 0) or 0,
+                created_at=datetime.utcnow().isoformat(),
+            )
+            # Pydantic 모델을 dict로 변환
+            signal_items.append(item.model_dump())
+
+        return VCPScanResponse(
+            status="completed",
+            scanned_count=len(results),
+            found_signals=len(signal_items),
+            started_at=started_at,
+            completed_at=datetime.utcnow().isoformat(),
+            signals=signal_items,
+        )
 
     except Exception as e:
         logger.error(f"VCP scan error: {e}")
@@ -188,9 +343,10 @@ async def run_signal_generation(options: SignalGenerationOptions) -> dict:
 )
 async def trigger_vcp_scan(
     background_tasks: BackgroundTasks,
-    market: Optional[str] = Query(None, description="시장 (KOSPI/KOSDAQ)"),
+    market: Optional[str] = Query(None, description="시장 (KOSPI/KOSDAQ/ALL)"),
     min_score: Optional[float] = Query(None, description="최소 점수"),
     min_grade: Optional[str] = Query(None, description="최소 등급"),
+    sync_stocks: bool = Query(False, description="스캔 전 종목 동기화 여부"),
     session: Session = Depends(get_db_session),
 ) -> VCPScanResponse:
     """
@@ -201,6 +357,7 @@ async def trigger_vcp_scan(
         market: 시장 필터
         min_score: 최소 점수 필터
         min_grade: 최소 등급 필터
+        sync_stocks: 스캔 전 종목 동기화 여부
         session: DB 세션
 
     Returns:
@@ -209,31 +366,32 @@ async def trigger_vcp_scan(
     if _scan_state["vcp_scan_status"] == "running":
         raise HTTPException(status_code=409, detail="VCP scan already in progress")
 
+    # 종목 동기화 (요청 시)
+    if sync_stocks:
+        update_scan_state(
+            current_operation="종목 목록 동기화 중...",
+            progress_percentage=0.0,
+        )
+        try:
+            sync_result = await run_stock_sync(["KOSPI", "KOSDAQ"])
+            logger.info(f"종목 동기화 완료: {sync_result['synced']}개")
+        except Exception as e:
+            logger.error(f"종목 동기화 실패: {e}")
+            # 동기화 실패해도 스캔은 계속 진행
+
     options = VCPScanOptions(
         market=market,
         min_score=min_score,
         min_grade=min_grade,
+        sync_stocks=sync_stocks,
     )
 
     started_at = datetime.utcnow().isoformat()
 
-    # 비동기 실행을 위해 백그라운드 태스크에 추가
-    # 실제 구현에서는 Celery 태스크 사용 권장
-
-    # 동기 실행 (테스트용)
+    # 동기 실행
     try:
-        result = await run_vcp_scan(options)
-
-        return VCPScanResponse(
-            status="completed",
-            scanned_count=result.get("scanned_count", 0),
-            found_signals=result.get("found_signals", 0),
-            started_at=started_at,
-            completed_at=datetime.utcnow().isoformat(),
-            signals=[
-                VCPSignalItem(**signal) for signal in result.get("signals", [])
-            ] if "signals" in result else [],
-        )
+        # run_vcp_scan()이 이미 VCPScanResponse 모델을 반환
+        return await run_vcp_scan(options)
 
     except httpx.HTTPError as e:
         # VCP Scanner 서비스 unavailable 시 대응
@@ -325,6 +483,56 @@ def get_scan_status() -> ScanStatusResponse:
         current_operation=state.get("current_operation"),
         progress_percentage=state.get("progress_percentage"),
     )
+
+
+@router.post(
+    "/sync-stocks",
+    response_model=StockSyncResponse,
+    summary="종목 목록 동기화",
+    description="KRX에서 KOSPI/KOSDAQ 전체 종목 목록을 동기화합니다.",
+)
+async def sync_stocks(
+    background_tasks: BackgroundTasks,
+    markets: Optional[List[str]] = Query(
+        default=["KOSPI", "KOSDAQ"],
+        description="동기화할 시장 (KOSPI, KOSDAQ, KONEX)"
+    ),
+) -> StockSyncResponse:
+    """
+    종목 목록 동기화
+
+    Args:
+        background_tasks: 백그라운드 작업
+        markets: 동기화할 시장 리스트
+
+    Returns:
+        종목 동기화 응답
+    """
+    started_at = datetime.utcnow().isoformat()
+
+    try:
+        # 동기 실행 (Celery 태스크로 변경 가능)
+        result = await run_stock_sync(markets)
+
+        return StockSyncResponse(
+            status="completed",
+            synced=result.get("synced", 0),
+            kospi_count=result.get("kospi_count", 0),
+            kosdaq_count=result.get("kosdaq_count", 0),
+            konex_count=result.get("konex_count", 0),
+            started_at=started_at,
+            completed_at=datetime.utcnow().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"Stock sync failed: {e}")
+        return StockSyncResponse(
+            status="error",
+            synced=0,
+            started_at=started_at,
+            completed_at=datetime.utcnow().isoformat(),
+            error_message=str(e),
+        )
 
 
 @router.post("/multiple")

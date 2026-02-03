@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>종가 베팅 대시보드 | Today's Closing Price Betting Stocks</title>
+    <meta name="description" content="실시간 종가 베팅 종목 추천 대시보드 - 주도주 선정, 차트 패턴, 거래대금 분석">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">📊</span>
+                    <span class="logo-text">종가 베팅</span>
+                </div>
+                <div class="time-badge">
+                    <span class="live-dot"></span>
+                    <span id="current-time">15:25:30</span>
+                </div>
+            </div>
+            <div class="header-center">
+                <h1>Today's Closing Price Betting Stocks</h1>
+                <p class="subtitle header-subtitle">Efficiency & Discipline</p>
+            </div>
+            <div class="header-right">
+                <div class="market-status">
+                    <span class="status-label">Market</span>
+                    <span class="status-value open">OPEN</span>
+                </div>
+                <div class="trading-window">
+                    <span class="window-label">Entry Window</span>
+                    <span class="window-time">15:20 - 15:30</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Sidebar - Market Overview -->
+            <aside class="sidebar left-sidebar">
+                <div class="panel market-overview">
+                    <h2 class="panel-title">
+                        <span class="icon">🏆</span>
+                        Market Overview
+                    </h2>
+                    <div class="sectors-list" id="sectors-list">
+                        <!-- 실시간 API 데이터로 동적 생성됨 -->
+                        <div class="loading-state">데이터 로딩 중...</div>
+                    </div>
+                </div> <!-- Close market-overview -->
+
+                <!-- 추천종목 성과 리스트 버튼 -->
+                <div class="btn-history-container">
+                    <button id="btn-history" class="btn-history-large">
+                        <span class="icon">📜</span> 추천종목 리스트
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Center Content -->
+            <main class="center-content">
+                <!-- Stock Cards -->
+                <div class="stock-cards" id="top-stock-cards">
+                    <!-- 실시간 API 데이터로 동적 생성됨 -->
+                </div>
+
+                <!-- Real-time Chart -->
+                <div class="chart-panel">
+                    <div class="chart-header">
+                        <div class="chart-title">
+                            <span class="chart-stock">분석 중...</span>
+                            <span class="chart-timeframe">15:00 - 15:30 (Real-Time)</span>
+                        </div>
+                        <div class="chart-legend">
+                            <span class="legend-item entry">
+                                <span class="legend-dot"></span>
+                                Entry Point
+                            </span>
+                            <span class="legend-item volume">
+                                <span class="legend-bar"></span>
+                                Volume
+                            </span>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="priceChart"></canvas>
+                        <div class="entry-marker" id="entryMarker">
+                            <div class="marker-pulse"></div>
+                            <div class="marker-label">
+                                <span class="marker-time">NOW</span>
+                                <span class="marker-price">₩0</span>
+                                <span class="marker-action">WATCHING</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-timeline">
+                        <span>15:00</span>
+                        <span>15:05</span>
+                        <span>15:10</span>
+                        <span>15:15</span>
+                        <span class="highlight">15:20</span>
+                        <span class="highlight active">N/A</span>
+                        <span class="highlight">15:30</span>
+                    </div>
+                </div>
+
+                <!-- News Insights (Chart Below) -->
+                <div class="panel news-panel">
+                    <h2 class="panel-title">
+                        <span class="icon">📰</span>
+                        실시간 뉴스 통찰
+                    </h2>
+                    <div id="stock-news-list" class="news-list">
+                        <!-- 실시간 API 데이터로 동적 생성됨 -->
+                        <div class="loading-state">선택된 종목의 뉴스를 가져오는 중...</div>
+                    </div>
+                </div>
+
+                <!-- Live Ticker -->
+                <div class="live-ticker">
+                    <div class="ticker-label">LIVE</div>
+                    <div class="ticker-content">
+                        <div class="ticker-scroll" id="ticker-scroll">
+                            <!-- 실시간 API 데이터로 동적 생성됨 -->
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Right Sidebar - Criteria Checklist -->
+            <aside class="sidebar right-sidebar">
+                <div class="panel criteria-panel">
+                    <h2 class="panel-title">
+                        <span class="icon">✅</span>
+                        체크리스트 (종가베팅)
+                    </h2>
+                    <div class="criteria-subtitle">분석 대상 없음</div>
+
+                    <div class="criteria-list">
+                        <div class="criteria-item passed">
+                            <span class="criteria-check">✓</span>
+                            <div class="criteria-info">
+                                <span class="criteria-name">120일선 위 위치</span>
+                                <span class="criteria-desc">Above 120-day MA</span>
+                            </div>
+                        </div>
+                        <div class="criteria-item passed">
+                            <span class="criteria-check">✓</span>
+                            <div class="criteria-info">
+                                <span class="criteria-name">대량 거래대금</span>
+                                <span class="criteria-desc">High Volume (1.2조+)</span>
+                            </div>
+                        </div>
+                        <div class="criteria-item passed">
+                            <span class="criteria-check">✓</span>
+                            <div class="criteria-info">
+                                <span class="criteria-name">지속성 재료</span>
+                                <span class="criteria-desc">Sustainable Material</span>
+                            </div>
+                        </div>
+                        <div class="criteria-item passed">
+                            <span class="criteria-check">✓</span>
+                            <div class="criteria-info">
+                                <span class="criteria-name">깔끔한 캔들</span>
+                                <span class="criteria-desc">Clean Candle (짧은 윗꼬리)</span>
+                            </div>
+                        </div>
+                        <div class="criteria-item passed">
+                            <span class="criteria-check">✓</span>
+                            <div class="criteria-info">
+                                <span class="criteria-name">외인/기관 매수</span>
+                                <span class="criteria-desc">Foreign/Institutional Buy</span>
+                            </div>
+                        </div>
+                        <div class="criteria-item passed">
+                            <span class="criteria-check">✓</span>
+                            <div class="criteria-info">
+                                <span class="criteria-name">신고가 영역</span>
+                                <span class="criteria-desc">Near All-Time High</span>
+                            </div>
+                        </div>
+                        <div class="criteria-item partial">
+                            <span class="criteria-check">◐</span>
+                            <div class="criteria-info">
+                                <span class="criteria-name">정배열 상태</span>
+                                <span class="criteria-desc">MA Alignment</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="score-summary">
+                        <div class="score-label">Overall Score</div>
+                        <div class="score-value">92<span class="score-unit">/100</span></div>
+                        <div class="score-bar">
+                            <div class="score-fill" style="width: 92%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trading Rules -->
+                <div class="panel rules-panel">
+                    <h2 class="panel-title">
+                        <span class="icon">📋</span>
+                        Trading Rules
+                    </h2>
+                    <div class="rules-list">
+                        <div class="rule-item">
+                            <span class="rule-icon">⏰</span>
+                            <span class="rule-text">진입: 15:20 - 15:30</span>
+                        </div>
+                        <div class="rule-item">
+                            <span class="rule-icon">🎯</span>
+                            <span class="rule-text">목표: 다음날 09:00 - 09:05</span>
+                        </div>
+                        <div class="rule-item">
+                            <span class="rule-icon">✂️</span>
+                            <span class="rule-text">손절: 시간외 하락 시 즉시</span>
+                        </div>
+                        <div class="rule-item">
+                            <span class="rule-icon">💡</span>
+                            <span class="rule-text">분할익절: 2-3% 수익 시</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="panel stats-panel">
+                    <h2 class="panel-title">
+                        <span class="icon">📊</span>
+                        Today's Stats
+                    </h2>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <span class="stat-value">15</span>
+                            <span class="stat-label">종목 스캔</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value">3</span>
+                            <span class="stat-label">선정 종목</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value">78%</span>
+                            <span class="stat-label">적중률</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value">+4.2%</span>
+                            <span class="stat-label">평균 수익</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-left">
+                <span class="data-quality">📡 Data Quality: 8K Ultra HD</span>
+            </div>
+            <div class="footer-center">
+                <span class="disclaimer">"욕심을 버리고, 규칙을 지키며, 꾸준히 훈련하라" - 종가 베팅의 핵심</span>
+            </div>
+            <div class="footer-right">
+                <span class="update-time">Last Update: <span id="updateTime">15:25:30</span></span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="config.js"></script>
+    <!-- History Modal -->
+    <div id="history-modal" class="modal-overlay">
+        <div class="modal-content history-modal">
+            <div class="modal-header">
+                <h2>📈 추천종목 성과 리뷰</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="history-controls">
+                    <div class="calc-box">
+                        <label>목표 익절: <input type="number" id="calc-tp" value="3" step="0.5">%</label>
+                        <label>손절 제한: <input type="number" id="calc-sl" value="2" step="0.5">%</label>
+                        <button id="btn-run-calc" class="calc-btn">시뮬레이션 적용</button>
+                    </div>
+                    <div class="summary-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">총 추천</span>
+                            <span id="hist-total-count" class="stat-val">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">평균 수익률</span>
+                            <span id="hist-avg-return" class="stat-val">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">승률 (TP 도달)</span>
+                            <span id="hist-win-rate" class="stat-val">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="history-table-container">
+                    <table class="history-table">
+                        <thead>
+                            <tr>
+                                <th>날짜</th>
+                                <th>종목명</th>
+                                <th>추천가(종가)</th>
+                                <th>익일 시초가</th>
+                                <th>시초 수익률</th>
+                                <th>성과 분석</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-list-body">
+                            <!-- JS에서 렌더링 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -9,9 +9,9 @@ import logging
 from celery import shared_task
 from sqlalchemy import text
 
-from src.collectors.krx_collector import KRXCollector
 from src.database.session import SessionLocal
 from src.repositories.stock_repository import StockRepository
+from src.collectors.krx_collector import KRXCollector
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ def collect_stock_list(market: str = "KOSPI") -> int:
     종목 마스터 수집 태스크
 
     Args:
-        market: 시장 구분 (KOSPI, KOSDAQ, KONEX)
+        market: 시장 구분 (KOSPI, KOSDAQ, ALL)
 
     Returns:
         수집된 종목 수
@@ -43,7 +43,7 @@ def collect_stock_list(market: str = "KOSPI") -> int:
                     name=stock_data["name"],
                     market=stock_data["market"],
                     sector=stock_data.get("sector", ""),
-                    market_cap=stock_data.get("marcap", 0),
+                    market_cap=stock_data.get("market_cap", 0),
                 )
                 count += 1
             except Exception as e:
@@ -80,7 +80,8 @@ def collect_daily_prices(
     df = collector.fetch_daily_prices(ticker, start_date=start, end_date=end)
 
     if df.empty:
-        logger.warning(f"⚠️  {ticker} 일봉 데이터 없음")
+        period_str = f"{start_date} ~ {end_date}" if start_date and end_date else "지정 기간"
+        logger.warning(f"⚠️  {ticker} 일봉 데이터 없음 (기간: {period_str})")
         return 0
 
     count = 0
@@ -118,7 +119,9 @@ def collect_daily_prices(
 
         session.commit()
 
-    logger.info(f"✅ {ticker} 일봉 {count}개 수집 완료")
+    # 수집 완료 로그에 기간 정보 추가
+    period_str = f"{start_date} ~ {end_date}" if start_date and end_date else "전체 기간"
+    logger.info(f"✅ {ticker} 일봉 {count}개 수집 완료 (기간: {period_str})")
     return count
 
 

@@ -4,23 +4,23 @@
 services:
   frontend:
     build:
-      context: ../../frontend
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: frontend/Dockerfile
+      target: development
     image: frontend:dev
     container_name: frontend
+    restart: unless-stopped
+    command: ["npm", "run", "dev"]
     ports:
-      - "5110:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://api-gateway:5111
-      NEXT_PUBLIC_WS_URL: ws://api-gateway:5111
+      - "5110:5110"
+    # 핫 리로드를 위한 볼륨 마운트 (개발 환경)
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    depends_on:
-      - api-gateway
+      - ../../../frontend:/app/frontend:delegated
+    # 환경 변수를 설정하지 않고 코드에서 동적으로 결정 (외부 도메인 지원)
+    # 외부 도메인: https://ralphpark.com → https://ralphpark.com:5111
+    # 로컬 도메인: http://localhost:5110 → http://localhost:5111
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5110"]
       interval: 30s
       timeout: 10s
       start_period: 60s

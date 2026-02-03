@@ -450,3 +450,65 @@ class NewsListResponse(BaseModel):
     page: int = 1  # 현재 페이지
     limit: int = 20  # 페이지당 뉴스 수
     has_more: bool = False  # 더 많은 뉴스 존재 여부
+
+
+# ============================================================================
+# VCP Signal Models (Phase: 활성 VCP 시그널 상위 10개)
+# ============================================================================
+
+
+class VCPSignalItem(BaseModel):
+    """VCP 시그널 아이템 모델"""
+
+    model_config = {"from_attributes": True}  # Pydantic v2: ORM 모드에서 모델 변환 허용
+
+    ticker: str  # 종목 코드
+    name: str  # 종목명
+    market: str  # KOSPI/KOSDAQ
+    signal_type: str  # VCP
+    score: float  # VCP 점수 (0-100)
+    grade: str  # S/A/B/C
+    signal_date: str  # ISO format date
+    entry_price: Optional[float] = None  # 진입가
+    target_price: Optional[float] = None  # 목표가
+    current_price: Optional[float] = None  # 현재가
+    contraction_ratio: Optional[float] = None  # 수축률 (0-1)
+    foreign_5d: int = 0  # 외국인 5일 순매수 (주)
+    inst_5d: int = 0  # 기관 5일 순매수 (주)
+    created_at: str  # 생성 일시 (ISO format)
+
+
+class VCPSignalsResponse(BaseModel):
+    """VCP 시그널 목록 응답 모델"""
+
+    signals: List[VCPSignalItem]  # 시그널 목록 (상위 N개)
+    count: int  # 시그널 수
+    generated_at: Optional[str] = None  # 생성 일시 (ISO format)
+
+
+class SignalsListResponse(BaseModel):
+    """전체 시그널 목록 응답 모델 (VCP + 종가베팅 V2)"""
+
+    signals: List[VCPSignalItem]  # 시그널 목록
+    count: int  # 전체 시그널 수
+    vcp_count: int = 0  # VCP 시그널 수
+    jongga_count: int = 0  # 종가베팅 시그널 수
+    generated_at: Optional[str] = None  # 생성 일시
+
+
+# ============================================================================
+# Stock Sync Models (Phase: 전체 종목 동기화)
+# ============================================================================
+
+
+class StockSyncResponse(BaseModel):
+    """종목 동기화 응답 모델"""
+
+    status: str  # started, completed, error
+    synced: int  # 동기화된 종목 수
+    kospi_count: int = 0  # KOSPI 종목 수
+    kosdaq_count: int = 0  # KOSDAQ 종목 수
+    konex_count: int = 0  # KONEX 종목 수
+    started_at: str  # ISO format timestamp
+    completed_at: Optional[str] = None  # ISO format timestamp
+    error_message: Optional[str] = None

@@ -10,9 +10,37 @@ import logging
 import asyncio
 import numpy as np
 
-from sqlalchemy import select, or_, desc
-from src.database.session import SessionLocal
-from src.database.models import Stock, DailyPrice, InstitutionalFlow
+from sqlalchemy import select, or_, and_, desc
+import os
+import sys
+
+# 현재 파일의 디렉토리를 sys.path에 추가
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
+# 독립 실행을 위한 유연한 import
+try:
+    from ralph_stock_lib.database.session import SessionLocal
+    from ralph_stock_lib.database.models import Stock, DailyPrice, InstitutionalFlow
+except ImportError:
+    # lib 패키지가 설치되지 않은 경우 (프로젝트 루트 실행)
+    try:
+        from src.database.session import SessionLocal
+        from src.database.models import Stock, DailyPrice, InstitutionalFlow
+    except ImportError:
+        # Docker/독립 실행 시 - 프로젝트 루트 경로 추가
+        _project_root = os.path.dirname(_current_dir)
+        if _project_root not in sys.path:
+            sys.path.insert(0, _project_root)
+        try:
+            from src.database.session import SessionLocal
+            from src.database.models import Stock, DailyPrice, InstitutionalFlow
+        except ImportError:
+            # 최후의 수단: 런타임 import
+            raise ImportError(
+                "Database module not found. Please install ralph_stock_lib or run from project root."
+            )
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +56,9 @@ class VCPResult:
     pattern_detected: bool
     signals: List[str]
     analysis_date: date
-    current_price: Optional[float] = None  # 현재가 추가
+    current_price: Optional[float] = None  # 현재가
+    foreign_net_5d: Optional[float] = None  # 외국인 5일 순매수 합계 (주)
+    inst_net_5d: Optional[float] = None      # 기관 5일 순매수 합계 (주)
 
     def to_dict(self) -> Dict[str, Any]:
         """Dict 변환"""
@@ -42,6 +72,8 @@ class VCPResult:
             "signals": self.signals,
             "analysis_date": self.analysis_date.isoformat(),
             "current_price": self.current_price,
+            "foreign_net_5d": self.foreign_net_5d,
+            "inst_net_5d": self.inst_net_5d,
         }
 
 
@@ -64,7 +96,7 @@ class VCPAnalyzer:
         """
         try:
             vcp_score = await self._calculate_vcp_score(ticker)
-            smartmoney_score = await self._calculate_smartmoney_score(ticker)
+            smartmoney_score, foreign_net_5d, inst_net_5d = await self._calculate_smartmoney_score(ticker)
             current_price = await self._get_current_price(ticker)
 
             # 총점: VCP(50%) + SmartMoney(50%)
@@ -88,6 +120,8 @@ class VCPAnalyzer:
                 signals=signals,
                 analysis_date=date.today(),
                 current_price=current_price,
+                foreign_net_5d=foreign_net_5d,
+                inst_net_5d=inst_net_5d,
             )
 
         except Exception as e:
@@ -282,13 +316,15 @@ class VCPAnalyzer:
         total_score = sum(score * weight / 100 for _, score, weight in scores)
         return max(0, min(100, total_score))
 
-    async def _calculate_smartmoney_score(self, ticker: str) -> float:
+    async def _calculate_smartmoney_score(self, ticker: str) -> Tuple[float, Optional[float], Optional[float]]:
         """
-        SmartMoney 점수 계산 (0-100)
+        SmartMoney 점수 계산 (0-100) 및 수급 데이터 조회
 
-        - 외국인 수급 (40%)
-        - 기관 수급 (30%)
-        - 수급 종합 점수 (30%)
+        Returns:
+            Tuple[smartmoney_score, foreign_net_5d, inst_net_5d]
+            - smartmoney_score: SmartMoney 점수 (0-100)
+            - foreign_net_5d: 외국인 5일 순매수 합계 (주), None일 경우 데이터 부족
+            - inst_net_5d: 기관 5일 순매수 합계 (주), None일 경우 데이터 부족
         """
         def fetch_flows() -> List[Tuple]:
             """최근 수급 데이터 조회"""
@@ -312,7 +348,7 @@ class VCPAnalyzer:
 
         if len(flows_data) < 3:
             logger.warning(f"{ticker}: 수급 데이터 부족 ({len(flows_data)}일)")
-            return 50.0  # 기본 점수
+            return 50.0, None, None  # 기본 점수, 수급 데이터 없음
 
         scores = []
 
@@ -381,9 +417,13 @@ class VCPAnalyzer:
         except Exception:
             scores.append(("supply", 50, 30))
 
+        # 5일 순매수 합계 계산 (DB 저장용)
+        foreign_net_5d = sum(recent_foreign) if len(recent_foreign) > 0 else None
+        inst_net_5d = sum(recent_inst) if len(recent_inst) > 0 else None
+
         # 가중 평균 계산
         total_score = sum(score * weight / 100 for _, score, weight in scores)
-        return max(0, min(100, total_score))
+        return max(0, min(100, total_score)), foreign_net_5d, inst_net_5d
 
     async def scan_market(
         self,
@@ -409,21 +449,62 @@ class VCPAnalyzer:
             """동기 DB 작업을 스레드에서 실행"""
             session = SessionLocal()
             try:
-                # 시장 필터
+                # 시장 필터: KOSPI, KOSDAQ 일반주식만 포함
+                # - ETF/ETN/ELW는 market 필드로 자동 제외됨
+                # - 개선: market가 "ALL"인 경우에도 KOSPI, KOSDAQ만 조회
                 query = select(Stock)
                 if market == "KOSPI":
                     query = query.where(Stock.market == "KOSPI")
                 elif market == "KOSDAQ":
                     query = query.where(Stock.market == "KOSDAQ")
-                # ALL인 경우 필터 없이 전체 조회
+                else:
+                    # ALL인 경우 KOSPI, KOSDAQ 일반주식만 포함 (ETF/ETN/ELW 제외)
+                    query = query.where(Stock.market.in_(["KOSPI", "KOSDAQ"]))
 
-                # 관리종목 제외 (NULL 또는 False만 포함)
-                query = query.where(or_(Stock.is_admin == False, Stock.is_admin.is_(None)))
+                # 관리종목, 스팩 종목, 회사채/채권 종목 제외
+                # NULL 또는 False만 포함
+                query = query.where(
+                    or_(
+                        Stock.is_admin == False,
+                        Stock.is_admin.is_(None),
+                    )
+                ).where(
+                    or_(
+                        Stock.is_spac == False,
+                        Stock.is_spac.is_(None),
+                    )
+                ).where(
+                    or_(
+                        Stock.is_bond == False,
+                        Stock.is_bond.is_(None),
+                    )
+                )
 
                 result = session.execute(query)
                 stocks = result.scalars().all()
-                # 종목 정보를 튜플로 반환 (Session 종료 후에도 사용 가능)
-                return [(s.ticker, s.name) for s in stocks]
+
+                # 추가 필터링: ETF/ETN/ELW 제외 (DB market 필드가 부정확한 경우 대비)
+                # - 종목 코드에 알파벳이 포함되면 ELW로 간주
+                # - 종목명에 ETF/ETN 관련 키워드 포함 시 제외
+                filtered_stocks = []
+                etn_etf_keywords = ["ETF", "ETN", "TIGER", "SOL", "ACE", "KIWOOM", "KODEX",
+                                   "TREF", "KOACT", "ARIRANG", "HANARO", "KB", "TIME",
+                                   "PLUS", "RISE", "SOURCE", "MAJOR", "TOP10", "TOP5",
+                                   "TOP3", "레버리지", "인버스", "리츠"]
+
+                for s in stocks:
+                    # ELW 필터링: 종목 코드에 알파벳이 포함되면 제외
+                    if not s.ticker.isdigit():
+                        continue
+
+                    # ETF/ETN 필터링: 종목명에 키워드 포함 시 제외
+                    name_upper = s.name.upper()
+                    if any(keyword in name_upper for keyword in etn_etf_keywords):
+                        continue
+
+                    filtered_stocks.append((s.ticker, s.name))
+
+                return filtered_stocks
             finally:
                 session.close()
 

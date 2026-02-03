@@ -4,6 +4,7 @@ Celery Application Configuration
 """
 
 from celery import Celery
+# from celery.schedules import crontab  # 운영 시 주석 해제
 import os
 
 # Redis URL 설정
@@ -19,6 +20,8 @@ celery_app = Celery(
         "tasks.signal_tasks",
         "tasks.market_tasks",
         "tasks.news_tasks",  # 뉴스 태스크 추가
+        "tasks.sync_tasks",  # 종목 동기화 태스크 추가
+        "tasks.ohlc_tasks",  # OHLC 수집 태스크 추가
     ]
 )
 
@@ -48,41 +51,99 @@ celery_app.conf.update(
 
     # Beat 스케줄러 설정
     beat_schedule={
-        # VCP 스캔 - 매일 오후 3시 30분
-        "scan-vcp-daily": {
-            "task": "tasks.scan_tasks.scan_vcp_patterns",
-            "schedule": 15 * 60,  # 15분 (테스트용)
-            # "schedule": crontab(hour=15, minute=30),
-            "args": ("KOSPI", 30),
+        # ============================================================================
+        # 일일 정기 작업 (테스트용 - 주석 해제하여 운영 전환)
+        # ============================================================================
+
+        # 종목 동기화 - 매일 오전 8시
+        # "sync-stock-list-daily": {
+        #     "task": "tasks.sync_tasks.sync_stock_list",
+        #     "schedule": crontab(hour=8, minute=0),
+        #     "args": (["KOSPI", "KOSDAQ"],),
+        # },
+
+        # VCP 스캔 - 매일 오후 4시
+        # "scan-vcp-daily": {
+        #     "task": "tasks.sync_tasks.trigger_vcp_scan_via_api",
+        #     "schedule": crontab(hour=16, minute=0),
+        # },
+
+        # 테스트용: 1시간 간격
+        "sync-stock-list-test": {
+            "task": "tasks.sync_tasks.sync_stock_list",
+            "schedule": 60 * 60,
+            "args": (["KOSPI", "KOSDAQ"],),
         },
-        # 종가베팅 시그널 - 매일 오후 4시
+
+        "scan-vcp-test": {
+            "task": "tasks.sync_tasks.trigger_vcp_scan_via_api",
+            "schedule": 30 * 60,
+        },
+
+        # ============================================================================
+        # 기존 스케줄
+        # ============================================================================
+
+        # 종가베팅 시그널 - 매일 오후 4시 30분
         "generate-signals-daily": {
             "task": "tasks.signal_tasks.generate_jongga_signals",
-            "schedule": 30 * 60,  # 30분 (테스트용)
-            # "schedule": crontab(hour=16, minute=0),
+            "schedule": 30 * 60,  # 테스트용: 30분 간격
+            # "schedule": crontab(hour=16, minute=30),  # 운영: 매일 16:30
             "args": (10_000_000, 30),
         },
-        # Market Gate 업데이트 - 매일 오전 9시, 오후 3시
+
+        # Market Gate 업데이트 - 5분 간격 실시간 업데이트
         "update-market-gate": {
             "task": "tasks.market_tasks.update_market_gate",
-            "schedule": 60 * 60,  # 1시간 (테스트용)
-            # "schedule": crontab(hour="9,15", minute=0),
+            "schedule": 5 * 60,  # 5분 간격 (실시간 WebSocket 브로드캐스트)
+            # "schedule": crontab(hour="9,15", minute=0),  # 운영: 매일 09:00, 15:00
         },
-        # Phase 5: 뉴스 수집 및 DB 저장 - 매일 오전 9시, 오후 3시 (운영용)
-        # 테스트용: 30분 간격
-        "news-collection-daily": {
+
+        # ============================================================================
+        # 뉴스 수집 스케줄
+        # ============================================================================
+
+        # KOSPI 뉴스 수집
+        "news-collection-kospi": {
             "task": "tasks.news_tasks.scheduled_daily_collection",
-            "schedule": 30 * 60,  # 30분 (테스트용)
-            # "schedule": crontab(hour="9,15", minute=0),  # 운영: 오전 9시, 오후 3시
+            "schedule": 60 * 60,  # 테스트용: 1시간 간격
+            # "schedule": crontab(hour="9,15", minute=0),  # 운영: 매일 09:00, 15:00
             "args": ("KOSPI", 7, 30),
         },
-        # Phase 5: KOSDAQ 뉴스 수집 - 매일 오후 2시 (운영용)
-        # 테스트용: 1시간 간격
+
+        # KOSDAQ 뉴스 수집
         "news-collection-kosdaq": {
             "task": "tasks.news_tasks.scheduled_daily_collection",
-            "schedule": 60 * 60,  # 1시간 (테스트용)
-            # "schedule": crontab(hour=14, minute=0),  # 운영: 오후 2시
+            "schedule": 60 * 60,  # 테스트용: 1시간 간격
+            # "schedule": crontab(hour=14, minute=0),  # 운영: 매일 14:00
             "args": ("KOSDAQ", 7, 30),
+        },
+
+        # ============================================================================
+        # 일별 시세 수집 스케줄
+        # ============================================================================
+
+        # 전 종목 일별 시세 수집 - 매일 오후 4시 (장 마감 후)
+        "collect-daily-prices-daily": {
+            "task": "src.tasks.collection_tasks.sync_all_data",
+            "schedule": 60 * 60,  # 테스트용: 1시간 간격
+            # "schedule": crontab(hour=16, minute=0),  # 운영: 매일 16:00
+        },
+
+        # ============================================================================
+        # OHLC 실시간 수집 스케줄
+        # ============================================================================
+
+        # 장 시작 OHLC 수집 (테스트용: 30분마다 상태 확인)
+        "ohlc-status-check": {
+            "task": "ohlc.get_status",  # @shared_task(name="ohlc.get_status")
+            "schedule": 30 * 60,  # 30분 간격
+        },
+
+        # OHLC 스냅샷 저장 (1분 간격)
+        "ohlc-save-snapshot": {
+            "task": "ohlc.save_snapshot",  # @shared_task(name="ohlc.save_snapshot")
+            "schedule": 1 * 60,  # 1분 간격
         },
     },
 )

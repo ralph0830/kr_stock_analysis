@@ -63,7 +63,9 @@ def check_redis_health() -> str:
     """
     try:
         import redis
-        client = redis.Redis.from_url("redis://localhost:6380/0", decode_responses=True)
+        import os
+        redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+        client = redis.Redis.from_url(redis_url, decode_responses=True)
         client.ping()
         return "up"
     except Exception:

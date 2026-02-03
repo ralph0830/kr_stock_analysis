@@ -1,0 +1,90 @@
+# .github/dependabot.yml
+# Ralph Stock - 의존성 자동 업데이트 설정
+
+version: 2
+updates:
+  # Python 의존성 업데이트
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "ralph"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # 서비스별 Python 의존성
+  - package-ecosystem: "pip"
+    directory: "/services/signal_engine"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "python"
+      - "signal-engine"
+
+  - package-ecosystem: "pip"
+    directory: "/services/vcp_scanner"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "python"
+      - "vcp-scanner"
+
+  - package-ecosystem: "pip"
+    directory: "/services/chatbot"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "python"
+      - "chatbot"
+
+  - package-ecosystem: "pip"
+    directory: "/services/api_gateway"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "python"
+      - "api-gateway"
+
+  # Frontend (npm) 의존성 업데이트
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "ralph"
+    labels:
+      - "dependencies"
+      - "javascript"
+    versioning-strategy: increase
+
+  # GitHub Actions 워크플로우 업데이트
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci"
+    commit-message:
+      prefix: "ci"

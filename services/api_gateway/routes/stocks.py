@@ -10,11 +10,7 @@ from sqlalchemy.orm import Session
 from src.database.session import get_db_session
 from src.repositories.stock_repository import StockRepository
 from src.repositories.signal_repository import SignalRepository
-from src.repositories.daily_price_repository import DailyPriceRepository
 from services.api_gateway.schemas import (
-    StockDetailResponse,
-    StockChartResponse,
-    ChartPoint,
     StockFlowResponse,
     FlowDataPoint,
     SignalHistoryResponse,
@@ -64,132 +60,9 @@ def calculate_smartmoney_score(flows: list) -> float:
     return round(smartmoney_score, 2)
 
 
-@router.get(
-    "/{ticker}",
-    response_model=StockDetailResponse,
-    summary="종목 상세 조회",
-    description="종목 코드를 통해 기본 정보와 최신 가격을 조회합니다.",
-    responses={
-        200: {"description": "조회 성공"},
-        404: {"description": "종목을 찾을 수 없음"},
-    },
-)
-def get_stock_detail(
-    ticker: str,
-    session: Session = Depends(get_db_session),
-) -> StockDetailResponse:
-    """
-    종목 상세 조회
+# 종목 상세(/api/kr/stocks/{ticker}) 및 차트(/api/kr/stocks/{ticker}/chart) 엔드포인트는 main.py에서 통합 처리
+# stocks.py에서는 flow, signals 엔드포인트만 담당
 
-    Args:
-        ticker: 종목 코드 (6자리)
-        session: DB 세션
-
-    Returns:
-        종목 상세 정보
-
-    Raises:
-        HTTPException: 종목을 찾을 수 없음 (404)
-
-    ## Example
-    ```bash
-    curl "http://localhost:5111/api/kr/stocks/005930"
-    ```
-    """
-    repo = StockRepository(session)
-    stock = repo.get_by_ticker(ticker)
-
-    if not stock:
-        raise HTTPException(status_code=404, detail=f"Stock {ticker} not found")
-
-    # 최신 가격 정보 조회 (실시간은 Kiwoom 연동 시)
-    prices = DailyPriceRepository(session).get_latest_by_ticker(ticker, limit=1)
-    current_price = None
-    price_change = None
-    price_change_pct = None
-    volume = None
-
-    if prices:
-        latest = prices[0]
-        current_price = latest.close_price
-        volume = latest.volume
-        # 전일 대비 계산 (이전 데이터 필요)
-        prev_prices = DailyPriceRepository(session).get_latest_by_ticker(
-            ticker, limit=2
-        )
-        if len(prev_prices) > 1:
-            prev_close = prev_prices[1].close_price
-            price_change = current_price - prev_close
-            price_change_pct = (price_change / prev_close * 100) if prev_close else 0
-
-    return StockDetailResponse(
-        ticker=stock.ticker,
-        name=stock.name,
-        market=stock.market,
-        sector=stock.sector,
-        current_price=current_price,
-        price_change=price_change,
-        price_change_pct=price_change_pct,
-        volume=volume,
-        updated_at=stock.updated_at,
-    )
-
-
-@router.get(
-    "/{ticker}/chart",
-    response_model=StockChartResponse,
-    summary="종목 차트 데이터 조회",
-    description="지정된 기간 동안의 종목 차트 데이터(OHLCV)를 조회합니다. TimescaleDB hypertable을 활용하여 빠른 조회를 지원합니다.",
-    responses={
-        200: {"description": "조회 성공"},
-        404: {"description": "종목을 찾을 수 없음"},
-    },
-)
-def get_stock_chart(
-    ticker: str,
-    days: int = Query(default=30, ge=1, le=365, description="조회 일수"),
-    session: Session = Depends(get_db_session),
-) -> StockChartResponse:
-    """
-    종목 차트 데이터 조회
-
-    Args:
-        ticker: 종목 코드
-        days: 조회 일수 (기본 30일, 최대 365일)
-        session: DB 세션
-
-    Returns:
-        차트 데이터 (OHLCV)
-
-    ## Example
-    ```bash
-    curl "http://localhost:5111/api/kr/stocks/005930/chart?days=90"
-    ```
-    """
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days)
-
-    repo = DailyPriceRepository(session)
-    prices = repo.get_by_ticker_and_date_range(ticker, start_date, end_date)
-
-    chart_points = [
-        ChartPoint(
-            date=p.date,
-            open=p.open_price,
-            high=p.high_price,
-            low=p.low_price,
-            close=p.close_price,
-            volume=p.volume,
-        )
-        for p in prices
-    ]
-
-    return StockChartResponse(
-        ticker=ticker,
-        period=f"{days}d",
-        data=chart_points,
-        total_points=len(chart_points),
-    )
 
 
 @router.get(

@@ -25,6 +25,9 @@ class Stock(Base):
     market_cap = Column(BigInteger, nullable=True)  # 시가총액 (원)
     is_etf = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)  # 관리종목
+    is_spac = Column(Boolean, default=False)  # 스팩(SPAC) 종목
+    is_bond = Column(Boolean, default=False)  # 회사채/채권 종목
+    is_excluded_etf = Column(Boolean, default=False)  # 제외할 ETF/ETN (TIGER, SOL, ACE, KIWOOM, KODEX, 인버스, TOP10, ETN 등)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

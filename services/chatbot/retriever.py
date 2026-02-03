@@ -4,14 +4,30 @@ RAG 기반 지식 검색 엔진
 """
 
 import logging
+import sys
+import os
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
-from src.repositories.stock_repository import StockRepository
-from src.repositories.signal_repository import SignalRepository
-from services.chatbot.kiwoom_integration import (
-    is_kiwoom_available,
-)
+# 현재 파일의 디렉토리를 sys.path에 추가
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
+
+# 독립 실행을 위한 유연한 import
+try:
+    from src.repositories.stock_repository import StockRepository
+    from src.repositories.signal_repository import SignalRepository
+except ImportError:
+    from ralph_stock_lib.repositories.stock_repository import StockRepository
+    from ralph_stock_lib.repositories.signal_repository import SignalRepository
+
+try:
+    from chatbot.kiwoom_integration import is_kiwoom_available
+    from chatbot.ticker_parser import get_ticker_parser, TickerType
+except ImportError:
+    from services.chatbot.kiwoom_integration import is_kiwoom_available
+    from services.chatbot.ticker_parser import get_ticker_parser, TickerType
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +48,11 @@ class KnowledgeRetriever:
     def _get_stock_repo(self) -> StockRepository:
         """StockRepository lazy loading"""
         if self._stock_repo is None:
-            from src.database.session import get_db_session
+            try:
+                from src.database.session import get_db_session
+            except ImportError:
+                from ralph_stock_lib.database.session import get_db_session
+
             session_gen = get_db_session()
             session = next(session_gen)
             self._stock_repo = StockRepository(session)
@@ -42,7 +62,11 @@ class KnowledgeRetriever:
     def _get_signal_repo(self) -> SignalRepository:
         """SignalRepository lazy loading"""
         if self._signal_repo is None:
-            from src.database.session import get_db_session
+            try:
+                from src.database.session import get_db_session
+            except ImportError:
+                from ralph_stock_lib.database.session import get_db_session
+
             session_gen = get_db_session()
             session = next(session_gen)
             self._signal_repo = SignalRepository(session)
@@ -52,6 +76,8 @@ class KnowledgeRetriever:
     def search_stocks(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
         종목 검색
+
+        DB에 없는 종목도 쿼리에서 티커(표준/ELW)를 추출하여 처리
 
         Args:
             query: 검색어 (종목명 또는 티커)
@@ -65,10 +91,15 @@ class KnowledgeRetriever:
 
         try:
             repo = self._get_stock_repo()
+            ticker_parser = get_ticker_parser()
 
-            # 티커 검색 (6자리 숫자)
-            if query.isdigit() and len(query) == 6:
-                stock = repo.get_by_ticker(query)
+            # TickerParser로 쿼리에서 모든 티커 패턴 추출
+            tickers = ticker_parser.extract(query)
+
+            if tickers:
+                # 첫 번째 티커로 검색
+                ticker = tickers[0]
+                stock = repo.get_by_ticker(ticker)
                 if stock:
                     return [{
                         "ticker": stock.ticker,
@@ -76,7 +107,32 @@ class KnowledgeRetriever:
                         "market": stock.market,
                         "sector": stock.sector,
                     }]
+                else:
+                    # DB에 없는 티커지만 패턴으로 식별됨
+                    # 실시간 뉴스 수집을 위해 기본 종목 정보 생성
+                    ticker_type = ticker_parser.get_ticker_type(ticker)
 
+                    # ELW 티커인 경우 market 필드에 표시
+                    if ticker_type == TickerType.ELW:
+                        market = "KOSDAQ-ELW"
+                        name_suffix = " (ELW)"
+                    elif ticker_type == TickerType.RIGHTS:
+                        market = "KOSPI/KOSDAQ-RIGHTS"
+                        name_suffix = " (권리)"
+                    else:
+                        market = "KOSPI/KOSDAQ"
+                        name_suffix = ""
+
+                    return [{
+                        "ticker": ticker,
+                        "name": f"{ticker}종목{name_suffix}",
+                        "market": market,
+                        "sector": "기타",
+                        "_is_fallback": True,  # DB에 없는 종목 표시
+                        "_ticker_type": ticker_type.value,  # 티커 타입 저장
+                    }]
+
+            # 티커 패턴이 없으면 기존 로직 (이름 검색)
             # 이름 검색 - 먼저 전체 쿼리로 시도
             results = repo.search(query, limit=limit)
             if results:
@@ -92,7 +148,7 @@ class KnowledgeRetriever:
 
             # 전체 쿼리로 결과가 없으면, 쿼리에서 주요 단어 추출 후 재시도
             # 예: "삼성전자 현재가 알려줘" -> "삼성전자" 추출
-            words = query.replace("현재가", "").replace("알려줘", "").replace("가격", "")
+            words = query.replace("현재가", "").replace("알려줘", "").replace("가격", "").replace("뉴스", "")
             words = words.strip().split()
             for word in words:
                 if len(word) >= 2:  # 최소 2글자
@@ -226,6 +282,8 @@ class KnowledgeRetriever:
         """
         뉴스 검색 (AI Analysis)
 
+        DB에 뉴스가 없으면 실시간으로 네이버 뉴스 수집 (Phase 6: Real-time News)
+
         Args:
             ticker: 종목 티커 (선택)
             limit: 최대 결과 수
@@ -234,8 +292,13 @@ class KnowledgeRetriever:
             뉴스/분석 리스트
         """
         try:
-            from src.database.session import get_db_session
-            from src.database.models import AIAnalysis
+            try:
+                from src.database.session import get_db_session
+                from src.database.models import AIAnalysis
+            except ImportError:
+                from ralph_stock_lib.database.session import get_db_session
+                from ralph_stock_lib.database.models import AIAnalysis
+
             from sqlalchemy import desc
 
             db = next(get_db_session())
@@ -246,7 +309,7 @@ class KnowledgeRetriever:
 
             results = query.order_by(desc(AIAnalysis.created_at)).limit(limit).all()
 
-            return [
+            news_list = [
                 {
                     "ticker": a.ticker,
                     "summary": a.summary,
@@ -259,8 +322,88 @@ class KnowledgeRetriever:
                 for a in results
             ]
 
+            # 특정 종목에 대한 요청이고, DB에 뉴스가 없으면 실시간 수집
+            if ticker and not any(n.get("news_urls") for n in news_list):
+                logger.info(f"DB에 {ticker} 뉴스 없음, 실시간 네이버 뉴스 수집 시작")
+                realtime_news = self._fetch_realtime_news(ticker, limit)
+                if realtime_news:
+                    news_list = realtime_news
+
+            return news_list
+
         except Exception as e:
             logger.error(f"뉴스 검색 실패: {e}")
+            return []
+
+    def _fetch_realtime_news(
+        self,
+        ticker: str,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        실시간 네이버 뉴스 수집
+
+        Args:
+            ticker: 종목 티커
+            limit: 최대 결과 수
+
+        Returns:
+            뉴스 리스트
+        """
+        try:
+            try:
+                from src.collectors.news_collector import NewsCollector
+            except ImportError:
+                # Docker에서는 src 모듈 사용
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    "news_collector",
+                    os.path.join(os.path.dirname(_current_dir), "src", "collectors", "news_collector.py")
+                )
+                if spec and spec.loader:
+                    news_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(news_module)
+                    NewsCollector = news_module.NewsCollector
+                else:
+                    raise ImportError("Cannot import NewsCollector")
+
+            collector = NewsCollector()
+            articles = collector.fetch_stock_news(
+                ticker=ticker,
+                days=7,
+                max_articles=limit
+            )
+
+            if not articles:
+                logger.warning(f"{ticker}에 대한 네이버 뉴스 수집 결과 없음")
+                return []
+
+            # 모든 기사를 하나의 분석 결과로 통합 (DB 형식과 동일하게)
+            all_news_urls = [
+                {"title": article.title, "url": article.url}
+                for article in articles
+            ]
+
+            # 첫 번째 기사의 소스를 사용하여 종목명 추정 시도 (추후 활용을 위해 주석 처리)
+            # source = articles[0].source if articles and articles[0].source else "네이버뉴스"
+
+            news_data = [{
+                "ticker": ticker,
+                "summary": f"최근 {len(articles)}건의 네이버 뉴스를 수집했습니다. "
+                          f"종목 관련 주요 이슈와 시장 동향을 파악할 수 있습니다.",
+                "recommendation": "HOLD",
+                "sentiment": "neutral",
+                "score": 0.0,
+                "news_urls": all_news_urls,  # 모든 뉴스 URL을 하나의 리스트에 저장
+                "created_at": datetime.now().isoformat(),
+                "_is_realtime": True,  # 실시간 수집 표시
+            }]
+
+            logger.info(f"✅ {ticker} 실시간 뉴스 {len(articles)}건 수집 완료")
+            return news_data
+
+        except Exception as e:
+            logger.error(f"실시간 뉴스 수집 실패 ({ticker}): {e}")
             return []
 
     def retrieve_context(self, query: str) -> Dict[str, Any]:
@@ -338,8 +481,12 @@ class KnowledgeRetriever:
         Raises:
             Exception: Kiwoom API 조회 실패 시
         """
-        from services.chatbot.price_cache import get_cached_price
-        from services.chatbot.kiwoom_integration import KiwoomAPIError
+        try:
+            from chatbot.price_cache import get_cached_price
+            from chatbot.kiwoom_integration import KiwoomAPIError
+        except ImportError:
+            from services.chatbot.price_cache import get_cached_price
+            from services.chatbot.kiwoom_integration import KiwoomAPIError
 
         try:
             # 캐싱 레이어를 통한 가격 조회 (Redis 캐싱 + Kiwoom API)
@@ -365,10 +512,16 @@ class KnowledgeRetriever:
         Raises:
             Exception: Kiwoom API 조회 실패 시
         """
-        from services.chatbot.kiwoom_integration import (
-            get_kiwoom_stock_info,
-            KiwoomAPIError,
-        )
+        try:
+            from chatbot.kiwoom_integration import (
+                get_kiwoom_stock_info,
+                KiwoomAPIError,
+            )
+        except ImportError:
+            from services.chatbot.kiwoom_integration import (
+                get_kiwoom_stock_info,
+                KiwoomAPIError,
+            )
 
         try:
             stock_info = await get_kiwoom_stock_info(ticker)

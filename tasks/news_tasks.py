@@ -358,19 +358,19 @@ def collect_and_save_task(
                 "saved_count": 0,
             }
 
-        # 2. news_urls 추출
+        # 2. news_urls 추출 (NewsArticle 객체에서 속성 접근)
         news_urls = [
-            {"title": article.get("title", ""), "url": article.get("url", "")}
+            {"title": article.title, "url": article.url}
             for article in articles
-            if article.get("url")  # URL이 있는 기사만
+            if article.url  # URL이 있는 기사만
         ]
 
         # 3. 감성 분석
         analyzer = SentimentAnalyzer()
 
         # 전체 분석을 위한 텍스트 결합
-        all_titles = " ".join([a.get("title", "") for a in articles])
-        all_content = " ".join([a.get("content", "") for a in articles])
+        all_titles = " ".join([a.title for a in articles])
+        all_content = " ".join([a.content for a in articles])
 
         sentiment_result = analyzer.analyze(
             title=all_titles,

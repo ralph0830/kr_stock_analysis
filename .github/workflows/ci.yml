@@ -1,0 +1,341 @@
+# .github/workflows/ci.yml
+# Ralph Stock - CI 파이프라인
+# 모든 PR과 push에서 실행
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ralph-stock
+
+jobs:
+  # ==============================================================================
+  # Job 1: Python Linting (ruff)
+  # ==============================================================================
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+
+      - name: Python 설치
+        run: uv python install 3.12
+
+      - name: 의존성 설치
+        run: |
+          uv sync --dev
+          uv pip install ruff
+
+      - name: ruff lint 검사
+        run: |
+          uv run ruff check src/ services/ tasks/ tests/
+
+      - name: ruff format 검사
+        run: |
+          uv run ruff format --check src/ services/ tasks/ tests/
+
+  # ==============================================================================
+  # Job 2: Type Checking (mypy)
+  # ==============================================================================
+  type-check:
+    name: Type Check (mypy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+
+      - name: Python 설치
+        run: uv python install 3.12
+
+      - name: 의존성 설치
+        run: |
+          uv sync --dev
+          uv pip install mypy
+
+      - name: mypy type 검사
+        run: |
+          uv run mypy src/ services/ --ignore-missing-imports
+        continue-on-error: true  # mypy 오류가 있어도 실패하지 않음 (점진적 도입)
+
+  # ==============================================================================
+  # Job 3: 단위 테스트
+  # ==============================================================================
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+
+      - name: Python 설치
+        run: uv python install 3.12
+
+      - name: 의존성 설치
+        run: uv sync --dev
+
+      - name: 단위 테스트 실행
+        run: |
+          uv run pytest tests/unit/ -v --tb=short --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: 커버리지 업로드
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unit
+          name: unit-coverage
+
+  # ==============================================================================
+  # Job 4: 통합 테스트 (Docker 필요)
+  # ==============================================================================
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg15
+        env:
+          POSTGRES_DB: ralph_stock_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+
+      - name: Python 설치
+        run: uv python install 3.12
+
+      - name: 의존성 설치
+        run: uv sync --dev
+
+      - name: 통합 테스트 실행
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ralph_stock_test
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          uv run pytest tests/integration/ -v --tb=short
+
+  # ==============================================================================
+  # Job 5: 서비스별 테스트
+  # ==============================================================================
+  test-services:
+    name: Test ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api_gateway
+          - vcp_scanner
+          - signal_engine
+          - chatbot
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+
+      - name: Python 설치
+        run: uv python install 3.12
+
+      - name: 서비스 의존성 설치
+        run: |
+          cd services/${{ matrix.service }}
+          uv sync --dev
+          cd ../..
+
+      - name: 서비스 테스트 실행
+        run: |
+          uv run pytest services/${{ matrix.service }}/tests/ -v --tb=short --cov=services/${{ matrix.service }} --cov-report=term-missing
+
+  # ==============================================================================
+  # Job 6: Docker 빌드 및 GHCR 푸시
+  # ==============================================================================
+  build-and-push:
+    name: Build & Push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [lint, test-unit, test-services]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - vcp-scanner
+          - signal-engine
+          - chatbot
+        include:
+          - service: api-gateway
+            dockerfile: services/api_gateway/Dockerfile
+          - service: vcp-scanner
+            dockerfile: services/vcp_scanner/Dockerfile
+          - service: signal-engine
+            dockerfile: services/signal_engine/Dockerfile
+          - service: chatbot
+            dockerfile: services/chatbot/Dockerfile
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: Docker 메타데이터 추출
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: GitHub Container Registry 로그인
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker 이미지 빌드 및 푸시
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          target: production
+
+      - name: 이미지 정보 출력
+        run: |
+          echo "Image: ${{ steps.meta.outputs.tags }}"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+
+  # ==============================================================================
+  # Job 7: Frontend 빌드 테스트
+  # ==============================================================================
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 코드
+        uses: actions/checkout@v4
+
+      - name: Node.js 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 의존성 설치
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint 검사
+        working-directory: frontend
+        run: npm run lint
+        continue-on-error: true
+
+      - name: 빌드 테스트
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:5111
+          NEXT_PUBLIC_WS_URL: ws://localhost:5111
+        run: npm run build
+
+  # ==============================================================================
+  # Job 8: CI 요약
+  # ==============================================================================
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint, type-check, test-unit, test-integration, test-services, build-and-push, build-frontend]
+    if: always()
+
+    steps:
+      - name: CI 결과 요약
+        run: |
+          echo "## CI 결과 요약" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Type Check | ${{ needs.type-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.test-unit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ needs.test-integration.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Service Tests | ${{ needs.test-services.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | ${{ needs.build-and-push.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend Build | ${{ needs.build-frontend.result }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: CI 실패 시 체크
+        if: |
+          needs.lint.result == 'failure' ||
+          needs.test-unit.result == 'failure' ||
+          needs.test-services.result == 'failure'
+        run: exit 1

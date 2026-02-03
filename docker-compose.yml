@@ -16,6 +16,7 @@
 # Include modular service files
 include:
   - docker/compose/infra.yml
+  - docker-compose.dev.yml
   - docker/compose/services/api-gateway.yml
   - docker/compose/services/vcp-scanner.yml
   - docker/compose/services/signal-engine.yml
@@ -24,74 +25,57 @@ include:
   - docker/compose/services/celery.yml
 
 # Application services with profiles
-# Build context is overridden to be project root relative
 services:
   api-gateway:
     profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/api-gateway.yml
-      service: api-gateway
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: services/api_gateway/Dockerfile
 
   vcp-scanner:
     profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/vcp-scanner.yml
-      service: vcp-scanner
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: services/vcp_scanner/Dockerfile
 
   signal-engine:
     profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/signal-engine.yml
-      service: signal-engine
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: services/signal_engine/Dockerfile
 
   chatbot:
     profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/chatbot.yml
-      service: chatbot
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: services/chatbot/Dockerfile
 
-  frontend:
-    profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/frontend.yml
-      service: frontend
-    build:
-      context: ./frontend
-
   celery-worker:
     profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/celery.yml
-      service: celery-worker
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: Dockerfile.worker
 
   celery-beat:
     profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/celery.yml
-      service: celery-beat
+    env_file:
+      - .env
     build:
       context: .
       dockerfile: Dockerfile.worker
 
-  flower:
-    profiles: [dev, prod]
-    extends:
-      file: docker/compose/services/celery.yml
-      service: flower
-
-# Network and volumes are defined in infra.yml
+networks:
+  ralph-network:
+    driver: bridge
+  host:
+    driver: bridge

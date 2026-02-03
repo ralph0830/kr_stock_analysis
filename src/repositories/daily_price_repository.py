@@ -119,3 +119,132 @@ class DailyPriceRepository(BaseRepository[DailyPrice]):
         if prices:
             return prices[0].volume
         return None
+
+    def upsert_ohlc(
+        self,
+        ticker: str,
+        trade_date: date,
+        open_price: float,
+        high_price: float,
+        low_price: float,
+        close_price: float,
+        volume: int,
+        foreign_net_buy: int = 0,
+        inst_net_buy: int = 0,
+    ) -> DailyPrice:
+        """
+        OHLC 데이터 삽입 또는 업데이트 (Upsert)
+
+        기존 레코드가 있으면 OHLC를 갱신하고, 없으면 새로 생성합니다.
+        실시간 데이터 수집 시 호출 횟수를 줄이기 위해 마지막 저장 시간을 추적합니다.
+
+        Args:
+            ticker: 종목 코드 (6자리)
+            trade_date: 거래 날짜
+            open_price: 시가
+            high_price: 고가
+            low_price: 저가
+            close_price: 종가
+            volume: 거래량
+            foreign_net_buy: 외국인 순매수 (선택)
+            inst_net_buy: 기관 순매수 (선택)
+
+        Returns:
+            저장된 DailyPrice 객체
+        """
+        # 기존 레코드 조회
+        existing = self.session.execute(
+            select(DailyPrice).where(
+                and_(
+                    DailyPrice.ticker == ticker,
+                    DailyPrice.date == trade_date,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            # 기존 레코드 업데이트 (실시간 갱신)
+            existing.open_price = min(existing.open_price or float('inf'), open_price)
+            existing.high_price = max(existing.high_price or 0, high_price)
+            existing.low_price = min(existing.low_price or float('inf'), low_price)
+            existing.close_price = close_price
+            existing.volume = volume
+            if foreign_net_buy != 0:
+                existing.foreign_net_buy = foreign_net_buy
+            if inst_net_buy != 0:
+                existing.inst_net_buy = inst_net_buy
+            self.session.flush()
+            return existing
+        else:
+            # 새 레코드 생성
+            new_price = DailyPrice(
+                ticker=ticker,
+                date=trade_date,
+                open_price=open_price,
+                high_price=high_price,
+                low_price=low_price,
+                close_price=close_price,
+                volume=volume,
+                foreign_net_buy=foreign_net_buy,
+                inst_net_buy=inst_net_buy,
+            )
+            self.session.add(new_price)
+            self.session.flush()
+            return new_price
+
+    def update_realtime_bar(
+        self,
+        ticker: str,
+        trade_date: date,
+        price: float,
+        volume: int,
+        is_first_trade: bool = False,
+    ) -> DailyPrice:
+        """
+        실시간 체결 데이터로 OHLC 바 업데이트
+
+        새로운 체결가가 들어올 때마다 호출하여 OHLC를 갱신합니다.
+
+        Args:
+            ticker: 종목 코드
+            trade_date: 거래 날짜
+            price: 체결가
+            volume: 누적 거래량
+            is_first_trade: 장 시작 첫 거래 여부 (시가 설정용)
+
+        Returns:
+            업데이트된 DailyPrice 객체
+        """
+        existing = self.session.execute(
+            select(DailyPrice).where(
+                and_(
+                    DailyPrice.ticker == ticker,
+                    DailyPrice.date == trade_date,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            # 기존 바 업데이트
+            if is_first_trade and existing.open_price is None:
+                existing.open_price = price
+            existing.high_price = max(existing.high_price or 0, price)
+            existing.low_price = min(existing.low_price or float('inf'), price) if existing.low_price is not None else price
+            existing.close_price = price
+            existing.volume = volume
+            self.session.flush()
+            return existing
+        else:
+            # 새 바 생성 (장 시작 첫 거래)
+            new_price = DailyPrice(
+                ticker=ticker,
+                date=trade_date,
+                open_price=price,
+                high_price=price,
+                low_price=price,
+                close_price=price,
+                volume=volume,
+            )
+            self.session.add(new_price)
+            self.session.flush()
+            return new_price
