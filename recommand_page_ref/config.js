@@ -1,16 +1,16 @@
 // 종가 베팅 대시보드 - 키움 REST API 설정
-// 여기에 키움 REST API 인증 정보를 입력하세요
+// 모든 인증 정보는 프로젝트 루트의 .env 파일에서 관리합니다
 
 const KIWOOM_CONFIG = {
     // ========================================
-    // 🔑 키움 REST API 인증 정보 입력
+    // 🔑 키움 REST API 인증 정보
+    // .env 파일에서 설정합니다:
+    // - KIWOOM_APP_KEY
+    // - KIWOOM_SECRET_KEY
     // ========================================
 
-    // API 키 (발급받은 appkey 입력)
-    APP_KEY: 'd9ke3uKB52_OXx9lpKBruO2IaB1m4jz7cg6KGPWRITQ',
-
-    // 시크릿 키 (발급받은 appsecret 입력)
-    APP_SECRET: 'qctCqqSPMtZelgcsS6-Ldx_w03Xdi2t_GFm7GfHIBJc',
+    APP_KEY: '', // process.env.KIWOOM_APP_KEY 사용 권장
+    APP_SECRET: '', // process.env.KIWOOM_SECRET_KEY 사용 권장
 
     // ========================================
     // 서버 설정 (기본값 - 수정 불필요)
@@ -37,11 +37,14 @@ const KIWOOM_CONFIG = {
 
     // ========================================
     // 텔레그램 알림 설정
+    // .env 파일에서 설정합니다:
+    // - TELEGRAM_BOT_TOKEN
+    // - TELEGRAM_CHAT_ID
     // ========================================
     TELEGRAM: {
         ENABLE: false,
-        BOT_TOKEN: '8206855941:AAGdXPfxfaGCfVstzZMfG4a97qsqdeD9GCY',
-        CHAT_ID: 'YOUR_TELEGRAM_CHAT_ID_HERE',
+        BOT_TOKEN: '', // process.env.TELEGRAM_BOT_TOKEN 사용 권장
+        CHAT_ID: '', // process.env.TELEGRAM_CHAT_ID 사용 권장
         SEND_TIME: '15:20' // 장 마감 직전 추천 및 데이터 저장 시간 (HH:mm)
     }
 };

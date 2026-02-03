@@ -3,6 +3,10 @@
  * 키움증권 REST API 프록시 서버
  */
 
+// 환경변수 로드 (프로젝트 루트의 .env 사용)
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
+
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
@@ -26,8 +30,8 @@ const PORT = 3005;
 // 🔑 키움증권 REST API 설정
 // ========================================
 const KIWOOM_CONFIG = {
-    APP_KEY: process.env.KIWOOM_APP_KEY || (UI_CONFIG && UI_CONFIG.APP_KEY && !UI_CONFIG.APP_KEY.includes('YOUR_') ? UI_CONFIG.APP_KEY : 'd9ke3uKB52_OXx9lpKBruO2IaB1m4jz7cg6KGPWRITQ'),
-    SECRET_KEY: process.env.KIWOOM_SECRET_KEY || (UI_CONFIG && UI_CONFIG.APP_SECRET && !UI_CONFIG.APP_SECRET.includes('YOUR_') ? UI_CONFIG.APP_SECRET : 'qctCqqSPMtZelgcsS6-Ldx_w03Xdi2t_GFm7GfHIBJc'),
+    APP_KEY: process.env.KIWOOM_APP_KEY || '',
+    SECRET_KEY: process.env.KIWOOM_SECRET_KEY || '',
     USE_REAL_SERVER: (UI_CONFIG && UI_CONFIG.hasOwnProperty('USE_REAL_SERVER')) ? UI_CONFIG.USE_REAL_SERVER : true,
     // 키움증권 REST API 서버
     REAL_SERVER: 'https://api.kiwoom.com',
@@ -726,7 +730,9 @@ async function updateHistoryGaps() {
 }
 
 async function sendTelegram(text) {
-    const { BOT_TOKEN, CHAT_ID } = UI_CONFIG.TELEGRAM;
+    const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || (UI_CONFIG && UI_CONFIG.TELEGRAM && UI_CONFIG.TELEGRAM.BOT_TOKEN);
+    const CHAT_ID = process.env.TELEGRAM_CHAT_ID || (UI_CONFIG && UI_CONFIG.TELEGRAM && UI_CONFIG.TELEGRAM.CHAT_ID);
+
     if (!BOT_TOKEN || BOT_TOKEN.includes('YOUR_')) {
         console.error('❌ 텔레그램 BOT_TOKEN이 설정되지 않았습니다.');
         return;
