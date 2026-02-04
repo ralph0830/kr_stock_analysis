@@ -148,6 +148,45 @@ Frontend (`frontend/.env.local`):
 
 ---
 
+## Claude Code Sub-agent 활용 가이드 ⭐
+
+프로젝트 진행 시 복잡한 작업은 **반드시 서브에이전트를 활용**하여 효율성을 극대화하세요.
+
+### 서브에이전트 사용 시나리오
+
+| 작업 유형 | 추천 Agent | 명령어 예시 |
+|----------|-----------|----------|
+| 코드베이스 탐색 | `Explore` | `전체 VCP 스캐너 구조 분석` |
+| 복잡한 구현 | `Plan` | `새로운 API 엔드포인트 설계` |
+| 파이썬 개발 | `python-expert` | `FastAPI 서비스 구현` |
+| 프론트엔드 개발 | `frontend-architect` | `Next.js 페이지 추가` |
+| 테스트 작성 | `quality-engineer` | `통합 테스트 작성` |
+| 성능 최적화 | `performance-engineer` | `쿼리 성능 분석` |
+| 리팩토링 | `refactoring-expert` | `코드 정리 및 개선` |
+| 백엔드 설계 | `backend-architect` | `DB 스키마 설계` |
+
+### Task 툴 활용 패턴
+
+```markdown
+# 코드베이스 탐색 (새로운 기능 추가 전)
+"프로젝트의 전체 인증 구조를 분석해줘"
+
+# 구현 계획 수립
+"종가베팅 V3 엔진을 위한 구현 계획을 세워줘"
+
+# 병렬 작업 위임
+"다음 작업들을 병렬로 실행해줘: 1) 테스트 작성, 2) API 문서화, 3) 리팩토링"
+```
+
+### 활용 원칙
+
+- **3단계 이상 작업**: 반드시 서브에이전트 위임
+- **다중 파일 변경**: `Task` 도구로 병렬 처리
+- **탐색 작업**: `Explore` agent로 자동화
+- **구현 작업**: 전문 agent 활용 (`python-expert`, `frontend-architect`)
+
+---
+
 ## Repository Pattern
 
 Always use Repository pattern for database access:
@@ -195,4 +234,4 @@ ralph_stock_analysis/
 
 ---
 
-*Last updated: 2026-02-03*
+*Last updated: 2026-02-04*

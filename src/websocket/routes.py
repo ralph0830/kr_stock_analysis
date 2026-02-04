@@ -295,3 +295,49 @@ async def get_active_tickers():
         "active_tickers": list(price_broadcaster.get_active_tickers()),
         "default_tickers": list(price_broadcaster.DEFAULT_TICKERS),
     }
+
+
+@router.get("/ws/status")
+async def get_websocket_status():
+    """
+    WebSocket 연결 상태 조회
+
+    Returns:
+        WebSocket 연결 상태 정보
+    """
+    from src.websocket.server import get_heartbeat_manager
+
+    heartbeat_mgr = get_heartbeat_manager()
+
+    # 활성 연결 수
+    active_connections = len(connection_manager.active_connections)
+
+    # 활성 토픽 수 (구독자가 있는 토�)
+    active_topics = len([t for t, subs in connection_manager.subscriptions.items() if subs])
+
+    # 전체 구독 수 (중복 포함)
+    total_subscriptions = sum(len(subs) for subs in connection_manager.subscriptions.values())
+
+    # 하트비트 상태
+    heartbeat_running = heartbeat_mgr.is_running() if heartbeat_mgr else False
+
+    # 가격 브로드캐스터 상태
+    broadcaster_running = price_broadcaster.is_running()
+    broadcaster_active_tickers = list(price_broadcaster.get_active_tickers())
+
+    return {
+        "websocket": {
+            "active_connections": active_connections,
+            "active_topics": active_topics,
+            "total_subscriptions": total_subscriptions,
+        },
+        "heartbeat": {
+            "running": heartbeat_running,
+        },
+        "price_broadcaster": {
+            "running": broadcaster_running,
+            "active_tickers": broadcaster_active_tickers,
+            "ticker_count": len(broadcaster_active_tickers),
+        },
+        "timestamp": connection_manager.get_last_activity(),
+    }
