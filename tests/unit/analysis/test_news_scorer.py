@@ -250,9 +250,45 @@ class TestNewsScorerCalculateWeeklyScore:
 
     def test_주간평균점수_계산(self):
         """주간 평균 점수 계산"""
-        # Arrange: Mock을 사용하지 않고 실제 Mock 분석 결과 사용
-        # Mock 분석은 "호조", "개선", "강세" 등 긍정 키워드를 인식하여 3점 부여
+        # Arrange: Mock SentimentAnalyzer 사용
+        from unittest.mock import Mock
+
         scorer = NewsScorer()
+
+        # SentimentAnalyzer mock 설정
+        mock_analyzer = Mock()
+
+        def mock_analyze_side_effect(title, content):
+            text = title + " " + content
+            if "호조" in text or "상승" in text or "개선" in text:
+                from src.analysis.sentiment_analyzer import Sentiment, SentimentResult
+                return SentimentResult(
+                    sentiment=Sentiment.POSITIVE,
+                    confidence=0.8,
+                    keywords=["긍정"],
+                    summary="호조",
+                    score=3.0
+                )
+            elif "강세" in text or "증가" in text or "매수" in text:
+                from src.analysis.sentiment_analyzer import Sentiment, SentimentResult
+                return SentimentResult(
+                    sentiment=Sentiment.POSITIVE,
+                    confidence=0.9,
+                    keywords=["강세"],
+                    summary="강세",
+                    score=3.0
+                )
+            from src.analysis.sentiment_analyzer import Sentiment, SentimentResult
+            return SentimentResult(
+                sentiment=Sentiment.NEUTRAL,
+                confidence=0.5,
+                keywords=[],
+                summary="중립",
+                score=1.5
+            )
+
+        mock_analyzer.analyze.side_effect = mock_analyze_side_effect
+        scorer.analyzer = mock_analyzer
 
         weekly_articles = {
             date(2026, 1, 26): [{"title": "호조", "content": "상승"}],

@@ -16,14 +16,14 @@ class TestConnectionManager:
         """연결 테스트"""
         manager = ConnectionManager()
         websocket = AsyncMock()
-        websocket.accept = AsyncMock()
 
         client_id = "test_client"
+        # ConnectionManager.connect()는 이미 accept()가 호출된 websocket을 받는다
+        # accept()는 routes.py의 websocket_endpoint에서 호출됨
         await manager.connect(websocket, client_id)
 
         assert client_id in manager.active_connections
         assert manager.active_connections[client_id] == websocket
-        assert websocket.accept.called
 
     def test_disconnect(self):
         """연결 종료 테스트"""

@@ -133,17 +133,19 @@ class TestKRXCollectorFetchDailyPrices:
 
     def test_fetch_daily_prices_returns_dataframe(self, collector):
         """DataFrame 형식 반환 확인"""
+        import numpy as np
+
         df = collector.fetch_daily_prices("005930")
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) > 0
 
-        # 데이터 타입 확인
-        assert df["open"].dtype in [float, int]
-        assert df["high"].dtype in [float, int]
-        assert df["low"].dtype in [float, int]
-        assert df["close"].dtype in [float, int]
-        assert df["volume"].dtype in [int]
+        # 데이터 타입 확인 (numpy dtype 사용)
+        assert np.issubdtype(df["open"].dtype, np.number)
+        assert np.issubdtype(df["high"].dtype, np.number)
+        assert np.issubdtype(df["low"].dtype, np.number)
+        assert np.issubdtype(df["close"].dtype, np.number)
+        assert np.issubdtype(df["volume"].dtype, np.integer)
 
 
 class TestKRXCollectorFetchSupplyDemand:

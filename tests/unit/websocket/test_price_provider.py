@@ -58,13 +58,14 @@ class TestPriceDataProvider:
         provider = PriceDataProvider()
 
         # Mock DailyPrice 객체 (SQLAlchemy 모델)
+        # DailyPrice 모델의 속성명: open_price, high_price, low_price, close_price
         mock_price = MagicMock(spec=DailyPrice)
         mock_price.ticker = "005930"
         mock_price.date = date(2024, 1, 15)
-        mock_price.open = 80000
-        mock_price.high = 81000
-        mock_price.low = 79500
-        mock_price.close = 80500
+        mock_price.open_price = 80000
+        mock_price.high_price = 81000
+        mock_price.low_price = 79500
+        mock_price.close_price = 80500
         mock_price.volume = 10000000
 
         formatted = provider._format_price_data(mock_price)
