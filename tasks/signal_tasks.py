@@ -10,19 +10,27 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="tasks.signal_tasks.generate_jongga_signals", bind=True)
-def generate_jongga_signals(self, capital: int = 10_000_000, top_n: int = 30):
+def generate_jongga_signals(
+    self,
+    capital: int = 10_000_000,
+    top_n: int = 30,
+    market: str = "KOSPI",
+    min_score: int = 6
+):
     """
     종가베팅 V2 시그널 생성 태스크
 
     Args:
         capital: 총 자본 (기본 1000만원)
         top_n: 상위 N개 종목
+        market: 시장 (KOSPI/KOSDAQ/ALL)
+        min_score: 최소 점수 (0-12)
 
     Returns:
         생성된 시그널 리스트
     """
     try:
-        logger.info(f"종가베팅 시그널 생성 시작: 자본 {capital}, 상위 {top_n}개")
+        logger.info(f"종가베팅 시그널 생성 시작: 자본 {capital}, 상위 {top_n}개, 시장 {market}, 최소점수 {min_score}")
 
         # Signal Engine 호출
         # TODO: 실제 종목 스캔 로직

@@ -506,6 +506,14 @@ _include_router("performance", "router", "Performance")
 _include_router("news", "router", "News")
 _include_router("signals", "router", "Signals")
 
+# 종가베팅 V2 라우터 포함
+try:
+    from services.api_gateway.routes.jongga_v2 import router as jongga_v2_router
+    app.include_router(jongga_v2_router)
+    print("✅ Jongga V2 routes registered")
+except ImportError as e:
+    print(f"⚠️ Failed to register Jongga V2 routes: {e}")
+
 # Kiwoom 라우터 설정 (선택적)
 if KIWOOM_AVAILABLE and setup_kiwoom_routes:
     try:
