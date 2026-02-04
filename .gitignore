@@ -37,6 +37,9 @@ env/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.npm
+docker/compose/.env.dev
 
 # Database
 *.db
