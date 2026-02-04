@@ -182,69 +182,50 @@ def save_vcp_signals_to_db(results: List[Any], signal_date: Optional[date] = Non
 
     saved_count = 0
 
-    # SessionLocal을 직접 사용 (FastAPI Dependency Injection 아님)
-    try:
-        from ralph_stock_lib.database.session import SessionLocal
-    except ImportError:
+    # 세션 관리 표준화: get_db_session_sync 사용
+    from src.database.session import get_db_session_sync
+
+    with get_db_session_sync() as db:
         try:
-            from src.database.session import SessionLocal
-        except ImportError:
-            # 런타임 import
-            import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                "session",
-                os.path.join(os.path.dirname(_current_dir), "lib", "ralph_stock_lib", "database", "session.py")
+            # 기존 VCP 시그널 삭제 (갱신)
+            db.execute(
+                delete(Signal).where(
+                    Signal.signal_type == "VCP",
+                    Signal.signal_date == signal_date
+                )
             )
-            if spec and spec.loader:
-                session_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(session_module)
-                SessionLocal = session_module.SessionLocal
-            else:
-                raise ImportError("Cannot import SessionLocal")
-    db = SessionLocal()
 
-    try:
-        # 기존 VCP 시그널 삭제 (갱신)
-        db.execute(
-            delete(Signal).where(
-                Signal.signal_type == "VCP",
-                Signal.signal_date == signal_date
-            )
-        )
+            # 새 시그널 저장
+            for result in results:
+                # total_score 기반 등급 계산
+                grade = _get_grade_from_score(result.total_score)
 
-        # 새 시그널 저장
-        for result in results:
-            # total_score 기반 등급 계산
-            grade = _get_grade_from_score(result.total_score)
+                # Signal 레코드 생성
+                signal = Signal(
+                    ticker=result.ticker,
+                    signal_type="VCP",
+                    status="OPEN",
+                    score=result.total_score,
+                    grade=grade,
+                    contraction_ratio=result.vcp_score / 100 if result.vcp_score else None,
+                    signal_date=signal_date,
+                    entry_price=int(result.current_price) if result.current_price else None,
+                    foreign_net_5d=result.foreign_net_5d or 0,
+                    inst_net_5d=result.inst_net_5d or 0,
+                )
+                db.add(signal)
+                saved_count += 1
 
-            # Signal 레코드 생성
-            signal = Signal(
-                ticker=result.ticker,
-                signal_type="VCP",
-                status="OPEN",
-                score=result.total_score,
-                grade=grade,
-                contraction_ratio=result.vcp_score / 100 if result.vcp_score else None,
-                signal_date=signal_date,
-                entry_price=int(result.current_price) if result.current_price else None,
-                foreign_net_5d=result.foreign_net_5d or 0,
-                inst_net_5d=result.inst_net_5d or 0,
-            )
-            db.add(signal)
-            saved_count += 1
+            db.commit()
+            logging.info(f"VCP 시그널 {saved_count}개 DB 저장 완료")
 
-        db.commit()
-        logging.info(f"VCP 시그널 {saved_count}개 DB 저장 완료")
+            # WebSocket 브로드캐스트 (실시간 업데이트)
+            _broadcast_signal_update(results)
 
-        # WebSocket 브로드캐스트 (실시간 업데이트)
-        _broadcast_signal_update(results)
-
-    except Exception as e:
-        db.rollback()
-        logging.error(f"VCP 시그널 DB 저장 실패: {e}")
-        raise
-    finally:
-        db.close()
+        except Exception as e:
+            db.rollback()
+            logging.error(f"VCP 시그널 DB 저장 실패: {e}")
+            raise
 
     return saved_count
 

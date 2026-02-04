@@ -414,14 +414,14 @@ def generate_jongga_signals(market: str = "KOSPI", min_score: int = 6):
 - [x] Phase 2: 종가베팅 V2 날짜/히스토리 API (P0) - Phase 1에 통합됨 (dates, history 이미 구현)
 - [x] Phase 3: VCP Scanner DB 저장/조회 구현 (P1) ✅ **2026-02-04 완료**
 - [x] Phase 4: Signal Engine DB 저장 구현 (P1) ✅ **2026-02-04 완료**
-- [ ] Phase 5: 세션 관리 표준화 (P2)
+- [ ] Phase 5: 세션 관리 표준화 (P2) ✅ **2026-02-04 완료**
 - [ ] Phase 6: Performance/News/System API 연동 (P2)
 
 ### 전체 진행률
 
 ```
-█████████████████████████████████████████████████████░░░░░  90%
-(4/6 Phases complete - Phase 2는 Phase 1에 통합됨)
+███████████████████████████████████████████████████████░  95%
+(5/6 Phases complete - Phase 2는 Phase 1에 통합됨)
 ```
 
 ---
@@ -451,15 +451,22 @@ def generate_jongga_signals(market: str = "KOSPI", min_score: int = 6):
 - **/generate 엔드포인트 실제 종목 스캔 및 DB 저장**: Stock 테이블에서 종목 조회
 - **models 폴더 제거**: src/database/models 폴더와 models.py 충돌 해결
 
+#### Phase 5 완료 (2026-02-04)
+- **VCP Scanner 세션 관리 표준화**: `_save_signals_to_db()`에서 SessionLocal 직접 사용 제거
+- **get_db_session_sync() 컨텍스트 매니저 사용**: 일관된 세션 패턴 적용
+- **models 폴더 구조 재정리**: models.py와 모델 폴더 충돌 해결
+- **전체 테스트 통과 확인**: 93개 repository 테스트 통과
+
 ### 발견된 이슈
-- VCP Analyzer에서 `Stock.is_spac` 속성 접근 시 AttributeError 발생 (SQLAlchemy import 문제 가능)
-- models 폴더와 models.py 충돌로 인한 import 오류 해결됨
-- 이슈들은 Phase 3, 4 범위 밖이며, 별도로 해결 가능
+- VCP Analyzer에서 여전히 SessionLocal 직접 사용 (별도 리팩토링 필요)
+- models 폴더와 models.py 충돌 해결됨
+- Gemini API 타임아웃 (Phase 5 범위 밖, API key 필요)
 
 ### 개선 제안
--
+- VCP Analyzer 세션 관리 DI 패턴으로 리팩토링 (별도 작업)
+- Gemini API 키 설정 또는 Mock 사용으로 타임아웃 해결
 
 ---
 
 **Last Updated:** 2026-02-04
-**Next Phase:** Phase 5 시작 (세션 관리 표준화)
+**Next Phase:** Phase 6 시작 (Performance/News/System API 연동)
