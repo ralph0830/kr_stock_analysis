@@ -200,6 +200,18 @@ def save_vcp_signals_to_db(results: List[Any], signal_date: Optional[date] = Non
                 # total_score 기반 등급 계산
                 grade = _get_grade_from_score(result.total_score)
 
+                # 진입가 설정
+                entry_price = int(result.current_price) if result.current_price else None
+
+                # 등급별 목표수익률: S=20%, A=15%, B=10%, C=5%
+                target_profit_rate = {"S": 0.20, "A": 0.15, "B": 0.10, "C": 0.05}.get(grade, 0.10)
+                target_price = None
+                if entry_price and target_profit_rate:
+                    target_price = entry_price * (1 + target_profit_rate)
+
+                # 손절가 계산 (진입가의 -5%)
+                stop_price = int(entry_price * 0.95) if entry_price else None
+
                 # Signal 레코드 생성
                 signal = Signal(
                     ticker=result.ticker,
@@ -209,7 +221,9 @@ def save_vcp_signals_to_db(results: List[Any], signal_date: Optional[date] = Non
                     grade=grade,
                     contraction_ratio=result.vcp_score / 100 if result.vcp_score else None,
                     signal_date=signal_date,
-                    entry_price=int(result.current_price) if result.current_price else None,
+                    entry_price=entry_price,
+                    target_price=target_price,
+                    stop_price=stop_price,
                     foreign_net_5d=result.foreign_net_5d or 0,
                     inst_net_5d=result.inst_net_5d or 0,
                 )
@@ -281,6 +295,9 @@ def _signal_to_dict(signal) -> dict:
         "total_score": signal.score or 0,
         "vcp_score": (signal.contraction_ratio * 100) if signal.contraction_ratio else 0,
         "current_price": signal.entry_price,
+        "entry_price": signal.entry_price,
+        "target_price": signal.target_price,
+        "stop_price": signal.stop_price,
         "foreign_net_5d": signal.foreign_net_5d or 0,
         "inst_net_5d": signal.inst_net_5d or 0,
         "signal_date": signal.signal_date.isoformat() if signal.signal_date else None,

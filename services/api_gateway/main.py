@@ -832,14 +832,27 @@ async def get_kr_signals(
                     created_at = datetime.now().isoformat()
 
                 ticker = signal.get("ticker", "")
+                # 진입가/목표가 계산
+                current_price = signal.get("current_price")
+                entry_price = float(current_price) if current_price else None
+
+                # 등급별 목표수익률: S=20%, A=15%, B=10%, C=5%
+                target_profit_rate = {
+                    "S": 0.20, "A": 0.15, "B": 0.10, "C": 0.05
+                }.get(grade, 0.10)
+
+                target_price = None
+                if entry_price and target_profit_rate:
+                    target_price = entry_price * (1 + target_profit_rate)
+
                 transformed_signals.append({
                     "ticker": ticker,
                     "name": signal.get("name", ""),
                     "signal_type": "vcp",
                     "score": total_score,
                     "grade": grade,
-                    "entry_price": None,
-                    "target_price": None,
+                    "entry_price": entry_price,
+                    "target_price": target_price,
                     "created_at": created_at
                 })
 
