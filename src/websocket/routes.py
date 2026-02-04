@@ -74,34 +74,38 @@ async def websocket_endpoint(
     # 클라이언트 ID 생성
     client_id = str(uuid.uuid4())
 
-    # WebSocket CORS origin 검사
+    # WebSocket CORS origin 검사 (개발 환경 친화적)
     origin = websocket.headers.get("origin", "").lower()
-    host = websocket.headers.get("host", "")
+    client_host = websocket.client.host
 
-    logger.info(f"[WebSocket] Connection attempt from {websocket.client.host}:{websocket.client.port}, origin: {origin}")
+    logger.info(f"[WebSocket] Connection attempt from {client_host}:{websocket.client.port}, origin: {origin or '(none)'}")
 
-    # origin이 허용 목록에 있는지 확인 (대소문자 구분 없이)
-    origin_allowed = any(
-        allowed.lower() == origin or
-        allowed.lower() == origin.replace("https://", "http://") or
-        # 포트 번호가 없는 경우도 허용
-        (origin.startswith("http://localhost") and allowed.startswith("http://localhost")) or
-        (origin.startswith("http://127.0.0.1") and allowed.startswith("http://127.0.0.1")) or
-        # null origin (로컬 파일)
-        origin == "null"
-        for allowed in ALLOWED_WS_ORIGINS
-    )
+    # 개발 환경에서는 localhost/127.0.0.1 연결 무조건 허용
+    # (같은 머신에서 실행되는 frontend ↔ backend 통신)
+    is_local_connection = client_host in ["localhost", "127.0.0.1", "::1", "0.0.0.0"]
 
-    # 개발 환경에서는 localhost/127.0.0.1를 무조건 허용
-    is_dev_host = (
-        websocket.client.host in ["localhost", "127.0.0.1", "::1"] or
-        host.startswith("localhost:") or
-        host.startswith("127.0.0.1:")
-    )
+    if is_local_connection:
+        # 로컬 개발 환경 - 허용 (origin이 없어도 OK)
+        logger.info(f"[WebSocket] Local connection allowed for {client_host}")
+    elif origin:
+        # origin이 있는 경우 허용 목록 확인
+        origin_allowed = any(
+            allowed.lower() == origin or
+            allowed.lower() == origin.replace("https://", "http://") or
+            (origin.startswith("http://localhost") and allowed.startswith("http://localhost")) or
+            (origin.startswith("http://127.0.0.1") and allowed.startswith("http://127.0.0.1")) or
+            origin == "null"  # 로컬 파일
+            for allowed in ALLOWED_WS_ORIGINS
+        )
 
-    if not origin_allowed and not is_dev_host:
-        logger.warning(f"[WebSocket] Connection rejected: origin not allowed ({origin})")
-        await websocket.close(code=1008, reason="Origin not allowed")
+        if not origin_allowed:
+            logger.warning(f"[WebSocket] Connection rejected: origin not allowed ({origin})")
+            await websocket.close(code=1008, reason="Origin not allowed")
+            return
+    else:
+        # origin이 없고 로컬 연결도 아닌 경우 거부
+        logger.warning(f"[WebSocket] Connection rejected: no origin and not local connection")
+        await websocket.close(code=1008, reason="Origin required")
         return
 
     # 연결 수락 (명시적으로 accept 호출)
