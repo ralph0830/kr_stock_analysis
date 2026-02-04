@@ -810,6 +810,8 @@ async def get_kr_signals(
 
             # VCP 결과를 SignalResponse 형식으로 변환
             transformed_signals = []
+            signal_tickers = []  # price_broadcaster에 추가할 종목들
+
             for signal in signals_data:
                 # total_score를 기반으로 등급 계산
                 total_score = signal.get("total_score", 0)
@@ -829,8 +831,9 @@ async def get_kr_signals(
                 else:
                     created_at = datetime.now().isoformat()
 
+                ticker = signal.get("ticker", "")
                 transformed_signals.append({
-                    "ticker": signal.get("ticker", ""),
+                    "ticker": ticker,
                     "name": signal.get("name", ""),
                     "signal_type": "vcp",
                     "score": total_score,
@@ -839,6 +842,16 @@ async def get_kr_signals(
                     "target_price": None,
                     "created_at": created_at
                 })
+
+                # 종목코드 수집 (price_broadcaster에 추가용)
+                if ticker:
+                    signal_tickers.append(ticker)
+
+            # VCP 시그널 종목들을 price_broadcaster에 추가 (실시간 가격 브로드캐스트용)
+            if WEBSOCKET_AVAILABLE and price_broadcaster and signal_tickers:
+                for ticker in signal_tickers:
+                    price_broadcaster.add_ticker(ticker)
+                logger.info(f"Added VCP signal tickers to price_broadcaster: {signal_tickers}")
 
             return transformed_signals
 
