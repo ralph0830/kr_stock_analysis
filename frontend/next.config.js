@@ -10,6 +10,18 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
+  // 프로덕션 환경에서 HMR WebSocket 비활성화
+  webpack: (config, { dev, isServer }) => {
+    // 프로덕션 빌드에서 HMR 관련 코드 제거
+    if (!dev) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'webpack/hot/poll': false,
+      };
+    }
+    return config;
+  },
+
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:5111';
 

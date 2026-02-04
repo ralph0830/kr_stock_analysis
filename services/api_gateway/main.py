@@ -429,6 +429,10 @@ app = FastAPI(
             "name": "news",
             "description": "종목 뉴스 조회",
         },
+        {
+            "name": "daytrading",
+            "description": "단타 매수 신호 스캔 및 분석",
+        },
     ],
 
     # Contact 정보
@@ -460,6 +464,15 @@ app.add_middleware(
         "http://ralphpark.com:5110",
         "https://ralphpark.com:5111",
         "http://ralphpark.com:5111",
+        # stock.ralphpark.com 추가
+        "https://stock.ralphpark.com",
+        "http://stock.ralphpark.com",
+        "https://stock.ralphpark.com:5110",
+        "http://stock.ralphpark.com:5110",
+        "https://stock.ralphpark.com:5111",
+        "http://stock.ralphpark.com:5111",
+        "wss://stock.ralphpark.com",
+        "ws://stock.ralphpark.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -495,7 +508,9 @@ def _include_router(module_name, router_name, display_name):
         print(f"⚠️ Failed to register {display_name}: {e}")
         return False
 
-# 백테스트, Stocks, AI, System, Triggers, Chatbot, Performance, News, Signals 라우터 포함
+# 백테스트, Stocks, AI, System, Triggers, Chatbot, Performance, News 라우터 포함
+# 주의: Signals 라우터는 제외 - main.py의 /api/kr/signals 엔드포인트와 충돌 방지
+# VCP Scanner 서비스 프록시는 main.py에서 직접 처리
 _include_router("backtest", "router", "Backtest")
 _include_router("stocks", "router", "Stocks")
 _include_router("ai", "router", "AI")
@@ -504,7 +519,7 @@ _include_router("triggers", "router", "Triggers")
 _include_router("chatbot", "router", "Chatbot")
 _include_router("performance", "router", "Performance")
 _include_router("news", "router", "News")
-_include_router("signals", "router", "Signals")
+# _include_router("signals", "router", "Signals")  # 비활성화: main.py와 충돌
 
 # 종가베팅 V2 라우터 포함
 try:
@@ -513,6 +528,14 @@ try:
     print("✅ Jongga V2 routes registered")
 except ImportError as e:
     print(f"⚠️ Failed to register Jongga V2 routes: {e}")
+
+# Daytrading Scanner 라우터 포함
+try:
+    from services.api_gateway.routes.daytrading import router as daytrading_router
+    app.include_router(daytrading_router)
+    print("✅ Daytrading Scanner routes registered")
+except ImportError as e:
+    print(f"⚠️ Failed to register Daytrading Scanner routes: {e}")
 
 # Kiwoom 라우터 설정 (선택적)
 if KIWOOM_AVAILABLE and setup_kiwoom_routes:
