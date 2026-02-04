@@ -3,18 +3,24 @@ Stocks Routes
 종목 상세, 차트, 수급, 시그널 조회 API
 """
 
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import select, desc
 
 from src.database.session import get_db_session
 from src.repositories.stock_repository import StockRepository
 from src.repositories.signal_repository import SignalRepository
+from src.repositories.daily_price_repository import DailyPriceRepository
+from src.database.models import DailyPrice
 from services.api_gateway.schemas import (
     StockFlowResponse,
     FlowDataPoint,
     SignalHistoryResponse,
     SignalHistoryItem,
+    StockDetailResponse,
+    StockChartResponse,
+    ChartPoint,
 )
 
 
@@ -60,8 +66,128 @@ def calculate_smartmoney_score(flows: list) -> float:
     return round(smartmoney_score, 2)
 
 
-# 종목 상세(/api/kr/stocks/{ticker}) 및 차트(/api/kr/stocks/{ticker}/chart) 엔드포인트는 main.py에서 통합 처리
-# stocks.py에서는 flow, signals 엔드포인트만 담당
+# 종목 상세 및 차트 엔드포인트 함수
+
+
+def get_stock_detail(ticker: str, session: Session) -> StockDetailResponse:
+    """
+    종목 상세 정보 조회
+
+    Args:
+        ticker: 종목 코드 (6자리)
+        session: DB 세션
+
+    Returns:
+        종목 상세 정보 (최신 가격 포함)
+
+    Raises:
+        HTTPException: 종목을 찾을 수 없을 때 404
+    """
+    stock_repo = StockRepository(session)
+    stock = stock_repo.get_by_ticker(ticker)
+
+    if not stock:
+        raise HTTPException(
+            status_code=404,
+            detail=f"종목을 찾을 수 없습니다: {ticker}"
+        )
+
+    # 최신 가격 정보 조회
+    price_repo = DailyPriceRepository(session)
+    latest_prices = price_repo.get_latest_by_ticker(ticker, limit=2)
+
+    if latest_prices and len(latest_prices) > 0:
+        latest_price = latest_prices[0]
+        current_price = latest_price.close_price
+        volume = latest_price.volume
+
+        # 전일 대비 등락 계산
+        price_change = None
+        price_change_pct = None
+        if len(latest_prices) > 1:
+            prev_price = latest_prices[1].close_price
+            if prev_price and prev_price > 0:
+                price_change = current_price - prev_price
+                price_change_pct = (price_change / prev_price) * 100
+
+        updated_at = latest_price.date
+    else:
+        current_price = None
+        price_change = None
+        price_change_pct = None
+        volume = None
+        updated_at = None
+
+    return StockDetailResponse(
+        ticker=stock.ticker,
+        name=stock.name,
+        market=stock.market,
+        sector=stock.sector,
+        current_price=current_price,
+        price_change=price_change,
+        price_change_pct=price_change_pct,
+        volume=volume,
+        updated_at=updated_at,
+    )
+
+
+def get_stock_chart(ticker: str, days: int, session: Session) -> StockChartResponse:
+    """
+    종목 차트 데이터 조회
+
+    Args:
+        ticker: 종목 코드 (6자리)
+        days: 조회 일수 (테스트용)
+        session: DB 세션
+
+    Returns:
+        차트 데이터 (OHLCV)
+
+    Raises:
+        HTTPException: 종목을 찾을 수 없을 때 404
+    """
+    stock_repo = StockRepository(session)
+    stock = stock_repo.get_by_ticker(ticker)
+
+    if not stock:
+        raise HTTPException(
+            status_code=404,
+            detail=f"종목을 찾을 수 없습니다: {ticker}"
+        )
+
+    # 기간 계산
+    cutoff_date = datetime.now().date() - timedelta(days=days)
+
+    # 차트 데이터 조회
+    price_repo = DailyPriceRepository(session)
+    chart_data = price_repo.get_by_ticker_and_date_range(ticker, cutoff_date, datetime.now().date())
+
+    # period 변환 (days → period 문자열)
+    period_map = {
+        7: "1wk",
+        30: "1mo",
+        90: "3mo",
+        180: "6mo",
+        365: "1y",
+    }
+    period = period_map.get(days, f"{days}d")
+
+    return StockChartResponse(
+        ticker=ticker,
+        period=period,
+        data=[
+            ChartPoint(
+                date=price.date,
+                open=price.open_price or 0,
+                high=price.high_price or 0,
+                low=price.low_price or 0,
+                close=price.close_price,
+                volume=price.volume,
+            )
+            for price in chart_data
+        ],
+        total_points=len(chart_data),
+    )
 
 
 
