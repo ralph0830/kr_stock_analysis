@@ -26,6 +26,21 @@ _heartbeat_manager = get_heartbeat_manager()
 # WebSocket 설정
 WS_RECV_TIMEOUT = 60  # 메시지 수신 타임아웃 (초)
 
+# CORS 허용_origin 목록 (main.py의 CORSMiddleware와 동기화 필요)
+ALLOWED_WS_ORIGINS = [
+    "http://localhost:5110",
+    "http://127.0.0.1:5110",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://ralphpark.com",
+    "http://ralphpark.com",
+    "https://ralphpark.com:5110",
+    "http://ralphpark.com:5110",
+    "https://stock.ralphpark.com",
+    "http://stock.ralphpark.com",
+    "null",  # 로컬 파일에서 접근하는 경우
+]
+
 router = APIRouter(tags=["WebSocket"])
 
 
@@ -41,6 +56,7 @@ async def websocket_endpoint(
     - 타임아웃 처리로 무한 대기 방지
     - 빈 메시지 처리
     - 명확한 예외 처리 및 로깅
+    - CORS origin 검사 (WebSocket handshake)
 
     Usage:
         // 기본 연결
@@ -57,7 +73,36 @@ async def websocket_endpoint(
     """
     # 클라이언트 ID 생성
     client_id = str(uuid.uuid4())
-    logger.info(f"[WebSocket] Connection attempt from {websocket.client.host}:{websocket.client.port}")
+
+    # WebSocket CORS origin 검사
+    origin = websocket.headers.get("origin", "").lower()
+    host = websocket.headers.get("host", "")
+
+    logger.info(f"[WebSocket] Connection attempt from {websocket.client.host}:{websocket.client.port}, origin: {origin}")
+
+    # origin이 허용 목록에 있는지 확인 (대소문자 구분 없이)
+    origin_allowed = any(
+        allowed.lower() == origin or
+        allowed.lower() == origin.replace("https://", "http://") or
+        # 포트 번호가 없는 경우도 허용
+        (origin.startswith("http://localhost") and allowed.startswith("http://localhost")) or
+        (origin.startswith("http://127.0.0.1") and allowed.startswith("http://127.0.0.1")) or
+        # null origin (로컬 파일)
+        origin == "null"
+        for allowed in ALLOWED_WS_ORIGINS
+    )
+
+    # 개발 환경에서는 localhost/127.0.0.1를 무조건 허용
+    is_dev_host = (
+        websocket.client.host in ["localhost", "127.0.0.1", "::1"] or
+        host.startswith("localhost:") or
+        host.startswith("127.0.0.1:")
+    )
+
+    if not origin_allowed and not is_dev_host:
+        logger.warning(f"[WebSocket] Connection rejected: origin not allowed ({origin})")
+        await websocket.close(code=1008, reason="Origin not allowed")
+        return
 
     # 연결 수락 (명시적으로 accept 호출)
     await websocket.accept()
