@@ -647,3 +647,98 @@ export interface IChatSession {
   created_at: string;
   updated_at: string;
 }
+
+// ============================================================================
+// Performance API 타입
+// ============================================================================
+
+/**
+ * 누적 수익률 데이터 포인트
+ */
+export interface ICumulativeReturnPoint {
+  date: string;
+  daily_return_pct: number;
+  cumulative_return_pct: number;
+}
+
+/**
+ * 누적 수익률 응답
+ */
+export interface ICumulativeReturnResponse {
+  data: ICumulativeReturnPoint[];
+  total_points: number;
+  final_return_pct: number;
+}
+
+/**
+ * 시그널 성과 응답
+ */
+export interface ISignalPerformanceResponse {
+  total_signals: number;
+  closed_signals: number;
+  win_rate: number;
+  avg_return: number;
+  best_return?: number;
+  worst_return?: number;
+}
+
+/**
+ * 기간별 성과 응답
+ */
+export interface IPeriodPerformanceResponse {
+  period: string;
+  total_signals: number;
+  win_rate: number;
+  avg_return: number;
+  cumulative_return: number;
+  mdd: number;
+  best_return?: number;
+  worst_return?: number;
+  sharpe_ratio: number;
+}
+
+/**
+ * 최고 성공 종목 아이템
+ */
+export interface ITopPerformerItem {
+  ticker: string;
+  signal_type: string;
+  entry_price: number;
+  exit_price: number;
+  return_pct: number;
+  signal_date: string;
+}
+
+/**
+ * 최고 성공 종목 목록 응답
+ */
+export interface ITopPerformersResponse {
+  performers: ITopPerformerItem[];
+  total_count: number;
+}
+
+// ============================================================================
+// News API 타입
+// ============================================================================
+
+/**
+ * 뉴스 아이템
+ */
+export interface INewsApiItem {
+  title: string;
+  url: string;
+  source: string;
+  published_at?: string;
+}
+
+/**
+ * 뉴스 목록 응답
+ */
+export interface INewsListResponse {
+  ticker: string | null;
+  news: INewsApiItem[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
+}

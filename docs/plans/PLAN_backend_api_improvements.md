@@ -414,14 +414,14 @@ def generate_jongga_signals(market: str = "KOSPI", min_score: int = 6):
 - [x] Phase 2: 종가베팅 V2 날짜/히스토리 API (P0) - Phase 1에 통합됨 (dates, history 이미 구현)
 - [x] Phase 3: VCP Scanner DB 저장/조회 구현 (P1) ✅ **2026-02-04 완료**
 - [x] Phase 4: Signal Engine DB 저장 구현 (P1) ✅ **2026-02-04 완료**
-- [ ] Phase 5: 세션 관리 표준화 (P2) ✅ **2026-02-04 완료**
-- [ ] Phase 6: Performance/News/System API 연동 (P2)
+- [x] Phase 5: 세션 관리 표준화 (P2) ✅ **2026-02-04 완료**
+- [x] Phase 6: Performance/News/System API 연동 (P2) ✅ **2026-02-04 완료**
 
 ### 전체 진행률
 
 ```
-███████████████████████████████████████████████████████░  95%
-(5/6 Phases complete - Phase 2는 Phase 1에 통합됨)
+████████████████████████████████████████████████████████  100%
+(6/6 Phases complete - Phase 2는 Phase 1에 통합됨)
 ```
 
 ---
@@ -466,7 +466,13 @@ def generate_jongga_signals(market: str = "KOSPI", min_score: int = 6):
 - VCP Analyzer 세션 관리 DI 패턴으로 리팩토링 (별도 작업)
 - Gemini API 키 설정 또는 Mock 사용으로 타임아웃 해결
 
+#### Phase 6 완료 (2026-02-04)
+- **Performance API 타입 정의 추가**: ICumulativeReturnResponse, ISignalPerformanceResponse, IPeriodPerformanceResponse, ITopPerformersResponse
+- **News API 타입 정의 추가**: INewsApiItem, INewsListResponse
+- **api-client.ts 메서드 추가**: getCumulativeReturns(), getSignalPerformance(), getPeriodPerformance(), getTopPerformers(), getSharpeRatio(), getLatestNews(), getNewsByTicker()
+- **프론트엔드 빌드 통과 확인**: 타입 체크 및 빌드 성공
+
 ---
 
 **Last Updated:** 2026-02-04
-**Next Phase:** Phase 6 시작 (Performance/News/System API 연동)
+**Next Phase:** 전체 완료! 🎉 (6/6 Phases complete)
