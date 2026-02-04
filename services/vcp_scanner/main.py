@@ -264,13 +264,56 @@ async def health_check():
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+VALID_MARKETS = ["KOSPI", "KOSDAQ", "ALL"]
+
+
+def _validate_market(market: str) -> str:
+    """시장 값 검증 및 대문자 변환"""
+    market_upper = market.upper()
+    if market_upper not in VALID_MARKETS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"유효하지 않은 market 값입니다: {market}. (KOSPI/KOSDAQ/ALL)"
+        )
+    return market_upper
+
+
+def _signal_to_dict(signal) -> dict:
+    """
+    Signal 엔티티를 API 응답 딕셔너리로 변환
+
+    Args:
+        signal: Signal ORM 객체
+
+    Returns:
+        API 응답용 딕셔너리
+    """
+    # 종목명 조회
+    stock_name = signal.stock.name if signal.stock else signal.ticker
+
+    return {
+        "ticker": signal.ticker,
+        "name": stock_name,
+        "total_score": signal.score or 0,
+        "vcp_score": (signal.contraction_ratio * 100) if signal.contraction_ratio else 0,
+        "current_price": signal.entry_price,
+        "foreign_net_5d": signal.foreign_net_5d or 0,
+        "inst_net_5d": signal.inst_net_5d or 0,
+        "signal_date": signal.signal_date.isoformat() if signal.signal_date else None,
+    }
+
+
+# ============================================================================
 # VCP Scanner Endpoints
 # ============================================================================
 
 @app.get("/signals")
 async def get_signals(limit: int = 20, market: str = "ALL"):
     """
-    활성 VCP 시그널 조회
+    활성 VCP 시그널 조회 (DB에서 조회)
 
     Args:
         limit: 최대 반환 개수
@@ -280,18 +323,38 @@ async def get_signals(limit: int = 20, market: str = "ALL"):
         VCP 패턴이 감지된 종목 리스트
     """
     try:
-        analyzer = get_analyzer()
+        # DB에서 저장된 시그널 조회
+        from src.repositories.vcp_signal_repository import VCPSignalRepository
+        from src.database.session import get_db_session_sync
 
-        # TODO: Database에서 저장된 시그널 조회
-        # 현재는 실시간 분석 결과 반환
-        results = await analyzer.scan_market(market, top_n=limit)
+        # 시장 값 검증
+        market = _validate_market(market)
 
-        return {
-            "signals": [r.to_dict() for r in results],
-            "count": len(results),
-            "timestamp": None,  # TODO: DB에서 조회 시 저장 시간 사용
-        }
+        with get_db_session_sync() as db:
+            repo = VCPSignalRepository(db)
 
+            # 시장 필터 적용
+            if market == "ALL":
+                signals = repo.get_active_vcp_signals(limit=limit)
+            else:  # KOSPI or KOSDAQ
+                signals = repo.get_vcp_signals_by_market(market=market, limit=limit)
+
+            # Signal 엔티티를 딕셔너리로 변환
+            signal_dicts = [_signal_to_dict(signal) for signal in signals]
+
+            # 최신 시그널의 생성 시간
+            timestamp = None
+            if signals and signals[0].created_at:
+                timestamp = signals[0].created_at.isoformat()
+
+            return {
+                "signals": signal_dicts,
+                "count": len(signal_dicts),
+                "timestamp": timestamp,
+            }
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"시그널 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
