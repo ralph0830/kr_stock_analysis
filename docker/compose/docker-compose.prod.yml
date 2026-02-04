@@ -4,66 +4,66 @@
 
 services:
   # ---------------------------------------------------------------------------
-  # Infrastructure Services (Production)
+  # Infrastructure Services (Production) - 외부 컨테이너 사용 (주석 처리)
   # ---------------------------------------------------------------------------
 
-  # PostgreSQL - Production with resource limits
-  postgres:
-    image: timescale/timescaledb:latest-pg15
-    container_name: ralph_stock_db
-    environment:
-      POSTGRES_DB: ralph_stock
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      TZ: Asia/Seoul
-    ports:
-      - "5433:5432"
-    restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    volumes:
-      - postgres_data:/home/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - ralph_stock_network
+  # PostgreSQL - 외부 컨테이너 사용 (ralph-network)
+  # postgres:
+  #   image: timescale/timescaledb:latest-pg15
+  #   container_name: ralph_stock_db
+  #   environment:
+  #     POSTGRES_DB: ralph_stock
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  #     TZ: Asia/Seoul
+  #   ports:
+  #     - "5433:5432"
+  #   restart: always
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '2.0'
+  #         memory: 2G
+  #     reservations:
+  #       cpus: '0.5'
+  #       memory: 512M
+  #   volumes:
+  #     - postgres_data:/home/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - ralph-network
 
-  # Redis - Production
-  redis:
-    image: redis:7-alpine
-    container_name: ralph_stock_redis
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    environment:
-      TZ: Asia/Seoul
-    ports:
-      - "6380:6379"
-    restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - ralph_stock_network
+  # Redis - 외부 컨테이너 사용 (ralph-network)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: ralph_stock_redis
+  #   command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+  #   environment:
+  #     TZ: Asia/Seoul
+  #   ports:
+  #     - "6380:6379"
+  #   restart: always
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '1.0'
+  #         memory: 512M
+  #     reservations:
+  #       cpus: '0.25'
+  #       memory: 128M
+  #   volumes:
+  #     - redis_data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 5
+  #   networks:
+  #     - ralph-network
 
   # ---------------------------------------------------------------------------
   # Application Services (Production)
@@ -75,13 +75,23 @@ services:
       context: ../..
       dockerfile: services/api_gateway/Dockerfile
       target: production
+    ports:
+      - "5111:5111"  # API Gateway 포트
     env_file:
       - ../../.env.production
     environment:
+      # Docker 네트워크 내부 통신을 위한 서비스 URL
+      DAYTRADING_SCANNER_URL: http://daytrading-scanner:5115
+      VCP_SCANNER_URL: http://vcp-scanner:5112
+      SIGNAL_ENGINE_URL: http://signal-engine:5113
+      CHATBOT_SERVICE_URL: http://chatbot:5114
       # 로그 레벨 설정
       LOG_LEVEL: INFO
       # Prometheus 메트릭
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus
+    depends_on:
+      - daytrading-scanner
+      - vcp-scanner
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:5111/health').raise_for_status()"]
       interval: 30s
@@ -107,6 +117,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - ralph-network  # 기존 Redis/DB 네트워크
 
   # VCP Scanner - Production
   vcp-scanner:
@@ -184,6 +196,39 @@ services:
       LOG_LEVEL: INFO
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:5114/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Daytrading Scanner - Production
+  daytrading-scanner:
+    build:
+      context: ../..
+      dockerfile: services/daytrading_scanner/Dockerfile
+      target: production
+    environment:
+      LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:5115/health').raise_for_status()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -346,8 +391,8 @@ services:
         max-size: "10m"
         max-file: "3"
 networks:
-  ralph_stock_network:
-    external: true
+  ralph-network:
+    external: true  # 기존 Redis/DB 네트워크
 
 volumes:
   postgres_data:
