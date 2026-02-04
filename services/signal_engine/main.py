@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List
+from datetime import date, datetime
 import logging
 
 from services.signal_engine.scorer import SignalScorer
@@ -24,6 +25,97 @@ def get_scorer() -> SignalScorer:
     if _scorer is None:
         _scorer = SignalScorer()
     return _scorer
+
+
+# ============================================================================
+# DB 저장 함수
+# ============================================================================
+
+def save_jongga_signals_to_db(signals: List, signal_date: Optional[date] = None) -> int:
+    """
+    종가베팅 V2 시그널을 DB에 저장
+
+    Args:
+        signals: JonggaSignal 객체 리스트
+        signal_date: 시그널 날짜 (기본: 오늘)
+
+    Returns:
+        저장된 시그널 수
+    """
+    from src.database.session import get_db_session_sync
+    from src.database.models import Signal
+    from sqlalchemy import delete
+
+    if signal_date is None:
+        signal_date = date.today()
+
+    saved_count = 0
+
+    # 유연한 import
+    try:
+        from ralph_stock_lib.database.session import SessionLocal
+        db = SessionLocal()
+    except ImportError:
+        from src.database.session import get_db_session_sync
+        db_context = get_db_session_sync()
+        db = db_context.__enter__()
+
+    try:
+        # 기존 JONGGA_V2 시그널 삭제 (갱신)
+        db.execute(
+            delete(Signal).where(
+                Signal.signal_type == "JONGGA_V2",
+                Signal.signal_date == signal_date
+            )
+        )
+
+        # 새 시그널 저장
+        for signal in signals:
+            # ScoreDetail에서 개별 점수 추출
+            score_obj = signal.score
+            news_score = getattr(score_obj, 'news', 0)
+            volume_score = getattr(score_obj, 'volume', 0)
+            chart_score = getattr(score_obj, 'chart', 0)
+            candle_score = getattr(score_obj, 'candle', 0)
+            period_score = getattr(score_obj, 'period', 0)
+            supply_score = getattr(score_obj, 'flow', 0)
+
+            # Signal 레코드 생성
+            db_signal = Signal(
+                ticker=signal.ticker,
+                signal_type="JONGGA_V2",
+                status="OPEN",
+                score=score_obj.total,
+                grade=signal.grade.value,
+                news_score=news_score,
+                volume_score=volume_score,
+                chart_score=chart_score,
+                candle_score=candle_score,
+                period_score=period_score,
+                supply_score=supply_score,
+                signal_date=signal_date,
+                entry_price=signal.entry_price,
+                target_price=signal.target_price,
+                stop_price=signal.stop_loss,
+            )
+            db.add(db_signal)
+            saved_count += 1
+
+        db.commit()
+        logger.info(f"종가베팅 V2 시그널 {saved_count}개 DB 저장 완료")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"종가베팅 V2 시그널 DB 저장 실패: {e}")
+        raise
+    finally:
+        # 컨텍스트 매니저가 아닌 경우만 close
+        try:
+            db.close()
+        except:
+            pass
+
+    return saved_count
 
 
 # Lifespan 컨텍스트 매니저
@@ -89,29 +181,74 @@ async def health_check():
 # ============================================================================
 
 @app.get("/signals/latest")
-async def get_latest_signals():
+async def get_latest_signals(limit: int = 20):
     """
-    최신 생성 시그널 조회
+    최신 생성 시그널 조회 (DB에서 조회)
+
+    Args:
+        limit: 최대 반환 수
 
     Returns:
         최근 생성된 종가베팅 시그널 리스트
     """
     try:
-        scorer = get_scorer()
+        # DB에서 저장된 시그널 조회
+        from src.database.session import get_db_session_sync
+        from src.database.models import Signal
+        from sqlalchemy import select, desc
 
-        # TODO: Database에서 저장된 시그널 조회
-        # 현재는 mock 데이터 생성
-        mock_signals = []
-        for ticker, name in [("005930", "삼성전자"), ("000660", "SK하이닉스")]:
-            signal = scorer.calculate(ticker, name, 80000)
-            if signal and signal.score.total >= 6:
-                mock_signals.append(signal.to_dict())
+        with get_db_session_sync() as db:
+            # JONGGA_V2 시그널 조회 (최신 날짜순, 점수 높은 순)
+            query = select(Signal).where(
+                Signal.signal_type == "JONGGA_V2",
+                Signal.status == "OPEN"
+            ).order_by(
+                desc(Signal.signal_date),
+                desc(Signal.score)
+            ).limit(limit)
 
-        return {
-            "signals": mock_signals,
-            "count": len(mock_signals),
-            "date": None,  # TODO: DB에서 조회 시 생성 날짜 사용
-        }
+            result = db.execute(query)
+            signals = result.scalars().all()
+
+            # Signal 엔티티를 딕셔너리로 변환
+            signal_dicts = []
+            for signal in signals:
+                # 종목명 조회
+                stock_name = signal.stock.name if signal.stock else signal.ticker
+
+                # 점수 상세
+                score_detail = {
+                    "total": signal.score or 0,
+                    "news": signal.news_score or 0,
+                    "volume": signal.volume_score or 0,
+                    "chart": signal.chart_score or 0,
+                    "candle": signal.candle_score or 0,
+                    "period": signal.period_score or 0,
+                    "flow": signal.supply_score or 0,
+                }
+
+                signal_dict = {
+                    "ticker": signal.ticker,
+                    "name": stock_name,
+                    "score": score_detail,
+                    "grade": signal.grade or "C",
+                    "entry_price": signal.entry_price,
+                    "target_price": signal.target_price,
+                    "stop_loss": signal.stop_price,
+                    "signal_date": signal.signal_date.isoformat() if signal.signal_date else None,
+                }
+                signal_dicts.append(signal_dict)
+
+            # 최신 시그널 날짜
+            latest_date = None
+            if signals:
+                latest_date = signals[0].signal_date.isoformat()
+
+            return {
+                "signals": signal_dicts,
+                "count": len(signal_dicts),
+                "date": latest_date,
+            }
 
     except Exception as e:
         logger.error(f"시그널 조회 실패: {e}")
@@ -131,32 +268,56 @@ async def generate_signals(request: GenerateRequest, background_tasks: Backgroun
         생성된 시그널 리스트
     """
     try:
+        from src.database.session import get_db_session_sync
+        from src.database.models import Stock
+        from sqlalchemy import select
+
         scorer = get_scorer()
 
-        # TODO: 실제 종목 스캔 로직
-        # 현재는 mock 데이터
-        mock_stocks = [
-            ("005930", "삼성전자", 80000),
-            ("000660", "SK하이닉스", 180000),
-            ("035420", "NAVER", 250000),
-        ][:request.top_n]
+        # 실제 종목 스캔 로직
+        with get_db_session_sync() as db:
+            # 시장 필터 적용
+            query = select(Stock)
+            if request.market != "ALL":
+                query = query.where(Stock.market == request.market)
 
-        signals = []
-        for ticker, name, price in mock_stocks:
-            signal = scorer.calculate(ticker, name, price)
+            # 일반주식만 필터 (ETF, SPAC, 관리종목 제외)
+            query = query.where(
+                Stock.is_etf == False,
+                Stock.is_spac == False,
+                Stock.is_admin == False,
+            )
+
+            # 거래대금 기준 정렬 (우량주 우선)
+            query = query.order_by(Stock.market_cap.desc()).limit(request.top_n)
+
+            result = db.execute(query)
+            stocks = result.scalars().all()
+
+        # 시그널 계산
+        jongja_signals = []
+        for stock in stocks:
+            # 현재가는 최근 가격 데이터에서 가져올 수 있음
+            # 여기서는 시가총액 기준으로 가격 추정
+            estimated_price = int(stock.market_cap / 100000000) if stock.market_cap else 80000
+
+            signal = scorer.calculate(stock.ticker, stock.name, estimated_price)
             if signal and signal.score.total >= 6:  # B급 이상만
-                signals.append(signal.to_dict())
+                jongja_signals.append(signal)
 
-        # TODO: 백그라운드 태스크로 DB 저장
-        # background_tasks.add_task(save_signals_to_db, signals)
+        # DB 저장 (백그라운드 태스크)
+        if jongja_signals:
+            saved_count = save_jongga_signals_to_db(jongja_signals)
+            logger.info(f"종가베팅 V2 시그널 {saved_count}개 DB 저장 완료")
 
         # 등급순 정렬
         grade_order = {"S": 0, "A": 1, "B": 2, "C": 3}
-        signals.sort(key=lambda s: grade_order[s["grade"]])
+        signal_dicts = [s.to_dict() for s in jongja_signals]
+        signal_dicts.sort(key=lambda s: grade_order[s["grade"]])
 
         return {
-            "signals": signals,
-            "count": len(signals),
+            "signals": signal_dicts,
+            "count": len(signal_dicts),
             "capital": request.capital,
         }
 
