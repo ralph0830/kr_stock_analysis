@@ -23,6 +23,7 @@ from src.database.models import (
     Stock, Signal, DailyPrice, InstitutionalFlow,
     MarketStatus, BacktestResult, AIAnalysis
 )
+from src.database.models.daytrading_signal import DaytradingSignal
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,7 +46,7 @@ def main():
 
         logger.info("✅ 데이터베이스 초기화 완료!")
         logger.info("📋 생성된 테이블:")
-        for model in [Stock, Signal, DailyPrice, InstitutionalFlow, MarketStatus, BacktestResult, AIAnalysis]:
+        for model in [Stock, Signal, DailyPrice, InstitutionalFlow, MarketStatus, BacktestResult, AIAnalysis, DaytradingSignal]:
             logger.info(f"   - {model.__tablename__}")
 
     except Exception as e:

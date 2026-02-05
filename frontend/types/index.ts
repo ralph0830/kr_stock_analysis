@@ -742,3 +742,69 @@ export interface INewsListResponse {
   limit: number;
   has_more: boolean;
 }
+
+// ============================================================================
+// Daytrading Scanner API 타입
+// ============================================================================
+
+/**
+ * 단타 체크리스트 항목
+ */
+export interface IDaytradingCheck {
+  name: string;
+  status: "passed" | "failed";
+  points: number;
+}
+
+/**
+ * 단타 시그널 타입
+ */
+export type DaytradingSignalType =
+  | "STRONG_BUY"
+  | "BUY"
+  | "MODERATE_BUY"
+  | "NEUTRAL";
+
+/**
+ * 단타 시그널 아이템
+ */
+export interface IDaytradingSignal {
+  ticker: string;
+  name: string;
+  market: "KOSPI" | "KOSDAQ";
+  total_score: number;
+  grade: "S" | "A" | "B" | "C";
+  checks: IDaytradingCheck[];
+  signal_type: DaytradingSignalType;
+  current_price?: number;
+  entry_price?: number;
+  target_price?: number;
+  stop_loss?: number;
+  detected_at?: string;
+}
+
+/**
+ * 단타 시그널 응답
+ */
+export interface IDaytradingSignalsResponse {
+  success: boolean;
+  data: {
+    signals: IDaytradingSignal[];
+    count: number;
+  };
+}
+
+/**
+ * 단타 스캔 요청
+ */
+export interface IDaytradingScanRequest {
+  market?: "KOSPI" | "KOSDAQ" | "ALL";
+  limit?: number;
+}
+
+/**
+ * 단타 분석 요청
+ */
+export interface IDaytradingAnalyzeRequest {
+  tickers: string[];
+}

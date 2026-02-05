@@ -44,6 +44,7 @@ export function ThemeToggle() {
       size="icon"
       onClick={toggleTheme}
       className="w-9 h-9"
+      aria-label={theme === "light" ? "다크 모드로 전환" : "라이트 모드로 전환"}
       title={theme === "light" ? "다크 모드" : "라이트 모드"}
     >
       {theme === "light" ? (

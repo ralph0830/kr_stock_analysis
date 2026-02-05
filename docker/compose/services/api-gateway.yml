@@ -13,7 +13,7 @@ services:
     ports:
       - "5111:5111"
     env_file:
-      - ../../../.env
+      - .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
@@ -22,6 +22,7 @@ services:
       VCP_SCANNER_URL: http://vcp-scanner:5112
       SIGNAL_ENGINE_URL: http://signal-engine:5113
       CHATBOT_SERVICE_URL: http://chatbot:5114
+      DAYTRADING_SCANNER_URL: http://daytrading-scanner:5115
       # Kiwoom API (실시간 데이터)
       KIWOOM_APP_KEY: ${KIWOOM_APP_KEY}
       KIWOOM_SECRET_KEY: ${KIWOOM_SECRET_KEY}

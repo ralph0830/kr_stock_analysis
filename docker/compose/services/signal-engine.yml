@@ -13,13 +13,13 @@ services:
     ports:
       - "5113:5113"
     env_file:
-      - ../../.env
+      - .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
     volumes:
-      - ../../services/signal_engine:/app/services/signal_engine:ro
-      - ../../src:/app/src:ro
+      - /home/ralph/work/python/kr_stock_analysis/services/signal_engine:/app/services/signal_engine
+      - /home/ralph/work/python/kr_stock_analysis/src:/app/src
     depends_on:
       postgres:
         condition: service_healthy

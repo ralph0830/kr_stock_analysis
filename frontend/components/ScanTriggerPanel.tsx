@@ -190,6 +190,7 @@ export function ScanTriggerPanel() {
               className="h-8 text-xs"
               onClick={() => triggerVCPScan()}
               disabled={vcpLoading || scanStatus?.vcp_scan_status === "running"}
+              aria-label="VCP 전체 스캔 실행"
             >
               {vcpLoading ? (
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -204,6 +205,7 @@ export function ScanTriggerPanel() {
               className="h-8 text-xs"
               onClick={() => triggerVCPScan({ market: "KOSPI" })}
               disabled={vcpLoading || scanStatus?.vcp_scan_status === "running"}
+              aria-label="KOSPI VCP 스캔 실행"
             >
               {vcpLoading ? (
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -218,6 +220,7 @@ export function ScanTriggerPanel() {
               className="h-8 text-xs"
               onClick={() => triggerVCPScan({ market: "KOSDAQ" })}
               disabled={vcpLoading || scanStatus?.vcp_scan_status === "running"}
+              aria-label="KOSDAQ VCP 스캔 실행"
             >
               {vcpLoading ? (
                 <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -275,6 +278,7 @@ export function ScanTriggerPanel() {
             className="w-full h-9 text-xs"
             onClick={() => triggerSignalGeneration()}
             disabled={signalLoading || scanStatus?.signal_generation_status === "running"}
+            aria-label="시그널 생성 실행"
           >
             {signalLoading ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />

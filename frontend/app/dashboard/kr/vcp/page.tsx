@@ -124,26 +124,40 @@ export default function VCPPage() {
 
   // WebSocket 시그널 업데이트 처리
   useEffect(() => {
+    let cancelled = false;
+
     if (wsSignals.length > 0) {
-      console.log("[VCP] Received signals from WebSocket:", wsSignals.length);
+      if (process.env.NODE_ENV === "development") {
+        console.log("[VCP] Received signals from WebSocket:", wsSignals.length);
+      }
       // WebSocket 시그널을 VCPSignal 형식으로 변환
       const vcpSignals: VCPSignal[] = wsSignals.map((s) => ({
         ...s,
         score: typeof s.score === "number" ? s.score : s.score?.total ?? 0,
       }));
-      setSignals(vcpSignals);
-      setLoading(false);
 
-      // 생성일 추출
-      if (wsSignals[0]?.created_at) {
-        const d = new Date(wsSignals[0].created_at);
-        setSignalDate(d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }));
+      // cleanup 확인 후 상태 업데이트 (Strict Mode 중복 방지)
+      if (!cancelled) {
+        setSignals(vcpSignals);
+        setLoading(false);
+
+        // 생성일 추출
+        if (wsSignals[0]?.created_at) {
+          const d = new Date(wsSignals[0].created_at);
+          setSignalDate(d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }));
+        }
       }
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [wsSignals]);
 
   // 데이터 로드 (WebSocket 연결되지 않았거나 초기 로드 시)
   useEffect(() => {
+    let cancelled = false;
+
     // WebSocket으로 데이터를 받고 있고, 이미 시그널이 있으면 스킵
     // wsSignals.length 추가: WebSocket이 연결되었지만 데이터가 없는 경우 API 폴백 실행
     if (signalsRealtime && wsSignals.length > 0) {
@@ -156,12 +170,14 @@ export default function VCPPage() {
         // VCP 시그널 조회 (상위 10개)
         const vcpResponse = await apiClient.getVCPSignals(10);
 
-        // 디버깅: API 응답 로그
-        console.log('[VCP DEBUG] API Response:', {
-          count: vcpResponse.count,
-          signalsLength: vcpResponse.signals.length,
-          signals: vcpResponse.signals.map(s => ({ ticker: s.ticker, name: s.name, score: s.score }))
-        });
+        // 디버깅: API 응답 로그 (개발 환경에서만)
+        if (process.env.NODE_ENV === "development") {
+          console.log('[VCP DEBUG] API Response:', {
+            count: vcpResponse.count,
+            signalsLength: vcpResponse.signals.length,
+            signals: vcpResponse.signals.map(s => ({ ticker: s.ticker, name: s.name, score: s.score }))
+          });
+        }
 
         // API 응답을 VCPSignal 형식으로 변환
         const vcpSignals: VCPSignal[] = vcpResponse.signals.map((s) => ({
@@ -170,31 +186,44 @@ export default function VCPPage() {
           // foreign_5d, inst_5d는 이미 API 응답에 포함
         }));
 
-        console.log('[VCP DEBUG] Signals to set:', vcpSignals.length);
-        setSignals(vcpSignals);
-
-        // 생성일 추출
-        if (vcpResponse.generated_at) {
-          const d = new Date(vcpResponse.generated_at);
-          setSignalDate(d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }));
+        if (process.env.NODE_ENV === "development") {
+          console.log('[VCP DEBUG] Signals to set:', vcpSignals.length);
         }
 
-        // AI 분석 데이터 (선택적)
-        try {
-          const aiRes = await apiClient.getAIAnalysis();
-          const aiMap = mapAIAnalysisData(aiRes);
-          setAiDataMap(aiMap);
-        } catch (aiError) {
-          console.warn("AI analysis not available:", aiError);
+        // cleanup 확인 후 상태 업데이트 (Strict Mode 중복 방지)
+        if (!cancelled) {
+          setSignals(vcpSignals);
+
+          // 생성일 추출
+          if (vcpResponse.generated_at) {
+            const d = new Date(vcpResponse.generated_at);
+            setSignalDate(d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }));
+          }
+
+          // AI 분석 데이터 (선택적)
+          try {
+            const aiRes = await apiClient.getAIAnalysis();
+            const aiMap = mapAIAnalysisData(aiRes);
+            setAiDataMap(aiMap);
+          } catch (aiError) {
+            console.warn("AI analysis not available:", aiError);
+          }
         }
       } catch (error) {
         console.error("Failed to load VCP data:", error);
       } finally {
-        setLoading(false);
+        // cleanup 확인 후 로딩 상태 업데이트
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     loadData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [signalsRealtime, wsSignals.length]);  // wsSignals.length 추가: WebSocket 데이터 수신 상태 변경 시 재평가
 
   // 시그널 정렬 (점수순)
@@ -204,7 +233,9 @@ export default function VCPPage() {
       const scoreB = typeof b.score === "number" ? b.score : b.score?.total ?? 0;
       return scoreB - scoreA;
     });
-    console.log('[VCP DEBUG] Sorted signals:', sorted.length, sorted.map(s => ({ ticker: s.ticker, score: s.score })));
+    if (process.env.NODE_ENV === "development") {
+      console.log('[VCP DEBUG] Sorted signals:', sorted.length, sorted.map(s => ({ ticker: s.ticker, score: s.score })));
+    }
     return sorted;
   }, [signals]);
 
@@ -247,6 +278,21 @@ export default function VCPPage() {
               </span>
             </div>
             <div className="flex items-center gap-4">
+              <a
+                href="/custom-recommendation"
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition text-sm font-medium"
+              >
+                단타 추천
+              </a>
+              {/* WebSocket 연결 상태 표시 */}
+              <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
+                wsConnected
+                  ? "bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/30"
+                  : "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border border-yellow-500/30"
+              }`} title={wsConnected ? "실시간 연결됨" : "실시간 연결 안됨"}>
+                <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? "bg-green-500" : "bg-yellow-500 animate-pulse"}`}></span>
+                {wsConnected ? "실시간" : "연결 안됨"}
+              </div>
               <a
                 href="/dashboard"
                 className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
@@ -351,10 +397,6 @@ export default function VCPPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {(() => {
-                    console.log('[VCP DEBUG] Rendering table rows:', sortedSignals.length);
-                    return null;
-                  })()}
                   {sortedSignals.map((signal, idx) => {
                     const currentPrice = getCurrentPrice(signal);
                     const returnPct = getReturnPct(signal);

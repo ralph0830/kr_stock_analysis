@@ -3,18 +3,22 @@
  *
  * Phase 5 개선사항:
  * - 데이터 소스 표시 (WebSocket vs 폴링)
- * - 폴링 Fallback 지원
+ * - 중복 API 요청 방지 (부모로부터만 데이터 전달받음)
+ * - 순수 표시 컴포넌트 (직접 API 호출하지 않음)
  */
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { useRealtimePrices, useWebSocket, RealtimePrice } from "@/hooks/useWebSocket";
+import { useMemo } from "react";
+import { RealtimePrice } from "@/hooks/useWebSocket";
 import { formatPrice, formatPercent, formatNumber, cn } from "@/lib/utils";
-import { apiClient } from "@/lib/api-client";
 
 interface RealtimePriceCardProps {
   ticker: string;
   name: string;
+  // 부모로부터 받은 데이터 (필수)
+  priceData: RealtimePrice | null | undefined;
+  connected: boolean;
+  connecting?: boolean;
 }
 
 // 데이터 소스 타입
@@ -55,81 +59,31 @@ function formatTimestamp(timestamp: string): string {
   }
 }
 
-export function RealtimePriceCard({ ticker, name }: RealtimePriceCardProps) {
-  const { prices, getPrice, connected, error, connecting } = useRealtimePrices([ticker]);
-  const realtimePrice = getPrice(ticker);
-
+/**
+ * 실시간 가격 카드 (순수 표시 컴포넌트)
+ *
+ * props로만 데이터를 받으며, 직접 API를 호출하지 않습니다.
+ */
+export function RealtimePriceCard({
+  ticker,
+  name,
+  priceData,
+  connected,
+  connecting = false,
+}: RealtimePriceCardProps) {
   // 종목 분류
-  const { category, realtimeSupported } = useMemo(() => getTickerCategory(ticker), [ticker]);
+  const { category } = useMemo(() => getTickerCategory(ticker), [ticker]);
 
-  // 폴링 데이터 상태
-  const [pollingPrice, setPollingPrice] = useState<RealtimePrice | null>(null);
-  const [dataSource, setDataSource] = useState<DataSourceType>("none");
-  const [isPolling, setIsPolling] = useState(false);
+  // 데이터 소스 판정
+  const dataSource: DataSourceType = connected && priceData ? "realtime" : priceData ? "polling" : "none";
 
-  // WebSocket 데이터가 있으면 실시간으로 표시
-  useEffect(() => {
-    if (realtimePrice) {
-      setDataSource("realtime");
-    } else if (pollingPrice) {
-      setDataSource("polling");
-    } else {
-      setDataSource("none");
-    }
-  }, [realtimePrice, pollingPrice]);
+  // 표시할 데이터
+  const displayPrice = priceData;
 
-  // 폴링 Fallback: WebSocket 데이터가 없거나 연결되지 않은 경우 폴링 시도
-  useEffect(() => {
-    // WebSocket 연결되고 데이터가 있으면 폴링 스킵
-    if (connected && realtimePrice) {
-      return;
-    }
-
-    let mounted = true;
-    setIsPolling(true);
-
-    const fetchPollingPrice = async () => {
-      try {
-        const prices = await apiClient.getRealtimePrices([ticker]);
-        if (mounted && prices[ticker]) {
-          const priceData = prices[ticker];
-          setPollingPrice({
-            ticker: priceData.ticker,
-            price: priceData.price,
-            change: priceData.change,
-            change_rate: priceData.change_percent,
-            volume: priceData.volume,
-            timestamp: priceData.timestamp || new Date().toISOString(),
-          });
-          setDataSource("polling");
-        }
-      } catch (e) {
-        console.error(`[RealtimePriceCard] Polling failed for ${ticker}:`, e);
-      } finally {
-        if (mounted) {
-          setIsPolling(false);
-        }
-      }
-    };
-
-    // 즉시 실행
-    fetchPollingPrice();
-
-    // 주기적 폴링 (15초 간격)
-    const interval = setInterval(fetchPollingPrice, 15000);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, [ticker, connected, realtimePrice]);
-
-  // 표시할 데이터 (WebSocket 우선, 폴링 Fallback)
-  const displayPrice = realtimePrice || pollingPrice;
-
-  // 변동량 계산 (displayPrice 기준)
+  // 변동량 계산
   const isPositive = (displayPrice?.change ?? 0) > 0;
   const isNegative = (displayPrice?.change ?? 0) < 0;
+
   const DataSourceBadge = () => {
     if (dataSource === "realtime" && connected) {
       return (
@@ -143,7 +97,7 @@ export function RealtimePriceCard({ ticker, name }: RealtimePriceCardProps) {
     if (dataSource === "polling") {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-          <span className={cn("w-2 h-2 rounded-full", isPolling ? "bg-yellow-500 animate-pulse" : "bg-yellow-500")}></span>
+          <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
           폴링 {category}
         </span>
       );
@@ -168,34 +122,7 @@ export function RealtimePriceCard({ ticker, name }: RealtimePriceCardProps) {
     );
   };
 
-  // 에러 상태
-  if (error) {
-    return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {name}
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{ticker}</p>
-          </div>
-          <div className="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-            연결 실패
-          </div>
-        </div>
-        <div className="text-center py-4">
-          <p className="text-red-500 dark:text-red-400 text-sm">
-            WebSocket 연결 실패
-          </p>
-          <p className="text-gray-500 dark:text-gray-400 text-xs mt-2">
-            서버가 실행 중인지 확인하세요
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // 연결 중 또는 데이터 없음
+  // 데이터 없음 상태
   if (!displayPrice) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg">
@@ -212,7 +139,7 @@ export function RealtimePriceCard({ ticker, name }: RealtimePriceCardProps) {
         </div>
         <div className="text-center py-4">
           <p className="text-gray-500 dark:text-gray-400">
-            {isPolling ? "폴링 중..." : connecting ? "연결 중..." : "데이터 대기 중..."}
+            {connecting ? "연결 중..." : "데이터 대기 중..."}
           </p>
         </div>
       </div>
@@ -317,22 +244,99 @@ export function RealtimePriceCard({ ticker, name }: RealtimePriceCardProps) {
 }
 
 /**
- * 실시간 가격 그리드 컴포넌트
+ * 실시간 가격 그리드 컴포넌트 (폴링 로직 포함)
+ *
+ * 상위 컴포넌트에서 데이터를 받아 자식에게 전달하며,
+ * WebSocket 연결이 없을 때 폴링을 수행합니다.
  */
+import { useEffect, useState, useCallback } from "react";
+import { apiClient } from "@/lib/api-client";
+import type { StockPrice } from "@/types";
+
+interface RealtimePriceGridProps {
+  stocks: Array<{ ticker: string; name: string }>;
+  getPrice: (ticker: string) => RealtimePrice | undefined;
+  connected: boolean;
+  connecting?: boolean;
+}
+
 export function RealtimePriceGrid({
   stocks,
-}: {
-  stocks: Array<{ ticker: string; name: string }>;
-}) {
+  getPrice,
+  connected,
+  connecting = false,
+}: RealtimePriceGridProps) {
+  // 폴링 데이터 상태 (props로 받은 데이터가 없을 때만 사용)
+  const [pollingPrices, setPollingPrices] = useState<Map<string, RealtimePrice>>(new Map());
+  const [isPolling, setIsPolling] = useState(false);
+
+  // WebSocket 연결되면 폴링 데이터 초기화
+  useEffect(() => {
+    if (connected) {
+      setPollingPrices(new Map());
+    }
+  }, [connected]);
+
+  // 폴링: WebSocket 연결이 없을 때만 수행
+  useEffect(() => {
+    // WebSocket 연결되면 폴링 중지
+    if (connected) {
+      return;
+    }
+
+    const fetchAllPrices = async () => {
+      setIsPolling(true);
+      try {
+        const tickers = stocks.map((s) => s.ticker);
+        const prices = await apiClient.getRealtimePrices(tickers);
+
+        // StockPrice를 RealtimePrice로 변환
+        const mappedPrices = new Map<string, RealtimePrice>();
+        for (const [ticker, price] of Object.entries(prices)) {
+          const stockPrice = price as StockPrice;
+          mappedPrices.set(ticker, {
+            ticker: stockPrice.ticker,
+            price: stockPrice.price,
+            change: stockPrice.change,
+            change_rate: stockPrice.change_percent,
+            volume: stockPrice.volume,
+            timestamp: stockPrice.timestamp || new Date().toISOString(),
+          });
+        }
+        setPollingPrices(mappedPrices);
+      } catch (e) {
+        console.error("[RealtimePriceGrid] Polling failed:", e);
+      } finally {
+        setIsPolling(false);
+      }
+    };
+
+    // 즉시 실행
+    fetchAllPrices();
+
+    // 15초마다 폴링
+    const interval = setInterval(fetchAllPrices, 15000);
+
+    return () => clearInterval(interval);
+  }, [stocks, connected]);
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {stocks.map((stock) => (
-        <RealtimePriceCard
-          key={stock.ticker}
-          ticker={stock.ticker}
-          name={stock.name}
-        />
-      ))}
+      {stocks.map((stock) => {
+        // WebSocket 데이터 우선, 없으면 폴링 데이터
+        const priceData = getPrice(stock.ticker) || pollingPrices.get(stock.ticker);
+
+        return (
+          <RealtimePriceCard
+            key={stock.ticker}
+            ticker={stock.ticker}
+            name={stock.name}
+            priceData={priceData}
+            connected={connected}
+            connecting={connecting}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -347,6 +351,8 @@ export function RealtimePriceGrid({
  * - 접근성 (aria-label)
  * - 부드러운 전환 애니메이션
  */
+import { useWebSocket } from "@/hooks/useWebSocket";
+
 export function WebSocketStatus() {
   const { connected, connecting, error, clientId, reconnectCount, lastError, connectionState } = useWebSocket({});
 
@@ -387,8 +393,10 @@ export function WebSocketStatus() {
   const statusConfig = getStatusConfig();
 
   // Phase 4: 에러 메시지 생성 (툴팁용)
-  const getErrorMessage = () => {
-    if (lastError) return lastError;
+  const getErrorMessage = (): string | null => {
+    if (lastError) {
+      return typeof lastError === "string" ? lastError : lastError.userMessage;
+    }
     if (error) return "연결 오류가 발생했습니다";
     return null;
   };

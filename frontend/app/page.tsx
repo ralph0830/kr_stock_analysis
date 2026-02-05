@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useStore } from "@/store";
-import { useMarketGate } from "@/hooks/useWebSocket";
+import { useMarketGate, useRealtimePrices } from "@/hooks/useWebSocket";
 import { formatPrice, formatPercent, getMarketGateColor, cn } from "@/lib/utils";
 import { RealtimePriceGrid, WebSocketStatus } from "@/components/RealtimePriceCard";
 import { Watchlist } from "@/components/Watchlist";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { Button } from "@/components/ui/button";
+import { RefreshCw, AlertCircle } from "lucide-react";
 
 export default function HomePage() {
   const [showDashboard, setShowDashboard] = useState(false);
@@ -18,7 +21,11 @@ export default function HomePage() {
   } = useStore();
 
   // Market Gate 실시간 WebSocket Hook 사용
-  const { marketGate, isRealtime, connected, lastUpdate } = useMarketGate();
+  const { marketGate, isRealtime, connected, lastUpdate, loading: marketGateLoading, error: marketGateError, refetch: refetchMarketGate } = useMarketGate();
+
+  // 실시간 가격 조회 (모든 시그널 종목에 대해 한 번만 호출)
+  const signalTickers = useMemo(() => signals.map((s) => s.ticker), [signals]);
+  const { getPrice, connected: pricesConnected } = useRealtimePrices(signalTickers);
 
   useEffect(() => {
     // 시그널 데이터 로드
@@ -46,6 +53,12 @@ export default function HomePage() {
               <WebSocketStatus />
             </div>
             <div className="flex items-center gap-2">
+              <Link
+                href="/custom-recommendation"
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition text-sm font-medium"
+              >
+                단타 추천
+              </Link>
               <ThemeToggle />
               <button
                 onClick={() => setShowDashboard(!showDashboard)}
@@ -93,7 +106,30 @@ export default function HomePage() {
               </div>
             )}
           </div>
-          {marketGate ? (
+
+          {/* 에러 상태 */}
+          {marketGateError ? (
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg">
+              <div className="text-center py-4">
+                <AlertCircle className="w-8 h-8 text-yellow-500 mx-auto mb-3" />
+                <p className="text-gray-900 dark:text-gray-100 font-medium mb-2">
+                  Market Gate 정보를 불러올 수 없습니다
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  {marketGateError.message || "네트워크 연결을 확인해주세요"}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchMarketGate()}
+                  className="mx-auto"
+                >
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  다시 시도
+                </Button>
+              </div>
+            </div>
+          ) : marketGate ? (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-lg">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -118,9 +154,13 @@ export default function HomePage() {
                       {lastUpdate.toLocaleString("ko-KR")}
                     </p>
                   )}
-                  {isRealtime && (
+                  {isRealtime ? (
                     <p className="text-xs text-green-600 dark:text-green-400">
                       WebSocket 실시간 업데이트
+                    </p>
+                  ) : !connected && (
+                    <p className="text-xs text-yellow-600 dark:text-yellow-400">
+                      API 폴링 모드
                     </p>
                   )}
                 </div>
@@ -191,7 +231,11 @@ export default function HomePage() {
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
               실시간 가격 모니터링
             </h2>
-            <RealtimePriceGrid stocks={realtimeTickers} />
+            <RealtimePriceGrid
+              stocks={realtimeTickers}
+              getPrice={getPrice}
+              connected={pricesConnected}
+            />
           </section>
         )}
 

@@ -13,14 +13,14 @@ services:
     ports:
       - "5114:5114"
     env_file:
-      - ../../.env
+      - .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     volumes:
-      - ../../services/chatbot:/app/services/chatbot:ro
-      - ../../src:/app/src:ro
+      - /home/ralph/work/python/kr_stock_analysis/services/chatbot:/app/services/chatbot
+      - /home/ralph/work/python/kr_stock_analysis/src:/app/src
     depends_on:
       postgres:
         condition: service_healthy

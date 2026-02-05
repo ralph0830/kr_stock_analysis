@@ -161,6 +161,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         "/api/kr/ai-analyze": (5, 60),
         # 채팅은 더 관대적으로
         "/api/kr/chatbot/chat": (30, 60),
+        # Daytrading API (단타 스캔/분석)
+        "/api/daytrading/signals": (60, 60),  # 시그널 조회: 60회/분
+        "/api/daytrading/scan": (10, 60),      # 시장 스캔: 10회/분
+        "/api/daytrading/analyze": (30, 60),   # 종목 분석: 30회/분
     }
 
     def __init__(

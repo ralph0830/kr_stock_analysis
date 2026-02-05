@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useStore } from "@/store";
 import { useRealtimePrices } from "@/hooks/useWebSocket";
 import { formatPrice, formatPercent, cn, getMarketGateColor, getGradeColor } from "@/lib/utils";
@@ -19,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // 섹터 신호 색상 유틸리티
 const getSectorColor = (signal: string) => {
@@ -94,13 +96,19 @@ export default function DashboardPage() {
               <WebSocketStatus />
             </div>
             <div className="flex items-center gap-4">
+              <Link
+                href="/custom-recommendation"
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition text-sm font-medium"
+              >
+                단타 추천
+              </Link>
               <ThemeToggle />
-              <a
+              <Link
                 href="/"
                 className="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
               >
                 ← 홈
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -122,11 +130,26 @@ export default function DashboardPage() {
                 Market Gate 상태
               </h2>
               {loadingMarketGate ? (
-                <Card>
-                  <CardContent className="p-6 text-center">
-                    <p className="text-gray-500">로딩 중...</p>
-                  </CardContent>
-                </Card>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <Skeleton className="h-4 w-24" />
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-16 w-16 rounded-full mb-2" />
+                      <Skeleton className="h-8 w-20" />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <Skeleton className="h-4 w-20" />
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </CardContent>
+                  </Card>
+                </div>
               ) : marketGate ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* 게이트 점수 카드 */}
@@ -249,7 +272,11 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 {loadingBacktestKPI ? (
-                  <p className="text-sm text-gray-500">로딩 중...</p>
+                  <div className="space-y-2">
+                    <Skeleton className="h-8 w-16" />
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
                 ) : backtestKPI ? (
                   <div className="space-y-2">
                     {backtestKPI.vcp.status === "OK" ? (
@@ -294,7 +321,11 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 {loadingBacktestKPI ? (
-                  <p className="text-sm text-gray-500">로딩 중...</p>
+                  <div className="space-y-2">
+                    <Skeleton className="h-8 w-16" />
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
                 ) : backtestKPI ? (
                   <div className="space-y-2">
                     {backtestKPI.closing_bet.status === "OK" ? (
@@ -335,7 +366,11 @@ export default function DashboardPage() {
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">
               실시간 가격 모니터링
             </h2>
-            <RealtimePriceGrid stocks={realtimeTickers} />
+            <RealtimePriceGrid
+              stocks={realtimeTickers}
+              getPrice={getPrice}
+              connected={pricesConnected}
+            />
           </section>
         )}
 
@@ -346,9 +381,38 @@ export default function DashboardPage() {
           </h2>
           {loadingSignals ? (
             <Card>
-              <CardContent className="p-6 text-center">
-                <p className="text-gray-500">로딩 중...</p>
-              </CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>티커</TableHead>
+                    <TableHead>종목명</TableHead>
+                    <TableHead>시그널</TableHead>
+                    <TableHead>점수</TableHead>
+                    <TableHead>등급</TableHead>
+                    <TableHead className="text-right">현재가</TableHead>
+                    <TableHead className="text-right">전일비</TableHead>
+                    <TableHead className="text-right">등락률</TableHead>
+                    <TableHead className="text-right">진입가</TableHead>
+                    <TableHead className="text-right">목표가</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...Array(5)].map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                      <TableCell><Skeleton className="h-6 w-10 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </Card>
           ) : signals.length > 0 ? (
             <Card>
@@ -462,36 +526,36 @@ export default function DashboardPage() {
                     주식 관련 질문을 하고 AI 답변을 받아보세요
                   </p>
                 </div>
-                <a
+                <Link
                   href="/chatbot"
                   className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
                 >
                   챗봇 시작하기
-                </a>
+                </Link>
               </div>
             </CardContent>
           </Card>
         </section>
 
-        {/* 내 맘대로 추천 */}
+        {/* 내 맘대로 추천 (Daytrading) */}
         <section>
-          <Card className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-amber-200 dark:border-amber-800">
+          <Card className="bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border-yellow-200 dark:border-yellow-800">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
-                    ⭐ 내 맘대로 추천
+                    ⚡ 단타 추천
                   </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    나만의 조건으로 맞춤 종목을 추천받아보세요
+                    7가지 체크리스트 기반 당일 매수 후 익일 매도 전략
                   </p>
                 </div>
-                <a
+                <Link
                   href="/custom-recommendation"
-                  className="px-6 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium"
+                  className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition text-sm font-medium"
                 >
                   추천받기
-                </a>
+                </Link>
               </div>
             </CardContent>
           </Card>

@@ -10,6 +10,7 @@ kiwoom_stock_telegram 패턴 적용:
 
 import asyncio
 import json
+import time
 import uuid
 from typing import Optional
 

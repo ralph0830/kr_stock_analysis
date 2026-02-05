@@ -160,10 +160,13 @@ describe("ChartPage - TDD", () => {
     expect(screen.getByText("📊 차트 시각화")).toBeInTheDocument()
   })
 
-  it("Kiwoom 실시간 데이터 연동 배지를 표시한다", () => {
+  it("Kiwoom 실시간 데이터 연동 배지를 표시한다", async () => {
     renderChartPage()
 
-    expect(screen.getByText(/Kiwoom 실시간 데이터 연동됨/)).toBeInTheDocument()
+    // 비동기 상태 업데이트 대기
+    await waitFor(() => {
+      expect(screen.getByText(/Kiwoom 실시간 데이터 연동됨/)).toBeInTheDocument()
+    }, { timeout: 3000 })
   })
 
   it("검색 입력창을 렌더링한다", () => {

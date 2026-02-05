@@ -5,20 +5,19 @@ services:
   db-init:
     build:
       context: ../../../
-      dockerfile: services/api_gateway/Dockerfile
-      target: development
-    image: api-gateway:dev
+      dockerfile: docker/db-init/Dockerfile
+    image: db-init:dev
     container_name: ralph-db-init
     restart: "no"  # 일회성 실행
     env_file:
-      - ../../../.env
+      - .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
-      PYTHONPATH: /app:/app/services/api_gateway
+      PYTHONPATH: /app
     command: >
       sh -c "
       echo '🔧 Initializing database...' &&
-      python scripts/init_db.py &&
+      python /app/scripts/init_db.py &&
       echo '✅ Database initialization complete!'
       "
     depends_on:

@@ -291,6 +291,10 @@ export default function KROverviewPage() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="container mx-auto px-4 py-8">
+          {/* E2E 테스트를 위한 보이는 h1 추가 */}
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+            KR Market Overview
+          </h1>
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-16 text-center shadow">
             <div className="inline-flex items-center gap-3">
               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -307,6 +311,10 @@ export default function KROverviewPage() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
         <div className="container mx-auto px-4 py-8">
+          {/* E2E 테스트를 위한 보이는 h1 추가 */}
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+            KR Market Overview
+          </h1>
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-16 text-center shadow">
             <div className="max-w-md mx-auto">
               <div className="text-yellow-500 text-5xl mb-4">⚠️</div>
@@ -354,9 +362,17 @@ export default function KROverviewPage() {
               </span>
             </div>
             <div className="flex items-center gap-4">
+              <a
+                href="/custom-recommendation"
+                className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition text-sm font-medium"
+              >
+                단타 추천
+              </a>
               <button
                 onClick={loadData}
                 className="px-3 py-1.5 rounded-lg bg-blue-500 text-white text-sm font-medium hover:bg-blue-600 transition-colors"
+                aria-label="데이터 새로고침"
+                title="데이터 새로고침"
               >
                 리프레시
               </button>

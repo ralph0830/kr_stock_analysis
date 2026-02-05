@@ -72,11 +72,19 @@ class ServiceRegistry:
         ))
 
         # AI Analyzer
-        ai_url = os.getenv("AI_ANALYZER_URL", "http://localhost:5115")
+        ai_url = os.getenv("AI_ANALYZER_URL", "http://localhost:5116")
         self.register(ServiceInfo(
             name="ai-analyzer",
             url=ai_url,
             health_check_url=f"{ai_url}/health"
+        ))
+
+        # Daytrading Scanner
+        daytrading_url = os.getenv("DAYTRADING_SCANNER_URL", "http://localhost:5115")
+        self.register(ServiceInfo(
+            name="daytrading-scanner",
+            url=daytrading_url,
+            health_check_url=f"{daytrading_url}/health"
         ))
 
     def register(self, service_info: ServiceInfo) -> None:
