@@ -305,6 +305,68 @@ app.include_router(chatbot.router)    # /api/kr/chatbot
 | `backtest_results` | 백테스트 결과 | ❌ |
 | `ai_analyses` | AI 분석 결과 | ❌ |
 
+### 5.3 Database Initialization
+
+데이터베이스 테이블은 최초 실행 시 자동으로 생성됩니다.
+
+#### First-time Setup
+
+**1. Local Development**
+```bash
+# 의존성 설치
+uv sync
+
+# 인프라 서비스 시작
+docker compose up -d postgres redis
+
+# DB 초기화 (테이블 생성)
+uv run python scripts/init_db.py
+```
+
+**2. Docker Compose**
+```bash
+# 개발 환경 (DB 자동 초기화)
+docker compose --profile dev up -d
+
+# 운영 환경
+docker compose --profile prod up -d
+```
+
+Docker Compose 실행 시 `db-init` 서비스가 자동으로 테이블을 생성합니다:
+- `postgres` → healthcheck 통과 대기
+- `db-init` → 테이블 생성 후 완료
+- `api-gateway` → DB 의존 서비스 시작
+
+#### Running Migrations
+
+**Method 1: SQLAlchemy create_all (현재 사용)**
+```bash
+# 로컬 실행
+uv run python scripts/init_db.py
+
+# Docker 실행
+docker compose run --rm db-init
+```
+
+**Method 2: Alembic (추후 도입 예정)**
+```bash
+# Alembic 초기화 (미구현)
+uv run alembic upgrade head
+```
+
+#### 생성되는 테이블
+
+| 테이블 | 용도 | TimescaleDB |
+|--------|------|-------------|
+| `stocks` | 종목 기본 정보 | ❌ |
+| `signals` | VCP/종가베팅 시그널 | ❌ |
+| `daily_prices` | 일봉 데이터 | ✅ 하이퍼테이블 |
+| `institutional_flows` | 기관 수급 데이터 | ✅ 하이퍼테이블 |
+| `market_status` | Market Gate 상태 | ❌ |
+| `ai_analyses` | AI 분석 결과 | ❌ |
+| `backtest_results` | 백테스트 결과 | ❌ |
+| `daytrading_signals` | 단타 매수 신호 | ❌ |
+
 ---
 
 ## 6. 통신 구조
