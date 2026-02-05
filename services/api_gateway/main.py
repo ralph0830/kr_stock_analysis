@@ -294,6 +294,7 @@ async def lifespan(app: FastAPI):
     if WEBSOCKET_AVAILABLE and connection_manager:
         print("💓 Starting WebSocket Heartbeat Manager...")
         heartbeat_mgr = create_heartbeat_manager(connection_manager)
+        await heartbeat_mgr.start()  # 하트비트 태스크 실제 시작
         print("✅ Heartbeat Manager started (30s interval)")
     else:
         print("⚠️ WebSocket not available - heartbeat skipped")

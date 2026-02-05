@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 _heartbeat_manager = get_heartbeat_manager()
 
 # WebSocket 설정
-WS_RECV_TIMEOUT = 60  # 메시지 수신 타임아웃 (초)
+WS_RECV_TIMEOUT = 120  # 메시지 수신 타임아웃 (초) - 60→120 증가 (keepalive 개선)
 
 # CORS 허용_origin 목록 (main.py의 CORSMiddleware와 동기화 필요)
 ALLOWED_WS_ORIGINS = [
@@ -145,6 +145,11 @@ async def websocket_endpoint(
         await connection_manager.disconnect(client_id)
         return
 
+    # 연결 추적용 변수 (keepalive 모니터링)
+    connection_start_time = time.time()
+    last_ping_time = time.time()
+    last_pong_time = time.time()
+
     # 메시지 수신 루프 (kiwoom_stock_telegram 패턴 적용)
     while True:
         try:
@@ -156,6 +161,7 @@ async def websocket_endpoint(
             )
 
             message_type = data.get("type")
+            current_time = time.time()
             print(f"[WS ROUTER] Received message from {client_id}: type={message_type}, data={data}")
             logger.debug(f"[WebSocket] Received from {client_id}: {message_type}")
 
@@ -185,13 +191,24 @@ async def websocket_endpoint(
             elif message_type == "ping":
                 # 핑/퐁 응답 (kiwoom_stock_telegram 패턴: 그대로 돌려보냄)
                 await websocket.send_json({"type": "pong"})
-                logger.debug(f"[WebSocket] Pong sent to {client_id}")
+                round_trip_ms = (current_time - last_ping_time) * 1000
+                logger.debug(f"[WebSocket] Ping/Pong exchanged with {client_id}, "
+                              f"round-trip: {round_trip_ms:.0f}ms")
+                last_ping_time = current_time
 
             elif message_type == "pong":
-                # Phase 3: Pong 수신 시간 기록
+                # Phase 3: Pong 수신 시간 기록 및 ping-pong 간격 모니터링
                 if _heartbeat_manager:
                     _heartbeat_manager.record_pong(client_id)
-                logger.debug(f"[WebSocket] Pong received from {client_id}")
+                last_pong_time = current_time
+                time_since_last_ping = (current_time - last_ping_time)
+                logger.debug(f"[WebSocket] Pong received from {client_id}, "
+                              f"ping-pong gap: {time_since_last_ping:.1f}s")
+
+                # 너무 오래된 pong 경고 (60초 이상)
+                if time_since_last_ping > 60:
+                    logger.warning(f"[WebSocket] Large ping-pong gap ({time_since_last_ping:.1f}s) "
+                                    f"for client {client_id}")
 
             else:
                 await websocket.send_json({
@@ -206,12 +223,13 @@ async def websocket_endpoint(
 
         except WebSocketDisconnect as e:
             # 정상/비정상 종료 처리 (kiwoom_stock_telegram 패턴)
+            duration = time.time() - connection_start_time
             if e.code == 1000:
-                logger.info(f"[WebSocket] Client {client_id} disconnected normally")
+                logger.info(f"[WebSocket] Client {client_id} disconnected normally (duration: {duration:.1f}s)")
             else:
                 logger.warning(
                     f"[WebSocket] Client {client_id} disconnected abnormally | "
-                    f"code={e.code}, reason='{e.reason}'"
+                    f"code={e.code}, reason='{e.reason}', duration: {duration:.1f}s"
                 )
             # 하트비트 관리자에서 클라이언트 제거
             if _heartbeat_manager:
@@ -223,8 +241,9 @@ async def websocket_endpoint(
         except Exception as e:
             # 기타 예외 처리
             import traceback
+            duration = time.time() - connection_start_time
             logger.error(
-                f"[WebSocket] Error for {client_id}: {type(e).__name__}: {e}\n"
+                f"[WebSocket] Error for {client_id} (duration: {duration:.1f}s): {type(e).__name__}: {e}\n"
                 f"Traceback: {traceback.format_exc()[-500:]}"
             )
             # 하트비트 관리자에서 클라이언트 제거
