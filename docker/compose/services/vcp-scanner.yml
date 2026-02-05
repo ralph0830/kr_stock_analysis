@@ -18,8 +18,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./services/vcp_scanner:/app/services/vcp_scanner:ro
-      - ./src:/app/src:ro
+      - ../../services/vcp_scanner:/app/services/vcp_scanner:ro
+      - ../../src:/app/src:ro
     depends_on:
       postgres:
         condition: service_healthy

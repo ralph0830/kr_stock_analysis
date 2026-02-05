@@ -19,8 +19,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     volumes:
-      - ./services/chatbot:/app/services/chatbot:ro
-      - ./src:/app/src:ro
+      - ../../services/chatbot:/app/services/chatbot:ro
+      - ../../src:/app/src:ro
     depends_on:
       postgres:
         condition: service_healthy

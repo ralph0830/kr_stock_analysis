@@ -226,7 +226,10 @@ async def run_jongga_v2_engine(
         market = _validate_market(request.market)
 
         # Celery 태스크 호출
-        from tasks.signal_tasks import generate_jongga_signals
+        try:
+            from tasks.signal_tasks import generate_jongga_signals
+        except ImportError:
+            from ralph_stock_lib.tasks.signal_tasks import generate_jongga_signals
 
         task = generate_jongga_signals.delay(
             capital=request.capital,
