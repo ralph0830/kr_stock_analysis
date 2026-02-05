@@ -29,6 +29,10 @@ include:
   - docker/compose/services/chatbot.yml
   - docker/compose/services/frontend.yml
   - docker/compose/services/celery.yml
+  # Profile 오버라이드 (dev/prod/test)
+  - docker/compose/profiles/dev.yml
+  - docker/compose/profiles/prod.yml
+  - docker/compose/profiles/test.yml
 
 # Application services with profiles
 services:

@@ -1,0 +1,138 @@
+# Production Profile Overrides
+# =============================================================================
+# 운영 환경용 오버라이드 설정
+# 특징: 최적화된 빌드, 리소스 제한, 재시작 정책
+# =============================================================================
+
+services:
+  # API Gateway - Production
+  api-gateway:
+    build:
+      target: production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    # No volumes for production - use baked images
+    healthcheck:
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+
+  # VCP Scanner - Production
+  vcp-scanner:
+    build:
+      target: production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Signal Engine - Production
+  signal-engine:
+    build:
+      target: production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Daytrading Scanner - Production
+  daytrading-scanner:
+    build:
+      target: production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Chatbot - Production
+  chatbot:
+    build:
+      target: production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Frontend - Production
+  frontend:
+    ports:
+      - "5110:3000"
+    # 빈 값으로 전달하여 코드에서 동적 결정
+    environment:
+      - NEXT_PUBLIC_API_URL=
+      - NEXT_PUBLIC_WS_URL=
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    # No volumes for production
+
+  # Celery Worker - Production
+  celery-worker:
+    build:
+      target: production
+    restart: always
+    command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=warning"]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # Celery Beat - Production
+  celery-beat:
+    build:
+      target: production
+    restart: always
+    command: ["celery", "-A", "tasks.celery_app", "beat", "--loglevel=warning"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # Flower - Production (monitoring only)
+  flower:
+    restart: always
+    environment:
+      - FLOWER_PORT=5555
+      - FLOWER_BASIC_AUTH=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}

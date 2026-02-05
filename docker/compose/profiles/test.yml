@@ -1,0 +1,57 @@
+# Test Profile Overrides
+# =============================================================================
+# 테스트 환경용 오버라이드 설정
+# 특징: 테스트 DB, 병렬 실행, 테스트 종료 후 자동 삭제
+# =============================================================================
+
+services:
+  # 테스트용 PostgreSQL
+  postgres-test:
+    image: timescale/timescaledb:latest-pg16
+    container_name: ralph-postgres-test
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ralph_stock_test
+      TIMESCALEDB_TELEMETRY: basic
+    tmpfs:
+      - /home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - ralph-network
+
+  # 테스트용 Redis
+  redis-test:
+    image: redis:7-alpine
+    container_name: ralph-redis-test
+    ports:
+      - "6381:6379"
+    command: redis-server --save ""
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - ralph-network
+
+  # API Gateway - Test
+  api-gateway:
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres-test:5432/ralph_stock_test
+      - REDIS_URL=redis://redis-test:6379/0
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy

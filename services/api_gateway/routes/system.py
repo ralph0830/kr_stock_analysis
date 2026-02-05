@@ -282,6 +282,18 @@ def get_system_health(
         except Exception:
             services["signal_engine"] = "down"
 
+        # Daytrading Scanner
+        try:
+            from services.api_gateway.service_registry import get_registry as get_api_registry
+            api_registry = get_api_registry()
+            daytrading_service = api_registry.get_service("daytrading-scanner")
+            if daytrading_service:
+                with httpx.Client(timeout=2.0) as client:
+                    response = client.get(f"{daytrading_service['url']}/health")
+                    services["daytrading_scanner"] = "up" if response.status_code == 200 else "down"
+        except Exception:
+            services["daytrading_scanner"] = "down"
+
     except Exception:
         pass
 
@@ -368,6 +380,32 @@ async def get_system_health_v2(
         if market_service:
             market_health = await health_checker.check_market_analyzer(market_service["url"])
             system_health.services["market_analyzer"] = market_health
+
+        # Daytrading Scanner
+        daytrading_service = registry.get_service("daytrading-scanner")
+        if daytrading_service:
+            try:
+                import httpx
+                start_time = time.time()
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(f"{daytrading_service['url']}/health")
+                    response_time = (time.time() - start_time) * 1000
+                    from src.health.health_checker import HealthStatus, ServiceHealth
+                    daytrading_health = ServiceHealth(
+                        name="daytrading_scanner",
+                        status=HealthStatus.HEALTHY if response.status_code == 200 else HealthStatus.UNHEALTHY,
+                        response_time_ms=response_time,
+                        message=f"HTTP {response.status_code}" if response.status_code != 200 else "OK"
+                    )
+                    system_health.services["daytrading_scanner"] = daytrading_health
+            except Exception as e:
+                from src.health.health_checker import HealthStatus, ServiceHealth
+                system_health.services["daytrading_scanner"] = ServiceHealth(
+                    name="daytrading_scanner",
+                    status=HealthStatus.UNHEALTHY,
+                    response_time_ms=0,
+                    message=str(e)
+                )
 
     except Exception:
         # 서비스 레지스트리 실패 시 무시
