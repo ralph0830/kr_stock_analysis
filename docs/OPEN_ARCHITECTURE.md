@@ -1,7 +1,7 @@
 # Ralph Stock Analysis - Open Architecture 문서
 
-**버전:** 2.0.0
-**최종 수정:** 2026-02-03
+**버전:** 2.1.0
+**최종 수정:** 2026-02-05
 
 ---
 
@@ -40,13 +40,15 @@ ralph_stock_analysis/
 │   ├── app/               # 페이지 라우트
 │   ├── components/        # 공통 컴포넌트
 │   ├── lib/               # 유틸리티
+│   ├── store/             # Zustand 상태 관리
 │   └── types/             # TypeScript 타입 정의
 │
 ├── services/              # FastAPI 마이크로서비스
 │   ├── api_gateway/       # API Gateway (Port: 5111) ⭐
 │   ├── vcp_scanner/       # VCP Scanner (Port: 5112)
 │   ├── signal_engine/     # Signal Engine (Port: 5113)
-│   └── chatbot/           # AI Chatbot (Port: 5114)
+│   ├── chatbot/           # AI Chatbot (Port: 5114)
+│   └── daytrading_scanner/ # Daytrading Scanner (Port: 5115) 🆕
 │
 ├── src/                   # 공유 Python 모듈
 │   ├── database/          # DB 세션, 모델
@@ -87,26 +89,34 @@ ralph_stock_analysis/
     │           │           │           │
     ▼           ▼           ▼           ▼
 ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────────┐
-│  VCP   │ │ Signal │ │ Chatbot│ │  DB   │ │   Redis     │
-│ Scanner│ │ Engine │ │        │ │(PostgreSQL)│  (Cache)  │
-│:5112   │ │:5113   │ │:5114   │ │:5433  │ │   :6380    │
+│  VCP   │ │ Signal │ │ Chatbot│ │Daytrade│ │   Redis     │
+│ Scanner│ │ Engine │ │        │ │Scanner │ │  (Cache)  │
+│:5112   │ │:5113   │ │:5114   │ │:5115   │ │   :6380    │
 └────────┘ └────────┘ └────────┘ └────────┘ └─────────────┘
+     │
+     ▼
+┌────────┐
+│   DB   │
+│(PGSQL) │
+│:5433   │
+└────────┘
 ```
 
 ### 2.2 포트 할당 규칙
 
 | 포트 | 서비스 | 설명 |
 |------|--------|------|
-| **5110** | Frontend | Next.js 개발 서버 |
-| **5111** | API Gateway | 메인 API 엔트리 포인트 |
+| **5110** | Frontend | Next.js 개발/운영 서버 |
+| **5111** | API Gateway | 메인 API 엔트리 포인트 ⭐ |
 | **5112** | VCP Scanner | 볼린저밴드 수축 패턴 스캐너 |
 | **5113** | Signal Engine | 종가베팅 V2 시그널 생성 |
 | **5114** | Chatbot | AI 챗봇 서비스 |
-| **5433** | PostgreSQL | 데이터베이스 (개발용) |
+| **5115** | Daytrading Scanner | 단타 매수 신호 스캐너 🆕 |
+| **5433** | PostgreSQL | 데이터베이스 (TimescaleDB) |
 | **6380** | Redis | 캐시/메시지 브로커 |
 | **5555** | Flower | Celery 모니터링 |
 
-> **규칙:** 모든 서비스는 `511x` 포트 범위를 사용합니다. (DB/Redis 제외)
+> **규칙:** 모든 애플리케이션 서비스는 `511x` 포트 범위를 사용합니다. (DB/Redis 제외)
 
 ---
 
@@ -160,7 +170,38 @@ app.include_router(chatbot.router)    # /api/kr/chatbot
 # 총점: 0-12점 → 등급: S(11-12), A(9-10), B(7-8), C(6이하)
 ```
 
-### 3.4 Chatbot (`services/chatbot/`)
+### 3.4 Daytrading Scanner (`services/daytrading_scanner/`) 🆕
+
+**책임:** 단타 매수 신호 스캔 및 분석
+
+```python
+# 단타 매수 조건
+1. 시가가 전날 고가 대비 3% 이상 하락 (과매도)
+2. 거래량 급증 (이폭 매수 체산)
+3. 15분 캔들이 강세 음봉 (녹음, 돌파, 역할)
+4. RSI 과매도 (14 기준 35 이하)
+5. MACD 골득차이 크게 발생
+```
+
+**주요 엔드포인트:**
+- `GET /api/kr/daytrading/signals` - 활성 단타 시그널
+- `GET /api/kr/daytrading/{ticker}` - 종목별 단타 분석
+- `GET /api/kr/daytrading/stats` - 스캔 통계
+
+```python
+# 점수 항목
+{
+    "news": 3,      # 뉴스 감성 분석
+    "volume": 3,    # 거래대금 급증
+    "chart": 2,     # 차트 패턴
+    "candle": 1,    # 캔들 패턴
+    "period": 1,    # 기간 조정
+    "flow": 2       # 수급 흐름
+}
+# 총점: 0-12점 → 등급: S(11-12), A(9-10), B(7-8), C(6이하)
+```
+
+### 3.5 Chatbot (`services/chatbot/`)
 
 **책임:** AI 기반 주식 챗봇 (RAG + Gemini)
 
@@ -215,7 +256,16 @@ app.include_router(chatbot.router)    # /api/kr/chatbot
 | GET | `/api/kr/chatbot/recommendations` | 종목 추천 | `IRecommendationItem[]` |
 | GET | `/api/kr/chatbot/health` | 헬스 체크 | `{status, service}` |
 
-### 4.6 시스템 API
+### 4.6 Daytrading API 🆕
+
+| 메서드 | 경로 | 설명 | 응답 타입 |
+|--------|------|------|-----------|
+| GET | `/api/kr/daytrading/signals` | 활성 단타 매수 신호 | `DaytradingSignal[]` |
+| GET | `/api/kr/daytrading/{ticker}` | 종목별 단타 분석 | `DaytradingAnalysis` |
+| GET | `/api/kr/daytrading/stats` | 스캔 통계 | `DaytradingStats` |
+| GET | `/api/kr/daytrading/checks` | 체크리스트 점수 | `ChecksResponse` |
+
+### 4.7 시스템 API
 
 | 메서드 | 경로 | 설명 | 응답 타입 |
 |--------|------|------|-----------|
@@ -441,3 +491,6 @@ uv run uvicorn services.chatbot.main:app --port 5114 --reload
 - [Docker Compose 가이드](../docker/compose/README.md)
 - [차트 시스템 가이드](../api/CHART_SYSTEM.md)
 - [서비스 모듈화 문서](../SERVICE_MODULARIZATION.md)
+- [Daytrading 시스템 문서](../api/DAYTRADING_SCANNER.md) 🆕
+- [Nginx Proxy 설정](../NGINX_PROXY_SETUP.md)
+- [WebSocket 설정](../WEBSOCKET.md)

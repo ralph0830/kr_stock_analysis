@@ -4,7 +4,7 @@
 services:
   chatbot:
     build:
-      context: .
+      context: ../../..
       dockerfile: services/chatbot/Dockerfile
       target: development
     image: chatbot:dev

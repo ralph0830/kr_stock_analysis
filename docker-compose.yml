@@ -1,81 +1,79 @@
-# Ralph Stock Analysis - Docker Compose (Profiles-based)
+# Ralph Stock Analysis - 통합 Docker Compose 설정
 # =============================================================================
-# Profiles 기반 통합 Docker Compose 설정
+# Profiles 기반 단일 진입점 구성
 #
 # 사용법:
 #   docker compose --profile dev up -d     # 개발 환경 (핫 리로드)
 #   docker compose --profile prod up -d    # 운영 환경 (최적화)
-#   docker compose --profile dev logs -f   # 로그 보기
+#   docker compose --profile test up -d    # 테스트 환경
 #   docker compose down                    # 전체 중지
 #
 # Profiles:
-#   - dev: 개발용 (소스 마운트, 핫 리로드, 디버깅)
+#   - dev:  개발용 (소스 마운트, 핫 리로드, 디버깅)
 #   - prod: 운영용 (빌드된 이미지, 리소스 제한)
+#   - test: 테스트용 (테스트 DB, 자동 정리)
+# =============================================================================
+#
+# @see docs/DOCKER_COMPOSE.md 상세 가이드 참조
 # =============================================================================
 
-# Include modular service files
 include:
+  # 인프라 서비스 (PostgreSQL, Redis)
   - docker/compose/infra.yml
-  - docker-compose.dev.yml
+  # 모듈화된 서비스 정의
+  - docker/compose/services/db-init.yml
   - docker/compose/services/api-gateway.yml
   - docker/compose/services/vcp-scanner.yml
   - docker/compose/services/signal-engine.yml
+  - docker/compose/services/daytrading-scanner.yml
   - docker/compose/services/chatbot.yml
   - docker/compose/services/frontend.yml
   - docker/compose/services/celery.yml
 
 # Application services with profiles
 services:
-  api-gateway:
-    profiles: [dev, prod]
+  db-init:
+    profiles: [dev, prod, test]
     env_file:
       - .env
-    build:
-      context: .
-      dockerfile: services/api_gateway/Dockerfile
+
+  api-gateway:
+    profiles: [dev, prod, test]
+    env_file:
+      - .env
 
   vcp-scanner:
     profiles: [dev, prod]
     env_file:
       - .env
-    build:
-      context: .
-      dockerfile: services/vcp_scanner/Dockerfile
 
   signal-engine:
     profiles: [dev, prod]
     env_file:
       - .env
-    build:
-      context: .
-      dockerfile: services/signal_engine/Dockerfile
+
+  daytrading-scanner:
+    profiles: [dev, prod]
+    env_file:
+      - .env
 
   chatbot:
     profiles: [dev, prod]
     env_file:
       - .env
-    build:
-      context: .
-      dockerfile: services/chatbot/Dockerfile
 
   celery-worker:
     profiles: [dev, prod]
     env_file:
       - .env
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
 
   celery-beat:
     profiles: [dev, prod]
     env_file:
       - .env
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
 
-networks:
-  ralph-network:
-    driver: bridge
-  host:
-    driver: bridge
+  flower:
+    profiles: [dev, prod]
+
+  frontend:
+    profiles: [dev, prod]

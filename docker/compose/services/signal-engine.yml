@@ -4,7 +4,7 @@
 services:
   signal-engine:
     build:
-      context: .
+      context: ../../..
       dockerfile: services/signal_engine/Dockerfile
       target: development
     image: signal-engine:dev

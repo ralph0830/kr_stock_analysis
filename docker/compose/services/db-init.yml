@@ -1,0 +1,28 @@
+# Database Initialization Service
+# 일회성 실행으로 DB 테이블 생성 및 TimescaleDB 설정
+
+services:
+  db-init:
+    build:
+      context: ../../../
+      dockerfile: services/api_gateway/Dockerfile
+      target: development
+    image: api-gateway:dev
+    container_name: ralph-db-init
+    restart: "no"  # 일회성 실행
+    env_file:
+      - ../../../.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      PYTHONPATH: /app:/app/services/api_gateway
+    command: >
+      sh -c "
+      echo '🔧 Initializing database...' &&
+      python scripts/init_db.py &&
+      echo '✅ Database initialization complete!'
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ralph-network

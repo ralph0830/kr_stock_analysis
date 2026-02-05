@@ -21,12 +21,19 @@ Microservices-based Korean stock analysis platform built with Python (FastAPI) a
 
 ### Docker Compose (권장) ⭐
 
+> **📖 상세 가이드:** [docs/DOCKER_COMPOSE.md](docs/DOCKER_COMPOSE.md) - Profiles 기반 통합 설정
+
 ```bash
 make dev     # 개발 환경 (hot reload)
 make prod    # 운영 환경
 make stop    # 서비스 중지
 make logs    # 로그 확인
 ```
+
+**Profiles:**
+- `dev`: 개발용 (핫 리로드, 소스 마운트)
+- `prod`: 운영용 (최적화, 리소스 제한)
+- `test`: 테스트용 (테스트 DB)
 
 ### 로컬 개발
 
@@ -65,6 +72,7 @@ celery -A tasks.celery_app beat --loglevel=info
 | 5112 | VCP Scanner | Pattern detection |
 | 5113 | Signal Engine | Signal generation |
 | 5114 | Chatbot | AI chatbot service |
+| 5115 | Daytrading Scanner | Daytrading signal scanner |
 | 5433 | PostgreSQL | Database (dev) |
 | 6380 | Redis | Cache/message broker (dev) |
 | 5555 | Flower | Celery monitoring |
@@ -109,18 +117,91 @@ Frontend (`frontend/.env.local`):
 # NEXT_PUBLIC_WS_URL=ws://localhost:5111
 ```
 
+### Database Initialization
+
+데이터베이스 테이블 자동 생성 (최초 1회만 실행):
+
+```bash
+# 방법 1: 로컬 개발 환경
+uv run python scripts/init_db.py
+
+# 방법 2: Docker Compose (자동 실행)
+docker compose --profile dev up -d
+# db-init service가 자동으로 테이블 생성 후 완료됨
+
+# 방법 3: Docker에서 수동 실행
+docker compose run --rm db-init
+```
+
+**생성되는 테이블:**
+- `stocks` - 종목 기본 정보
+- `signals` - VCP/종가베팅 시그널
+- `daily_prices` - 일봉 데이터 (TimescaleDB 하이퍼테이블)
+- `institutional_flows` - 기관 수급 데이터 (TimescaleDB 하이퍼테이블)
+- `market_status` - Market Gate 상태
+- `ai_analyses` - AI 분석 결과
+- `backtest_results` - 백테스트 결과
+
+### Nginx Proxy Manager (NPM) - Reverse Proxy 설정
+
+**중요:** 프로덕션 환경에서는 NPM을 통해 Reverse Proxy를 구성합니다.
+
+**환경 설정** (`.env.npm`):
+```bash
+NPM_URL=http://112.219.120.75:81
+NPM_EMAIL=your-email@example.com
+NPM_PASSWORD=your-password
+```
+
+**NPM 설정 관리 스크립트:**
+- `scripts/setup_npm_proxy.py` - NPM 프록시 호스트 자동 설정
+- `scripts/fix_npm_proxy.py` - forward_host 수정 스크립트
+
+**stock.ralphpark.com 프록시 구성:**
+| 경로 | 포워드 | 설명 |
+|------|--------|------|
+| `/` (메인) | `112.219.120.75:5110` | Frontend (Next.js) |
+| `/api` | `112.219.120.75:5111` | API Gateway |
+| `/ws` | `112.219.120.75:5111` | WebSocket |
+| WebSocket Upgrade | ✅ 활성화 | `allow_websocket_upgrade: true` |
+
+**NPM 관리 명령어:**
+```bash
+# NPM 설정 확인
+uv run python scripts/setup_npm_proxy.py
+
+# 수동 설정 (NPM 웹 UI: http://112.219.120.75:81)
+# Proxy Hosts → stock.ralphpark.com → Advanced
+# Custom Nginx Configuration 추가:
+```
+
+```nginx
+# WebSocket Headers
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $host;
+
+# Cache 비활성화 (실시간 데이터)
+add_header Cache-Control "no-store, no-cache, must-revalidate";
+add_header Pragma "no-cache";
+```
+
 ---
 
 ## Documentation
 
 | 문서 | 경로 | 설명 |
 |------|------|------|
+| **Docker Compose** | `docs/DOCKER_COMPOSE.md` | **Profiles 기반 통합 설정** ⭐ |
+| Docker Compose 통합 | `docs/DOCKER_COMPOSE_UNIFICATION.md` | 통합 계획 및 완료 보고서 ✅ |
 | **Open Architecture** | `docs/OPEN_ARCHITECTURE.md` | **마이크로서비스 구조** ⭐ |
 | **WebSocket 설정** | `docs/WEBSOCKET.md` | WebSocket 연결, CORS |
 | **실시간 OHLC 수집** | `docs/OHLC_COLLECTOR.md` | Kiwoom OHLC 수집기 |
 | **Nginx Proxy 설정** | `docs/NGINX_PROXY_SETUP.md` | 역프록시 설정 |
 | **테스트 가이드** | `docs/TESTING.md` | pytest 테스트 |
-| Docker Compose | `docker/compose/README.md` | Compose 사용 가이드 |
 | 서비스 모듈화 | `docs/SERVICE_MODULARIZATION.md` | 모듈화 보고서 |
 | API 가이드 | `docs/api/API_GUIDE.md` | 전체 API 엔드포인트 |
 | 차트 시스템 | `docs/api/CHART_SYSTEM.md` | 차트 시각화 |
@@ -227,11 +308,11 @@ ralph_stock_analysis/
 |------|------|
 | Migration | 7/7 Phases Complete (100%) ✅ |
 | Modularization | 7/7 Phases Complete (100%) ✅ |
-| Docker Compose | 5/5 Phases Complete (100%) ✅ |
+| Docker Compose | 통합 완료 (100%) ✅ |
 | Tests | 622 passed, 20 skipped |
 
-**2026-02-03:** 문서 파편화 완료 (WebSocket, OHLC, Nginx, Testing)
+**2026-02-05:** Docker Compose 통합 완료 (Profiles 기반, 중복 파일 정리)
 
 ---
 
-*Last updated: 2026-02-04*
+*Last updated: 2026-02-05*

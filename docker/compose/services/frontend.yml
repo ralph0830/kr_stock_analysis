@@ -4,7 +4,7 @@
 services:
   frontend:
     build:
-      context: ../..
+      context: ../../../
       dockerfile: frontend/Dockerfile
       target: development
     image: frontend:dev

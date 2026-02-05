@@ -1,0 +1,36 @@
+# Daytrading Scanner Service
+# Port: 5115
+
+services:
+  daytrading-scanner:
+    build:
+      context: ../../../
+      dockerfile: services/daytrading_scanner/Dockerfile
+      target: development
+    image: daytrading-scanner:dev
+    container_name: daytrading-scanner
+    restart: unless-stopped
+    ports:
+      - "5115:5115"
+    env_file:
+      - ../../../.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      # PYTHONPATH for src module imports
+      PYTHONPATH: /app:/app/services/daytrading_scanner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:5115/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    networks:
+      - ralph-network

@@ -4,11 +4,12 @@
 services:
   celery-worker:
     build:
-      context: .
+      context: ../../..
       dockerfile: Dockerfile.worker
     image: celery-worker:dev
     container_name: celery-worker
     restart: unless-stopped
+    command: celery -A tasks.celery_app worker --loglevel=info
     env_file:
       - ../../.env
     environment:
@@ -22,8 +23,8 @@ services:
       KIWOOM_WS_URL: ${KIWOOM_WS_URL:-wss://api.kiwoom.com:10000/api/dostk/websocket}
       USE_KIWOOM_REST: ${USE_KIWOOM_REST:-true}
     volumes:
-      - ./tasks:/app/tasks:ro
-      - ./src:/app/src:ro
+      - ../../../tasks:/app/tasks:ro
+      - ../../../src:/app/src:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,7 +35,7 @@ services:
 
   celery-beat:
     build:
-      context: .
+      context: ../../..
       dockerfile: Dockerfile.worker
     image: celery-worker:dev
     container_name: celery-beat
@@ -53,8 +54,8 @@ services:
       KIWOOM_WS_URL: ${KIWOOM_WS_URL:-wss://api.kiwoom.com:10000/api/dostk/websocket}
       USE_KIWOOM_REST: ${USE_KIWOOM_REST:-true}
     volumes:
-      - ./tasks:/app/tasks:ro
-      - ./src:/app/src:ro
+      - ../../../tasks:/app/tasks:ro
+      - ../../../src:/app/src:ro
     depends_on:
       postgres:
         condition: service_healthy

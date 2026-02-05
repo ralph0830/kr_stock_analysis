@@ -4,7 +4,7 @@
 services:
   vcp-scanner:
     build:
-      context: .
+      context: ../../..
       dockerfile: services/vcp_scanner/Dockerfile
       target: development
     image: vcp-scanner:dev
