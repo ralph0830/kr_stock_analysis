@@ -41,8 +41,9 @@ class KiwoomWebSocket(IKiwoomBridge):
     DEFAULT_PING_INTERVAL = None  # 키움은 ping/pong을 지원하지 않음 (서버가 PING 전송)
     DEFAULT_PING_TIMEOUT = None
     DEFAULT_RECV_TIMEOUT = 60  # 60초 타임아웃
-    DEFAULT_MAX_RECONNECT_ATTEMPTS = 5
-    DEFAULT_RECONNECT_DELAY = 2.0
+    DEFAULT_MAX_RECONNECT_ATTEMPTS = 10  # 기본 10회로 증가 (기존 5회)
+    DEFAULT_RECONNECT_DELAY = 1.0  # 기본 1초 (기존 2초)
+    DEFAULT_MAX_BACKOFF_SECONDS = 60  # 최대 대기 시간 (지수 백오프 cap)
 
     def __init__(self, config: KiwoomConfig, debug_mode: bool = False):
         """
@@ -513,7 +514,7 @@ class KiwoomWebSocket(IKiwoomBridge):
 
     async def _reconnect(self, max_attempts: Optional[int] = None) -> bool:
         """
-        재연결 시도
+        재연결 시도 (지수 백오프 적용)
 
         Args:
             max_attempts: 최대 재시도 횟수 (None이면 기본값 사용)
@@ -546,16 +547,16 @@ class KiwoomWebSocket(IKiwoomBridge):
                     logger.info(f"Reconnection successful after {attempt + 1} attempt(s)")
                     return True
 
-                # 실패 시 지수 백오프 대기
+                # 실패 시 지수 백오프 대기 (최대 60초로 제한)
                 if attempt < attempts - 1:
-                    wait_time = delay * (2 ** attempt)  # 지수 백오프
-                    logger.info(f"Reconnection attempt {attempt + 1} failed, waiting {wait_time}s before retry...")
+                    wait_time = min(delay * (2 ** attempt), self.DEFAULT_MAX_BACKOFF_SECONDS)
+                    logger.warning(f"Reconnection attempt {attempt + 1}/{attempts} failed, retrying in {wait_time}s...")
                     await asyncio.sleep(wait_time)
 
             except Exception as e:
-                logger.error(f"Reconnection attempt {attempt + 1} failed: {e}")
+                logger.warning(f"Reconnection attempt {attempt + 1}/{attempts} failed: {e}")
                 if attempt < attempts - 1:
-                    wait_time = delay * (2 ** attempt)
+                    wait_time = min(delay * (2 ** attempt), self.DEFAULT_MAX_BACKOFF_SECONDS)
                     await asyncio.sleep(wait_time)
 
         logger.error(f"Reconnection failed after {attempts} attempts")
