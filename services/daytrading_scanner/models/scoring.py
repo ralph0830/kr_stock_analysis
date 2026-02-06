@@ -56,6 +56,109 @@ def _is_within_percent(current: int, target: int, percent: float) -> bool:
     return diff_pct <= percent
 
 
+def _calculate_20d_high_low(prices: List) -> tuple[int, int]:
+    """
+    일봉 데이터에서 20일 고가/저가 계산
+
+    Args:
+        prices: DailyPrice 객체 리스트 (최신 순)
+
+    Returns:
+        (20일 고가, 20일 저가) 튜플
+    """
+    if not prices or len(prices) < 2:
+        return 0, 0
+
+    # 최대 20일 데이터 사용
+    recent_20d = prices[:min(20, len(prices))]
+
+    # 고가/저가 계산 (DailyPrice 모델 또는 Mock 지원)
+    high_prices = []
+    low_prices = []
+
+    for p in recent_20d:
+        # DailyPrice 객체인지 확인
+        try:
+            if hasattr(p, 'high_price'):
+                high_val = p.high_price
+                if high_val is None:
+                    high_val = getattr(p, 'close_price', 0)
+                high_prices.append(high_val or 0)
+                low_val = p.low_price
+                if low_val is None:
+                    low_val = getattr(p, 'close_price', 0)
+                low_prices.append(low_val or 0)
+            elif hasattr(p, 'close_price'):
+                high_prices.append(p.close_price or 0)
+                low_prices.append(p.close_price or 0)
+            else:
+                # 숫자형 값인 경우
+                high_prices.append(int(p) if p else 0)
+                low_prices.append(int(p) if p else 0)
+        except (TypeError, AttributeError):
+            # Mock 객체 또는 예상치 못한 형태
+            high_prices.append(0)
+            low_prices.append(0)
+
+    try:
+        high_20d = max(high_prices) if high_prices else 0
+        low_20d = min(low_prices) if low_prices else 0
+    except TypeError:
+        high_20d = 0
+        low_20d = 0
+
+    return high_20d, low_20d
+
+
+def _check_new_high(prices: List) -> bool:
+    """
+    신고가 갱신 여부 확인
+
+    Args:
+        prices: DailyPrice 객체 리스트 (최신 순)
+
+    Returns:
+        신고가 갱신 여부
+    """
+    if not prices or len(prices) < 2:
+        return False
+
+    # 현재 가격 가져오기
+    try:
+        current = prices[0]
+        if hasattr(current, 'close_price'):
+            current_price = current.close_price or getattr(current, 'high_price', 0) or 0
+        else:
+            current_price = int(current) if current else 0
+    except (TypeError, AttributeError):
+        return False
+
+    recent_prices = prices[:min(20, len(prices))]
+
+    # 최근 20일 고가 계산 (close_price 사용)
+    past_highs = []
+    for p in recent_prices[1:]:
+        try:
+            if hasattr(p, 'high_price'):
+                val = p.high_price
+                if val is None:
+                    val = getattr(p, 'close_price', 0)
+                past_highs.append(val or 0)
+            elif hasattr(p, 'close_price'):
+                past_highs.append(p.close_price or 0)
+            else:
+                past_highs.append(int(p) if p else 0)
+        except (TypeError, AttributeError):
+            past_highs.append(0)
+
+    try:
+        past_high = max(past_highs) if past_highs else 0
+    except TypeError:
+        return False
+
+    return current_price > past_high if past_high > 0 else False
+
+
 # =============================================================================
 # Individual Score Calculations (7개 항목)
 # =============================================================================
@@ -354,29 +457,51 @@ def calculate_daytrading_score(stock, prices, flow, db: Session = None) -> Daytr
 
     # 1. 거래량 폭증 (15점)
     current_volume = prices[0].volume
-    # 전일 거래량을 기준으로 평균 가정 (실제로는 20일 평균 필요)
-    avg_volume = prices[1].volume if len(prices) > 1 else current_volume
+    # 20일 평균 거래량 계산
+    avg_volume = 0
+    if len(prices) >= 20:
+        avg_volume = sum(p.volume for p in prices[:20]) // 20
+    elif len(prices) >= 5:
+        avg_volume = sum(p.volume for p in prices[:len(prices)]) // len(prices)
+    else:
+        avg_volume = current_volume
+
     volume_score = calculate_volume_spike_score(current_volume, avg_volume)
     checks.append(DaytradingCheck("거래량 폭증", "passed" if volume_score > 0 else "failed", volume_score))
     total_score += volume_score
 
     # 2. 모멘텀 돌파 (15점)
-    # 간단히 신고가 여부만 체크 (실제로는 20일 고가 필요)
+    # 실제 20일 데이터 기반 계산
+    high_20d, low_20d = _calculate_20d_high_low(prices)
+    is_new_high = _check_new_high(prices)
+
+    # 20일 신고가 계산 (최신가 또는 고가) - Mock 지원
+    new_high_20d = high_20d  # 일단 high_20d를 사용
+    # 더 정확한 계산을 원하면 별도 로직 필요
+
     momentum_score = calculate_momentum_breakout_score(
-        current_price, 0, current_price, True
+        current_price, high_20d, new_high_20d, is_new_high
     )
     checks.append(DaytradingCheck("모멘텀 돌파", "passed" if momentum_score > 0 else "failed", momentum_score))
     total_score += momentum_score
 
     # 3. 박스권 탈출 (15점)
-    # 간단히 직전 고가를 박스 상단으로 가정
-    box_score = calculate_box_breakout_score(current_price, current_price, current_price - 5000)
+    # 실제 20일 고가/저가 기반 계산
+    box_score = calculate_box_breakout_score(current_price, high_20d, low_20d)
     checks.append(DaytradingCheck("박스권 탈출", "passed" if box_score > 0 else "failed", box_score))
     total_score += box_score
 
     # 4. 5일선 위 (15점)
-    # 간단히 MA5 계산 (실제로는 5일 데이터 필요)
-    ma5 = sum(p.close_price for p in prices[:min(5, len(prices))]) // min(5, len(prices))
+    # MA5 계산 (실제 5일 평균)
+    ma5_prices = prices[:min(5, len(prices))]
+    ma5_sum = 0
+    for p in ma5_prices:
+        if hasattr(p, 'close_price'):
+            ma5_sum += p.close_price or 0
+        else:
+            ma5_sum += p.close_price if hasattr(p, 'close_price') else p or 0
+
+    ma5 = ma5_sum // len(ma5_prices) if ma5_prices else current_price
     ma5_score = calculate_ma5_above_score(current_price, ma5)
     checks.append(DaytradingCheck("5일선 위", "passed" if ma5_score > 0 else "failed", ma5_score))
     total_score += ma5_score
