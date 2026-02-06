@@ -135,6 +135,7 @@ async def scan_market(request: ScanRequest):
     from services.daytrading_scanner.models.daytrading import ScanResponse, ScanResponseData, CandidateDataWithScore
     from services.daytrading_scanner.scanner import DaytradingScanner
     from services.daytrading_scanner.broadcaster import broadcast_daytrading_signals
+    from services.daytrading_scanner.realtime_data_collector import RealtimeDataCollector
     from src.database.session import get_db_session_sync
 
     # 실제 스캔 실행
@@ -146,15 +147,29 @@ async def scan_market(request: ScanRequest):
             db
         )
 
-    # 점수 결과를 API 응답으로 변환
+    # 실시간 가격 수집
+    collector = RealtimeDataCollector()
+    tickers = [r.ticker for r in score_results]
+    realtime_prices = await collector.collect_current_prices_for_tickers(tickers)
+
+    # 점수 결과를 API 응답으로 변환 (실시간 가격 포함)
     candidates = []
     for result in score_results:
-        # 현재가 조회 (없으면 0)
-        current_price = 0
-        change_rate = 0.0
-        volume = 0
-        avg_volume = 0
-        volume_ratio = 0.0
+        # 실시간 가격 데이터 가져오기
+        price_data = realtime_prices.get(result.ticker)
+        if price_data:
+            current_price = price_data.get("price", 0)
+            change_rate = price_data.get("change_rate", 0.0)
+            volume = price_data.get("volume", 0)
+        else:
+            # 실시간 가격 없으면 DB 데이터 사용
+            current_price = result.entry_price or 0
+            change_rate = 0.0
+            volume = 0
+
+        # 평균 거래량 계산 (일봉 데이터에서)
+        avg_volume = volume  # TODO: 실제 평균 거래량 계산
+        volume_ratio = volume / avg_volume if avg_volume > 0 else 0.0
 
         # 체크리스트에서 상위 4개 reasons 추출
         reasons = [
@@ -169,23 +184,24 @@ async def scan_market(request: ScanRequest):
             change_rate=change_rate,
             volume=volume,
             avg_volume=avg_volume,
-            volume_ratio=volume_ratio,
+            volume_ratio=round(volume_ratio, 2),
             score=result.total_score,
             grade=result.grade
         ))
 
-    # 브로드캐스트: 신호 업데이트 전송
+    # 브로드캐스트: 신호 업데이트 전송 (실시간 가격 포함)
     signals_data = [
         {
             "ticker": r.ticker,
             "name": r.name,
+            "market": "KOSPI" if r.ticker.startswith("00") else "KOSDAQ",
             "grade": r.grade,
             "total_score": r.total_score,
             "signal_type": "strong_buy" if r.total_score >= 80 else "buy" if r.total_score >= 60 else "watch",
             "entry_price": r.entry_price,
             "target_price": r.target_price,
             "stop_loss": r.stop_loss,
-            "current_price": current_price,
+            "current_price": realtime_prices.get(r.ticker, {}).get("price", 0) if realtime_prices.get(r.ticker) else 0,
             "checks": [
                 {"name": c.name, "status": c.status, "points": c.points}
                 for c in r.checks
