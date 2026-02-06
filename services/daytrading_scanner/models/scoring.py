@@ -7,6 +7,7 @@ TDD: Red-Green-Refactor Cycle
 
 from dataclasses import dataclass
 from typing import List, Optional
+from sqlalchemy.orm import Session
 
 
 # =============================================================================
@@ -211,6 +212,90 @@ def calculate_oversold_bounce_score(
     return 0
 
 
+def calculate_sector_momentum_score_from_db(
+    stock,
+    db: Session,
+    current_price: int
+) -> tuple[int, DaytradingCheck]:
+    """
+    섹터 모멘텀 점수 계산 (실제 DB 데이터 기반)
+
+    같은 섹터 종목들의 최근 5일 수익률을 비교하여 순위 기반 점수를 부여합니다.
+
+    Args:
+        stock: 종목 기본 정보
+        db: DB 세션
+        current_price: 현재가
+
+    Returns:
+        (점수, 체크리스트 항목) 튜플
+    """
+    from src.database.models import DailyPrice as DailyPriceModel
+
+    if not stock.sector:
+        return 0, DaytradingCheck("섹터 모멘텀", "failed", 0)
+
+    try:
+        # 같은 섹터 종목 조회
+        from sqlalchemy import select
+        sector_query = select(stock.__class__).where(
+            stock.__class__.sector == stock.sector,
+            stock.__class__.is_etf == False,
+            stock.__class__.is_admin == False,
+        )
+        sector_result = db.execute(sector_query.limit(100))
+        sector_stocks = list(sector_result.scalars().all())
+
+        if len(sector_stocks) < 5:
+            # 섹터 종목이 너무 적으면 계산 불가
+            return 0, DaytradingCheck("섹터 모멘텀", "failed", 0)
+
+        # 섹터 내 각 종목의 5일 수익률 계산
+        sector_returns = []
+        for s in sector_stocks:
+            prices_query = select(DailyPriceModel).where(
+                DailyPriceModel.ticker == s.ticker
+            ).order_by(DailyPriceModel.date.desc()).limit(5)
+
+            prices_result = db.execute(prices_query)
+            prices = list(prices_result.scalars().all())
+
+            if len(prices) >= 5:
+                # 5일 수익률 = (최신가 - 5일전가) / 5일전가 * 100
+                recent_price = prices[0].close_price
+                old_price = prices[4].close_price
+                if old_price and old_price > 0:
+                    return_pct = (recent_price - old_price) / old_price * 100
+                    sector_returns.append((s.ticker, return_pct))
+
+        if not sector_returns:
+            return 0, DaytradingCheck("섹터 모멘텀", "failed", 0)
+
+        # 현재 종목의 수익률 찾기
+        current_return = None
+        for ticker, ret in sector_returns:
+            if ticker == stock.ticker:
+                current_return = ret
+                break
+
+        if current_return is None:
+            return 0, DaytradingCheck("섹터 모멘텀", "failed", 0)
+
+        # 수익률 내림차순 정렬하여 순위 확인
+        sector_returns.sort(key=lambda x: x[1], reverse=True)
+        rank = next((i for i, (t, _) in enumerate(sector_returns, 1) if t == stock.ticker), len(sector_returns))
+
+        # 순위 기반 점수 계산
+        score = calculate_sector_momentum_score(rank, len(sector_returns))
+        status = "passed" if score > 0 else "failed"
+
+        return score, DaytradingCheck("섹터 모멘텀", status, score)
+
+    except Exception as e:
+        # 에러 시 0점 반환
+        return 0, DaytradingCheck("섹터 모멘텀", "failed", 0)
+
+
 def calculate_sector_momentum_score(sector_rank: int, sector_total: int) -> int:
     """
     섹터 모멘텀 점수 계산 (15점 만점)
@@ -239,7 +324,7 @@ def calculate_sector_momentum_score(sector_rank: int, sector_total: int) -> int:
 # Main Scoring Function
 # =============================================================================
 
-def calculate_daytrading_score(stock, prices, flow) -> DaytradingScoreResult:
+def calculate_daytrading_score(stock, prices, flow, db: Session = None) -> DaytradingScoreResult:
     """
     단타 종목 종합 점수 계산
 
@@ -247,6 +332,7 @@ def calculate_daytrading_score(stock, prices, flow) -> DaytradingScoreResult:
         stock: 종목 기본 정보
         prices: 일봉 데이터 리스트
         flow: 수급 데이터
+        db: DB 세션 (선택, 섹터 모멘텀 계산 시 필요)
 
     Returns:
         DaytradingScoreResult: 점수 계산 결과
@@ -319,10 +405,16 @@ def calculate_daytrading_score(stock, prices, flow) -> DaytradingScoreResult:
     total_score += oversold_score
 
     # 7. 섹터 모멘텀 (15점)
-    # 간단히 상위 10% 가정
-    sector_score = 15  # TODO: 실제 섹터 데이터 필요
-    checks.append(DaytradingCheck("섹터 모멘텀", "passed", sector_score))
-    total_score += sector_score
+    # DB가 있으면 실제 섹터 데이터 기반 계산, 없으면 하드코딩된 값 사용
+    if db:
+        sector_score, sector_check = calculate_sector_momentum_score_from_db(stock, db, current_price)
+        checks.append(sector_check)
+        total_score += sector_score
+    else:
+        # DB 세션이 없으면 기본값 (하위 호환성)
+        sector_score = 0  # 섹터 정보 없으면 0점
+        checks.append(DaytradingCheck("섹터 모멘텀", "failed", sector_score))
+        total_score += sector_score
 
     # 등급 부여
     grade = get_grade_from_score(total_score)

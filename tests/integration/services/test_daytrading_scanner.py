@@ -32,7 +32,9 @@ from services.daytrading_scanner.models.scoring import (
 @pytest.fixture
 def mock_db_session():
     """Mock DB 세션"""
-    session = AsyncMock()
+    session = MagicMock()
+    # execute가 일반 Mock을 반환하도록 설정
+    session.execute.return_value.scalars.return_value.all.return_value = []
     return session
 
 
@@ -215,7 +217,7 @@ class TestCacheInvalidation:
         request = {"market": "KOSPI", "limit": 10}
 
         # Mock cache client
-        with patch('services.daytrading_scanner.scanner.get_cache') as mock_get_cache:
+        with patch('src.cache.cache_client.get_cache') as mock_get_cache:
             mock_cache = AsyncMock()
             mock_cache.clear_pattern = AsyncMock(return_value=1)
             mock_get_cache.return_value = mock_cache

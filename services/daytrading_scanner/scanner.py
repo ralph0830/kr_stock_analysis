@@ -62,8 +62,26 @@ class DaytradingScanner:
         # DB 세션 확인
         if db is None:
             from src.database.session import get_db_session_sync
-            db = get_db_session_sync()
+            db_context = get_db_session_sync()
+            use_context_manager = True
+        else:
+            db_context = None
+            use_context_manager = False
 
+        # Context manager를 사용하는 경우에만 with 블록 사용
+        if use_context_manager:
+            with db_context as db:
+                return await self._scan_with_db(db, market, limit)
+
+        return await self._scan_with_db(db, market, limit)
+
+    async def _scan_with_db(
+        self,
+        db: Session,
+        market: Optional[str],
+        limit: int
+    ) -> List[DaytradingScoreResult]:
+        """DB 세션을 사용한 실제 스캔 로직"""
         # 종목 조회
         stocks = self._get_stocks(db, market)
         logger.info(f"Scanning {len(stocks)} stocks (market: {market or 'ALL'})")
@@ -78,11 +96,11 @@ class DaytradingScanner:
                     logger.debug(f"Insufficient price data for {stock.ticker}")
                     continue
 
-                # 수급 데이터 조회 (Mock - 실제로는 institutional_flows 테이블)
-                flow = self._get_mock_flow_data(stock.ticker)
+                # 수급 데이터 조회 (실제 DB 조회 - DailyPrice 테이블 활용)
+                flow = self._get_flow_data(db, stock.ticker, days=5)
 
-                # 점수 계산
-                score_result = calculate_daytrading_score(stock, prices, flow)
+                # 점수 계산 (DB 세션 전달하여 섹터 모멘텀 계산)
+                score_result = calculate_daytrading_score(stock, prices, flow, db)
 
                 # 결과 추가
                 results.append(score_result)
@@ -147,8 +165,50 @@ class DaytradingScanner:
         result = db.execute(query)
         return list(result.scalars().all())
 
+    def _get_flow_data(self, db: Session, ticker: str, days: int = 5) -> Any:
+        """
+        실제 수급 데이터 조회 (DailyPrice 테이블 활용)
+
+        Args:
+            db: DB 세션
+            ticker: 종목 코드
+            days: 조회 기간 (일)
+
+        Returns:
+            Flow 데이터 객체 (foreign_net_buy, inst_net_buy)
+        """
+        from src.repositories.daily_price_repository import DailyPriceRepository
+
+        price_repo = DailyPriceRepository(db)
+        end_date = datetime.now(timezone.utc).date()
+        start_date = end_date - timedelta(days=days * 2)  # 주말 등을 고려해 여유있게
+
+        try:
+            prices = price_repo.get_by_ticker_and_date_range(ticker, start_date, end_date)
+
+            if not prices or len(prices) < 3:
+                # 데이터 부족 시 Mock 반환
+                return self._get_mock_flow_data(ticker)
+
+            # Flow 데이터 객체 생성
+            class FlowData:
+                def __init__(self, foreign_net: int, inst_net: int):
+                    self.foreign_net_buy = foreign_net
+                    self.inst_net_buy = inst_net
+
+            # 최근 N일 합계 계산 (최신 데이터 순)
+            recent_prices = prices[-days:] if len(prices) >= days else prices
+            total_foreign = sum(p.foreign_net_buy or 0 for p in recent_prices)
+            total_inst = sum(p.inst_net_buy or 0 for p in recent_prices)
+
+            return FlowData(total_foreign, total_inst)
+
+        except Exception as e:
+            logger.warning(f"Error fetching flow data for {ticker}: {e}, using mock")
+            return self._get_mock_flow_data(ticker)
+
     def _get_mock_flow_data(self, ticker: str) -> Any:
-        """Mock 수급 데이터 (Phase 4에서 실제 데이터로 대체)"""
+        """Mock 수급 데이터 (fallback용)"""
         # Flow 데이터 객체 생성
         class MockFlow:
             def __init__(self):
