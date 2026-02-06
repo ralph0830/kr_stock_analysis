@@ -232,32 +232,34 @@ async def get_signals(
     )
     from src.database.session import get_db_session_sync
     from src.repositories.daytrading_signal_repository import DaytradingSignalRepository
+    from src.repositories.daily_price_repository import DailyPriceRepository
 
     try:
         # DB에서 시그널 조회
         with get_db_session_sync() as db:
-            repo = DaytradingSignalRepository(db)
+            signal_repo = DaytradingSignalRepository(db)
+            price_repo = DailyPriceRepository(db)
 
             # 필터에 따라 조회
             if min_score > 0 and market:
                 # 점수와 시장 필터 모두 적용
                 db_signals = (
-                    db.query(repo.model)
+                    db.query(signal_repo.model)
                     .filter_by(status="OPEN", market=market)
-                    .filter(repo.model.score >= min_score)
-                    .order_by(repo.model.score.desc())
+                    .filter(signal_repo.model.score >= min_score)
+                    .order_by(signal_repo.model.score.desc())
                     .limit(limit)
                     .all()
                 )
             elif min_score > 0:
                 # 점수 필터만
-                db_signals = repo.get_by_min_score(min_score, limit)
+                db_signals = signal_repo.get_by_min_score(min_score, limit)
             elif market:
                 # 시장 필터만
-                db_signals = repo.get_by_market(market, limit)
+                db_signals = signal_repo.get_by_market(market, limit)
             else:
                 # 기본: 활성 시그널 조회
-                db_signals = repo.get_active_signals(limit)
+                db_signals = signal_repo.get_active_signals(limit)
 
             # DB 모델을 API 모델로 변환
             signals = []
@@ -286,6 +288,10 @@ async def get_signals(
                     if check.status == "passed"
                 ][:4]  # 최대 4개
 
+                # DB에서 최신 가격 조회 (실시간 가격 연동)
+                latest_prices = price_repo.get_latest_by_ticker(db_signal.ticker, limit=1)
+                current_price = latest_prices[0].close_price if latest_prices else None
+
                 signals.append(DaytradingSignal(
                     ticker=db_signal.ticker,
                     name=db_signal.name,
@@ -294,6 +300,7 @@ async def get_signals(
                     grade=db_signal.grade,
                     checks=checks_list,
                     signal_type=signal_type,
+                    current_price=current_price,  # 실시간 가격
                     entry_price=db_signal.entry_price,
                     target_price=db_signal.target_price,
                     stop_loss=db_signal.stop_loss,

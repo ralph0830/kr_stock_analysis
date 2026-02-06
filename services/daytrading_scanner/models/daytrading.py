@@ -105,6 +105,7 @@ class DaytradingSignal(BaseModel):
     grade: str = "C"  # 등급
     checks: List[DaytradingCheck] = []  # 체크리스트
     signal_type: str = "WATCH"  # 'STRONG_BUY', 'BUY', 'WATCH'
+    current_price: Optional[int] = None  # 현재가 (실시간 가격 연동용)
     entry_price: Optional[int] = None
     target_price: Optional[int] = None
     stop_loss: Optional[int] = None

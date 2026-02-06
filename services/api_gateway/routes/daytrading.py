@@ -152,6 +152,20 @@ async def get_daytrading_signals(
                 except Exception as e:
                     logger.warning(f"Cache set failed: {e}")
 
+            # Daytrading 시그널 종목들을 daytrading_price_broadcaster에 추가 (실시간 가격 브로드캐스트용)
+            signal_tickers = [s.get("ticker") for s in signals_data if s.get("ticker")]
+            if signal_tickers:
+                try:
+                    from services.api_gateway.main import daytrading_price_broadcaster
+                    if daytrading_price_broadcaster:
+                        for ticker in signal_tickers:
+                            daytrading_price_broadcaster.add_ticker(ticker)
+                        logger.info(f"Added daytrading signal tickers to price broadcaster: {signal_tickers}")
+                except ImportError:
+                    pass  # 테스트 환경 등에서 무시
+                except Exception as e:
+                    logger.warning(f"Failed to add tickers to price broadcaster: {e}")
+
             return response_to_cache
 
         except httpx.HTTPStatusError as e:
