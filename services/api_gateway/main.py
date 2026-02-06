@@ -71,6 +71,9 @@ except ImportError:
     RequestIDMiddleware = None
     SlowEndpointMiddleware = None
 
+# Daytrading Price Broadcaster (신규)
+daytrading_price_broadcaster = None
+
 # 대시보드 (선택적)
 try:
     from api_gateway.dashboard import router as dashboard_router
@@ -290,6 +293,15 @@ async def lifespan(app: FastAPI):
     await signal_broadcaster.start()
     print("✅ Signal Broadcaster started")
 
+    # Daytrading Price Broadcaster 시작 (실시간 가격 브로드캐스트)
+    print("📡 Starting Daytrading Price Broadcaster...")
+    from services.daytrading_scanner.price_broadcaster import get_daytrading_price_broadcaster
+    global daytrading_price_broadcaster
+    daytrading_price_broadcaster = get_daytrading_price_broadcaster()
+    daytrading_price_broadcaster.set_connection_manager(connection_manager)
+    await daytrading_price_broadcaster.start()
+    print("✅ Daytrading Price Broadcaster started")
+
     # Phase 3: 하트비트 관리자 시작
     if WEBSOCKET_AVAILABLE and connection_manager:
         print("💓 Starting WebSocket Heartbeat Manager...")
@@ -333,6 +345,12 @@ async def lifespan(app: FastAPI):
     from src.websocket.server import signal_broadcaster
     await signal_broadcaster.stop()
     print("✅ Signal Broadcaster stopped")
+
+    # Daytrading Price Broadcaster 중지
+    if daytrading_price_broadcaster:
+        print("📡 Stopping Daytrading Price Broadcaster...")
+        await daytrading_price_broadcaster.stop()
+        print("✅ Daytrading Price Broadcaster stopped")
 
     # Phase 3: 하트비트 관리자 중지
     from src.websocket.server import get_heartbeat_manager

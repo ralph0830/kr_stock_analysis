@@ -7,7 +7,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { useDaytradingStore } from "@/store/daytradingStore"
-import { useDaytradingSignals } from "@/hooks/useWebSocket"
+import { useDaytradingSignals, useRealtimePrices } from "@/hooks/useWebSocket"
 import { DaytradingSignalTable } from "@/components/DaytradingSignalTable"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,6 +44,15 @@ export default function CustomRecommendationPage() {
   const signals = useMemo(() => {
     return wsSignals.length > 0 ? wsSignals : storeSignals
   }, [wsSignals, storeSignals])
+
+  // 실시간 가격 구독 (시그널 목록의 ticker들) - signals 정의 후 실행
+  const tickerList = useMemo(() => signals.map((s) => s.ticker), [signals])
+  const {
+    prices: realtimePrices,
+    getPrice,
+    connected: priceConnected,
+    error: priceError,
+  } = useRealtimePrices(tickerList)
 
   // WebSocket 연결 실패 카운트
   useEffect(() => {
@@ -100,12 +109,18 @@ export default function CustomRecommendationPage() {
               {wsConnected ? (
                 <Badge variant="outline" className="text-green-600 border-green-600 dark:text-green-400 dark:border-green-400">
                   <Wifi className="w-3 h-3 mr-1" />
-                  실시간
+                  시그널 실시간
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-gray-500 border-gray-400 dark:text-gray-400 dark:border-gray-600">
                   <WifiOff className="w-3 h-3 mr-1" />
                   {wsRetryCount > 0 ? `재연결 중 (${wsRetryCount})` : "연결 안됨"}
+                </Badge>
+              )}
+              {priceConnected && (
+                <Badge variant="outline" className="text-green-600 border-green-600 dark:text-green-400 dark:border-green-400">
+                  <Wifi className="w-3 h-3 mr-1" />
+                  가격 실시간
                 </Badge>
               )}
             </div>
@@ -293,6 +308,9 @@ export default function CustomRecommendationPage() {
               lastUpdate={wsLastUpdate}
               onScan={handleScan}
               scanning={scanning}
+              realtimePrices={realtimePrices}
+              priceConnected={priceConnected}
+              getPrice={getPrice}
             />
           </div>
         </div>

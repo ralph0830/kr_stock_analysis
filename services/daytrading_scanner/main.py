@@ -133,36 +133,73 @@ async def scan_market(request: ScanRequest):
     실시간으로 단타 매매 기회가 있는 종목을 스캔합니다.
     """
     from services.daytrading_scanner.models.daytrading import ScanResponse, ScanResponseData, CandidateDataWithScore
+    from services.daytrading_scanner.scanner import DaytradingScanner
+    from services.daytrading_scanner.broadcaster import broadcast_daytrading_signals
+    from src.database.session import get_db_session_sync
 
-    # TODO: Phase 4에서 실제 데이터 조회 구현
-    # 현재는 Mock 데이터 반환
-    candidates = [
-        CandidateDataWithScore(
-            ticker="005930",
-            name="삼성전자",
-            price=75000,
-            change_rate=2.5,
-            volume=20000000,
-            avg_volume=10000000,
-            volume_ratio=2.0,
-            score=90,
-            grade="S"
-        ),
-        CandidateDataWithScore(
-            ticker="000270",
-            name="기아",
-            price=120000,
-            change_rate=1.8,
-            volume=15000000,
-            avg_volume=8000000,
-            volume_ratio=1.88,
-            score=75,
-            grade="A"
-        ),
+    # 실제 스캔 실행
+    scanner = DaytradingScanner()
+
+    with get_db_session_sync() as db:
+        score_results = await scanner.scan_market(
+            {"market": request.market, "limit": request.limit},
+            db
+        )
+
+    # 점수 결과를 API 응답으로 변환
+    candidates = []
+    for result in score_results:
+        # 현재가 조회 (없으면 0)
+        current_price = 0
+        change_rate = 0.0
+        volume = 0
+        avg_volume = 0
+        volume_ratio = 0.0
+
+        # 체크리스트에서 상위 4개 reasons 추출
+        reasons = [
+            check.name for check in result.checks
+            if check.status == "passed"
+        ][:4]
+
+        candidates.append(CandidateDataWithScore(
+            ticker=result.ticker,
+            name=result.name,
+            price=current_price,
+            change_rate=change_rate,
+            volume=volume,
+            avg_volume=avg_volume,
+            volume_ratio=volume_ratio,
+            score=result.total_score,
+            grade=result.grade
+        ))
+
+    # 브로드캐스트: 신호 업데이트 전송
+    signals_data = [
+        {
+            "ticker": r.ticker,
+            "name": r.name,
+            "grade": r.grade,
+            "total_score": r.total_score,
+            "signal_type": "strong_buy" if r.total_score >= 80 else "buy" if r.total_score >= 60 else "watch",
+            "entry_price": r.entry_price,
+            "target_price": r.target_price,
+            "stop_loss": r.stop_loss,
+            "current_price": current_price,
+            "checks": [
+                {"name": c.name, "status": c.status, "points": c.points}
+                for c in r.checks
+            ]
+        }
+        for r in score_results
     ]
 
-    # limit 적용
-    candidates = candidates[:request.limit]
+    # ConnectionManager 가져오기
+    try:
+        from src.websocket.server import connection_manager
+        await broadcast_daytrading_signals(signals_data, connection_manager)
+    except Exception as e:
+        logger.warning(f"Failed to broadcast daytrading signals: {e}")
 
     data = ScanResponseData(
         candidates=candidates,

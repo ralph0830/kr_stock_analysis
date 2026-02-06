@@ -1,10 +1,13 @@
 /**
  * Daytrading Scanner 신호 테이블 컴포넌트
  * 7개 체크리스트, 등급 배지, 매매 기준가 표시
+ * 실시간 가격 연동 지원
  */
 "use client"
 
+import { useState, useEffect, useMemo } from "react"
 import { IDaytradingSignal } from "@/types"
+import type { RealtimePrice } from "@/hooks/useWebSocket"
 import { getGradeColor } from "@/lib/utils"
 import {
   CHECK_LABELS,
@@ -16,7 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EmptyState } from "@/components/EmptyState"
-import { Check, X, Zap, Search } from "lucide-react"
+import { Check, X, Zap, Search, TrendingUp, TrendingDown } from "lucide-react"
 
 interface DaytradingSignalTableProps {
   signals: IDaytradingSignal[]
@@ -25,6 +28,10 @@ interface DaytradingSignalTableProps {
   lastUpdate?: Date | null
   onScan?: () => void
   scanning?: boolean
+  // 실시간 가격 관련 props
+  realtimePrices?: Record<string, RealtimePrice>
+  priceConnected?: boolean
+  getPrice?: (ticker: string) => RealtimePrice | undefined
 }
 
 export function DaytradingSignalTable({
@@ -34,7 +41,53 @@ export function DaytradingSignalTable({
   lastUpdate = null,
   onScan,
   scanning = false,
+  realtimePrices = {},
+  priceConnected = false,
+  getPrice,
 }: DaytradingSignalTableProps) {
+  // 가격 변경 하이라이트 상태 (Phase 3)
+  const [flashTickers, setFlashTickers] = useState<Set<string>>(new Set())
+
+  // 실시간 가격 변경 감지
+  useEffect(() => {
+    if (!priceConnected || !getPrice) return
+
+    const interval = setInterval(() => {
+      signals.forEach((signal) => {
+        const realtimePrice = getPrice(signal.ticker)
+        if (realtimePrice) {
+          // 이전 가격과 비교하여 변경 감지 (localStorage에 임시 저장)
+          const prevPrice = localStorage.getItem(`price_${signal.ticker}`)
+          if (prevPrice && prevPrice !== realtimePrice.price.toString()) {
+            // 플래시 효과 트리거
+            setFlashTickers((prev) => new Set([...prev, signal.ticker]))
+            setTimeout(() => {
+              setFlashTickers((prev) => {
+                const next = new Set(prev)
+                next.delete(signal.ticker)
+                return next
+              })
+            }, 1000) // 1초 후 플래시 제거
+          }
+          localStorage.setItem(`price_${signal.ticker}`, realtimePrice.price.toString())
+        }
+      })
+    }, 1000) // 1초마다 체크
+
+    return () => clearInterval(interval)
+  }, [signals, getPrice, priceConnected])
+
+  // 실시간 가격 데이터 병합 헬퍼
+  const getSignalWithRealtimePrice = (signal: IDaytradingSignal) => {
+    const realtimePrice = getPrice?.(signal.ticker)
+    return {
+      ...signal,
+      current_price: realtimePrice?.price ?? signal.current_price,
+      change: realtimePrice?.change,
+      change_rate: realtimePrice?.change_rate,
+      isRealtimePrice: !!realtimePrice && priceConnected,
+    }
+  }
   // 로딩 상태
   if (loading) {
     return (
@@ -122,8 +175,18 @@ export function DaytradingSignalTable({
         </div>
       )}
 
-      {signals.map((signal) => (
-        <Card key={signal.ticker}>
+      {signals.map((signal) => {
+        const enrichedSignal = getSignalWithRealtimePrice(signal)
+        const isFlash = flashTickers.has(signal.ticker)
+        const changeRate = enrichedSignal.change_rate ?? 0
+        const isUp = changeRate > 0
+        const isDown = changeRate < 0
+
+        return (
+          <Card
+            key={signal.ticker}
+            className={`transition-all duration-300 ${isFlash ? (isUp ? "bg-green-50 dark:bg-green-900/20" : "bg-red-50 dark:bg-red-900/20") : ""}`}
+          >
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -208,15 +271,75 @@ export function DaytradingSignalTable({
               </div>
             )}
 
-            {/* 현재가 */}
-            {signal.current_price && (
-              <div className="mt-2 text-sm text-gray-600">
-                현재가: {signal.current_price.toLocaleString()}원
+            {/* 매매 기준가 */}
+            {(signal.entry_price || signal.target_price || signal.stop_loss) && (
+              <div className="border-t pt-3">
+                <h4 className="text-sm font-medium mb-2">매매 기준가</h4>
+                <div className="flex gap-4 text-sm">
+                  {signal.entry_price && (
+                    <div>
+                      <span className="text-gray-500">진입: </span>
+                      <span className="font-medium">{signal.entry_price.toLocaleString()}원</span>
+                    </div>
+                  )}
+                  {signal.target_price && (
+                    <div>
+                      <span className="text-gray-500">목표: </span>
+                      <span className="font-medium text-green-600">{signal.target_price.toLocaleString()}원</span>
+                    </div>
+                  )}
+                  {signal.stop_loss && (
+                    <div>
+                      <span className="text-gray-500">손절: </span>
+                      <span className="font-medium text-red-600">{signal.stop_loss.toLocaleString()}원</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
+
+            {/* 실시간 현재가 */}
+            <div className="mt-3 pt-3 border-t">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-medium">현재가</h4>
+                  {enrichedSignal.isRealtimePrice && (
+                    <span className="flex items-center gap-1 text-xs text-green-500">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                      실시간
+                    </span>
+                  )}
+                </div>
+                {enrichedSignal.current_price && (
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xl font-bold ${isUp ? "text-red-600" : isDown ? "text-blue-600" : "text-gray-900"}`}>
+                      {enrichedSignal.current_price.toLocaleString()}원
+                    </span>
+                    {changeRate !== 0 && (
+                      <span className={`flex items-center gap-1 text-sm ${isUp ? "text-red-600" : "text-blue-600"}`}>
+                        {isUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                        {isUp ? "+" : ""}{changeRate.toFixed(2)}%
+                      </span>
+                    )}
+                    {enrichedSignal.change !== undefined && (
+                      <span className={`text-sm ${isUp ? "text-red-600" : "text-blue-600"}`}>
+                        {isUp ? "+" : ""}{enrichedSignal.change.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* 실시간 연결 안됨 시 안내 */}
+              {!priceConnected && (
+                <p className="text-xs text-gray-500 mt-1">
+                  실시간 가격 연결 대기 중...
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
-      ))}
+        )
+      })}
     </div>
   )
 }
