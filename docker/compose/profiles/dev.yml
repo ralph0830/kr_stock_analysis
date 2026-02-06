@@ -17,6 +17,21 @@ services:
       - ../../src:/app/src:ro
       - ../../services/api_gateway:/app/services/api_gateway:ro
     command: ["sh", "-c", "PYTHONPATH=/app:/app/services/api_gateway uvicorn main:app --host 0.0.0.0 --port 5111 --reload"]
+    # Phase 3: 리소스 제한 (CPU 1.0, Memory 2GB)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    # Phase 3: 로그 파일 크기 제한
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
     develop:
       watch:
         - path: ./services/api_gateway
@@ -38,6 +53,20 @@ services:
       - ../../src:/app/src:ro
       - ../../services/vcp_scanner:/app/services/vcp_scanner:ro
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5112", "--reload"]
+    # Phase 3: 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
 
   # Signal Engine - Development (hot reload)
   signal-engine:
@@ -51,6 +80,20 @@ services:
       - ../../src:/app/src:ro
       - ../../services/signal_engine:/app/services/signal_engine:ro
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5113", "--reload"]
+    # Phase 3: 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
 
   # Daytrading Scanner - Development (hot reload)
   daytrading-scanner:
@@ -64,6 +107,20 @@ services:
       - ../../src:/app/src:ro
       - ../../services/daytrading_scanner:/app/services/daytrading_scanner:ro
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5115", "--reload"]
+    # Phase 3: 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
 
   # Chatbot - Development (hot reload)
   chatbot:
@@ -77,6 +134,20 @@ services:
       - ../../src:/app/src:ro
       - ../../services/chatbot:/app/services/chatbot:ro
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5114", "--reload"]
+    # Phase 3: 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
 
   # Frontend - Development (hot reload)
   frontend:
@@ -103,6 +174,20 @@ services:
     volumes:
       - ../../src:/app/src:ro
       - ../../tasks:/app/tasks:ro
+    # Phase 3: 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
 
   # Celery Beat - Development
   celery-beat:
@@ -116,8 +201,36 @@ services:
     volumes:
       - ../../src:/app/src:ro
       - ../../tasks:/app/tasks:ro
+    # Phase 3: 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
 
   # Flower - Development (enable debug UI)
   flower:
     environment:
       - FLOWER_DEBUG=1
+    # Phase 3: 리소스 제한
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
