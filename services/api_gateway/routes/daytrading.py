@@ -10,13 +10,17 @@ Daytrading Scanner Proxy Router
 - format 파라미터 지원 (list/object)
 - format=list: 리스트 직접 반환 (기본)
 - format=object: { signals, count, generated_at } 반환
+
+응답 구조 정규화
+- candidates → signals 변환
+- 누락 필드 자동 채우기 (market, signal_type, checks 등)
 """
 
 import httpx
 import json
 import logging
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
+from typing import Optional, Dict, Any
 
 # 유연한 import (테스트 환경 지원)
 try:
@@ -33,6 +37,14 @@ except ImportError:
     logging.warning("Cache client not available - caching disabled")
 
 logger = logging.getLogger(__name__)
+
+# 유틸리티 함수 import
+try:
+    from services.api_gateway.utils.daytrading import normalize_scan_response
+    UTILS_AVAILABLE = True
+except ImportError:
+    UTILS_AVAILABLE = False
+    logging.warning("Daytrading utils not available - response normalization disabled")
 
 router = APIRouter(
     prefix="/api/daytrading",
@@ -191,6 +203,11 @@ async def scan_daytrading_market(request: dict):
     ## Request Body
     - **market**: KOSPI 또는 KOSDAQ
     - **limit**: 최대 반환 개수 (1-100)
+
+    ## 응답
+    - **signals**: 변환된 시그널 목록 (candidates → signals)
+    - **count**: 시그널 개수
+    - **generated_at**: 생성 시간
     """
     registry = get_registry()
 
@@ -212,6 +229,11 @@ async def scan_daytrading_market(request: dict):
             )
             response.raise_for_status()
             result = response.json()
+
+            # 응답 구조 정규화 (candidates → signals)
+            if UTILS_AVAILABLE and "candidates" in result.get("data", {}):
+                result = normalize_scan_response(result)
+                logger.debug("Normalized scan response: candidates → signals")
 
             # 스캔 완료 후 캐시 무효화
             await _invalidate_daytrading_cache()
