@@ -46,7 +46,7 @@ python-dotenv==1.0.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 requests==2.31.0
-tqdm==4.66.1
+tqdm==4.67.2
 beautifulsoup4==4.12.2
 lxml_html_clean==0.1.0
 rich==13.7.0  # CLI UI 라이브러리 (run.py)
