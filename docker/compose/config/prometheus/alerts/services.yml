@@ -1,0 +1,116 @@
+# Service Health Alert 규칙
+
+groups:
+  - name: service_health
+    interval: 30s
+    rules:
+      # 서비스 다운 감지
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: service
+        annotations:
+          summary: "서비스 다운: {{ $labels.instance }}"
+          description: "{{ $labels.job }} 서비스가 1분 이상 응답하지 않습니다."
+          runbook: "https://docs.ralphpark.com/runbooks/service-down"
+
+      # 높은 오류율 (5xx)
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+            /
+            sum(rate(http_requests_total[5m])) by (job)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "높은 오류율: {{ $labels.job }}"
+          description: "{{ $labels.job }}의 5xx 오류율이 5% 이상입니다 (현재: {{ $value | humanizePercentage }})"
+          runbook: "https://docs.ralphpark.com/runbooks/high-error-rate"
+
+      # 높은 4xx 오류율
+      - alert: HighClientErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"4.."}[5m])) by (job)
+            /
+            sum(rate(http_requests_total[5m])) by (job)
+          ) > 0.10
+        for: 10m
+        labels:
+          severity: info
+          component: api
+        annotations:
+          summary: "높은 클라이언트 오류율: {{ $labels.job }}"
+          description: "{{ $labels.job }}의 4xx 오류율이 10% 이상입니다 (현재: {{ $value | humanizePercentage }})"
+
+      # 높은 지연 시간 (P95)
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "높은 지연시간: {{ $labels.job }}"
+          description: "{{ $labels.job }}의 P95 지연시간이 1초 이상입니다 (현재: {{ $value }}s)"
+          runbook: "https://docs.ralphpark.com/runbooks/high-latency"
+
+      # 매우 높은 지연 시간 (P99)
+      - alert: VeryHighLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job)
+          ) > 5
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "매우 높은 지연시간: {{ $labels.job }}"
+          description: "{{ $labels.job }}의 P99 지연시간이 5초 이상입니다 (현재: {{ $value }}s)"
+
+      # WebSocket 연결 급증
+      - alert: WebSocketConnectionSpike
+        expr: |
+          rate(websocket_connections_total[5m]) > 100
+        for: 2m
+        labels:
+          severity: info
+          component: websocket
+        annotations:
+          summary: "WebSocket 연결 급증"
+          description: "WebSocket 연결이 급증하고 있습니다 ({{ $value }}/s)"
+
+      # WebSocket 연결 수 이상
+      - alert: TooManyWebSocketConnections
+        expr: websocket_connections_active > 5000
+        for: 5m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: "WebSocket 연결 과다"
+          description: "활성 WebSocket 연결이 5000개 이상입니다 (현재: {{ $value }})"
+
+      # WebSocket 브로드캐스트 지연
+      - alert: WebSocketBroadcastLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(websocket_broadcast_duration_seconds_bucket[5m])
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: "WebSocket 브로드캐스트 지연"
+          description: "P95 브로드캐스트 시간이 500ms 이상입니다 (현재: {{ $value }}s)"

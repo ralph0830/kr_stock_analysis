@@ -512,3 +512,23 @@ class StockSyncResponse(BaseModel):
     started_at: str  # ISO format timestamp
     completed_at: Optional[str] = None  # ISO format timestamp
     error_message: Optional[str] = None
+
+
+# ============================================================================
+# Realtime Price Models
+# ============================================================================
+
+
+class RealtimePriceResponse(BaseModel):
+    """실시간 가격 응답 모델"""
+
+    ticker: str  # 종목 코드
+    name: Optional[str] = None  # 종목명
+    price: float  # 현재가
+    change: float  # 전일대비
+    change_percent: float  # 전일대비 등락률 (%)
+    volume: int  # 거래량
+    bid_price: Optional[float] = None  # 매수호가
+    ask_price: Optional[float] = None  # 매도호가
+    timestamp: str  # 응답 시간 (ISO format)
+    source: str  # 데이터 소스 (cache, kiwoom, database)

@@ -1,6 +1,6 @@
 # Ralph Stock Analysis - Progress
 
-> **마지막 업데이트**: 2026-01-31
+> **마지막 업데이트**: 2026-02-23
 
 ## 📊 상태 요약
 
@@ -315,6 +315,28 @@ docker/compose/*.yml                      # 환경별 compose 파일
 - Unit Tests: 780+ passed
 - Integration Tests: 62+ passed
 
+---
+
+## 🎯 최신 작업 (2026-02-23)
+
+### ✅ 일봉 데이터 수집 서비스 구현
+- Kiwoom REST API 기반 일봉 데이터 수집 스크립트
+- `scripts/collect_daily_prices_kiwoom.py` 구현
+- TimescaleDB 하이퍼테이블 자동 생성
+
+### ✅ Daytrading Scanner 서비스 안정화
+- 7개 체크리스트 점수 계산 로직 실제 데이터 기반 개선
+- 시장 스캔 API 응답 구조 정규화 (candidates → signals)
+- 하드코딩 제거 및 실제 데이터 연동
+
+### ✅ Custom Recommendation 실시간 연동
+- 실시간 가격 연동 구현
+- 프론트엔드-백엔드 데이터 동기화
+
+### ✅ 문서 업데이트
+- CLAUDE.md, OPEN_ARCHITECTURE.md 최신화
+- Daytrading Scanner 서비스 문서화
+
 ### 서비스별 커버리지 (모듈화 후)
 | 서비스 | 커버리지 |
 |--------|----------|
@@ -352,6 +374,12 @@ docker/compose/*.yml                      # 환경별 compose 파일
 ---
 
 ## 📝 완료된 작업 일지
+
+### 2026-02-23
+- 일봉 데이터 수집 서비스 구현
+- Daytrading Scanner 점수 계산 로직 개선
+- Custom Recommendation 실시간 연동
+- 문서 최신화 (CLAUDE.md, OPEN_ARCHITECTURE.md)
 
 ### 2026-01-31
 - 서비스 모듈화 7 Phase 완료

@@ -1,0 +1,112 @@
+# Resource Usage Alert 규칙
+
+groups:
+  - name: resource_usage
+    interval: 30s
+    rules:
+      # 높은 CPU 사용률 (컨테이너)
+      - alert: HighCPUUsage
+        expr: |
+          (
+            sum(rate(container_cpu_usage_seconds_total{name!=""}[5m])) by (name)
+            /
+            sum(container_spec_cpu_quota{name!=""} / container_spec_cpu_period{name!=""}) by (name)
+          ) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "높은 CPU 사용률: {{ $labels.name }}"
+          description: "컨테이너 {{ $labels.name }}의 CPU 사용률이 80% 이상입니다 (현재: {{ $value }}%)"
+          runbook: "https://docs.ralphpark.com/runbooks/high-cpu"
+
+      # 높은 메모리 사용률 (컨테이너)
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            sum(container_memory_working_set_bytes{name!=""}) by (name)
+            /
+            sum(container_spec_memory_limit_bytes{name!=""}) by (name)
+          ) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "높은 메모리 사용률: {{ $labels.name }}"
+          description: "컨테이너 {{ $labels.name }}의 메모리 사용률이 80% 이상입니다 (현재: {{ $value }}%)"
+          runbook: "https://docs.ralphpark.com/runbooks/high-memory"
+
+      # OOM Kill 감지
+      - alert: OOMKilled
+        expr: |
+          rate(kube_pod_container_status_restarts_total{reason="OOMKilled"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "OOM Kill 발생: {{ $labels.pod }}"
+          description: "컨테이너 {{ $labels.container }}가 메모리 부족으로 종료되었습니다."
+
+      # 디스크 공간 부족
+      - alert: DiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/",fstype!="tmpfs"}
+            /
+            node_filesystem_size_bytes{mountpoint="/",fstype!="tmpfs"}
+          ) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "디스크 공간 부족: {{ $labels.instance }}"
+          description: "루트 파티션 남은 공간이 10% 미만입니다 (현재: {{ $value }}%)"
+          runbook: "https://docs.ralphpark.com/runbooks/disk-space"
+
+      # 디스크 Inode 부족
+      - alert: DiskInodeLow
+        expr: |
+          (
+            node_filesystem_files_free{mountpoint="/",fstype!="tmpfs"}
+            /
+            node_filesystem_files{mountpoint="/",fstype!="tmpfs"}
+          ) * 100 < 10
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "디스크 Inode 부족: {{ $labels.instance }}"
+          description: "루트 파티션 남은 Inode가 10% 미만입니다 (현재: {{ $value }}%)"
+
+      # 높은 디스크 I/O 대기 시간
+      - alert: HighDiskIOWait
+        expr: |
+          rate(node_cpu_seconds_total{mode="iowait"}[5m]) * 100 > 20
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "높은 디스크 I/O 대기: {{ $labels.instance }}"
+          description: "CPU가 I/O 대기에 시간을 많이 소비하고 있습니다 ({{ $value }}%)"
+
+      # 네트워크 에러 증가
+      - alert: NetworkErrors
+        expr: |
+          (
+            rate(node_network_receive_errs_total[5m])
+            +
+            rate(node_network_transmit_errs_total[5m])
+          ) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "네트워크 에러: {{ $labels.instance }}"
+          description: "네트워크 에러가 발생하고 있습니다 ({{ $value }}/s)"

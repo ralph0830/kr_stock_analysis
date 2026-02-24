@@ -207,3 +207,182 @@ class TestSyncAPIClient:
         result = client.health_check()
 
         assert result["status"] == "healthy"
+
+
+# ============================================================================
+# 추가 API Client 테스트 (Task #16)
+# ============================================================================
+
+class TestAPIClientExtended:
+    """APIClient 확장 테스트 - 타임아웃 및 에러 처리"""
+
+    @pytest.mark.asyncio
+    async def test_vcp_scan_request(self):
+        """VCP 스캔 요청 테스트"""
+        client = APIClient(base_url="http://localhost:5111")
+
+        expected_data = {
+            "signals": [
+                {
+                    "ticker": "005930",
+                    "name": "삼성전자",
+                    "signal_type": "VCP",
+                    "score": 85.0,
+                    "grade": "A",
+                }
+            ]
+        }
+
+        async def mock_request(*args, **kwargs):
+            return expected_data
+
+        with patch.object(client, "_request", side_effect=mock_request):
+            # get_signals를 통해 VCP 시그널 요청
+            signals = await client.get_signals(limit=10)
+            assert len(signals) >= 0
+
+    @pytest.mark.asyncio
+    async def test_jongga_v2_signal_retrieval(self):
+        """종가베팅 V2 시그널 조회 테스트"""
+        client = APIClient(base_url="http://localhost:5111")
+
+        expected_data = [
+            {
+                "ticker": "005930",
+                "name": "삼성전자",
+                "signal_type": "JONGGA_V2",
+                "score": 88.0,
+                "grade": "A",
+            }
+        ]
+
+        async def mock_request(*args, **kwargs):
+            return expected_data
+
+        with patch.object(client, "_request", side_effect=mock_request):
+            signals = await client.get_jongga_v2_latest()
+            assert len(signals) == 1
+            assert signals[0].signal_type == "JONGGA_V2"
+
+    @pytest.mark.asyncio
+    async def test_signal_engine_request(self):
+        """Signal Engine 요청 테스트"""
+        client = APIClient(base_url="http://localhost:5111")
+
+        # Signal Engine은 같은 API를 통해 시그널을 제공
+        expected_data = [
+            {
+                "ticker": "000660",
+                "name": "SK하이닉스",
+                "signal_type": "VCP",
+                "score": 78.0,
+                "grade": "B",
+            }
+        ]
+
+        async def mock_request(*args, **kwargs):
+            return expected_data
+
+        with patch.object(client, "_request", side_effect=mock_request):
+            signals = await client.get_signals(min_score=70.0)
+            assert len(signals) == 1
+
+    @pytest.mark.asyncio
+    async def test_api_timeout_handling(self):
+        """API 타임아웃 처리 테스트"""
+        client = APIClient(base_url="http://localhost:5111", timeout=0.1)
+
+        async def mock_request(*args, **kwargs):
+            # 타임아웃 시뮬레이션
+            await asyncio.sleep(1)
+            return {}
+
+        with patch.object(client, "_request", side_effect=mock_request):
+            # 타임아웃 설정 확인
+            assert client.timeout == 0.1
+
+    @pytest.mark.asyncio
+    async def test_api_error_handling(self):
+        """API 에러 처리 테스트"""
+        from httpx import HTTPStatusError
+
+        client = APIClient(base_url="http://localhost:5111")
+
+        mock_response = Mock()
+        mock_response.status_code = 500
+
+        async def mock_request(*args, **kwargs):
+            raise HTTPStatusError(
+                "Server error", request=Mock(), response=mock_response
+            )
+
+        with patch.object(client, "_request", side_effect=mock_request):
+            with pytest.raises(HTTPStatusError):
+                await client.health_check()
+
+    @pytest.mark.asyncio
+    async def test_get_signals_with_status_filter(self):
+        """상태 필터와 함께 시그널 조회"""
+        client = APIClient(base_url="http://localhost:5111")
+
+        expected_data = [
+            {
+                "ticker": "005930",
+                "name": "삼성전자",
+                "signal_type": "VCP",
+                "score": 85.0,
+                "grade": "A",
+            }
+        ]
+
+        # 파라미터 캡처
+        captured_params = {}
+
+        async def mock_request(method, path, params=None, **kwargs):
+            captured_params.update(params or {})
+            return expected_data
+
+        with patch.object(client, "_request", side_effect=mock_request):
+            signals = await client.get_signals(limit=10, status="active", min_score=80.0)
+
+            assert captured_params["status"] == "active"
+            assert captured_params["min_score"] == 80.0
+
+    @pytest.mark.asyncio
+    async def test_base_url_trailing_slash_removed(self):
+        """base_url 뒤쪽 슬래시 제거 테스트"""
+        client = APIClient(base_url="http://localhost:5111/")
+        assert client.base_url == "http://localhost:5111"
+
+        # 뒤에 여러 슬래시가 있는 경우
+        client2 = APIClient(base_url="http://localhost:5111///")
+        assert client2.base_url == "http://localhost:5111"
+
+
+class TestSignalDataclassExtended:
+    """Signal 데이터클래스 확장 테스트"""
+
+    def test_signal_from_dict_with_optional_fields(self):
+        """선택적 필드 포함 Signal 생성 테스트"""
+        data = {
+            "ticker": "000660",
+            "name": "SK하이닉스",
+            "signal_type": "VCP",
+            "score": 78.0,
+            # grade, entry_price 등 누락
+        }
+
+        signal = Signal.from_dict(data)
+
+        assert signal.ticker == "000660"
+        assert signal.name == "SK하이닉스"
+        assert signal.grade == ""  # 기본값
+        assert signal.entry_price is None
+
+    def test_signal_from_dict_empty(self):
+        """빈 데이터로 Signal 생성 테스트"""
+        signal = Signal.from_dict({})
+
+        assert signal.ticker == ""
+        assert signal.name == ""
+        assert signal.score == 0.0

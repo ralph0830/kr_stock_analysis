@@ -45,6 +45,9 @@ class CandidateDataWithScore(CandidateData):
     """점수 포함 후보 종목 데이터"""
     score: int = Field(default=0, description="총 점수")
     grade: str = Field(default="C", description="등급")
+    entry_price: Optional[int] = Field(None, description="진입가")
+    target_price: Optional[int] = Field(None, description="목표가")
+    stop_loss: Optional[int] = Field(None, description="손절가")
 
 
 class ScanResponseData(BaseModel):

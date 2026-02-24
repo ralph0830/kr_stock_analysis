@@ -138,6 +138,8 @@ async def scan_market(request: ScanRequest):
     from services.daytrading_scanner.realtime_data_collector import RealtimeDataCollector
     from src.database.session import get_db_session_sync
 
+    logger.info(f"📊 Received scan request: market={request.market}, limit={request.limit}")
+
     # 실제 스캔 실행
     scanner = DaytradingScanner()
 
@@ -146,6 +148,8 @@ async def scan_market(request: ScanRequest):
             {"market": request.market, "limit": request.limit},
             db
         )
+
+    logger.info(f"📊 Scan completed: {len(score_results)} results")
 
     # 실시간 가격 수집
     collector = RealtimeDataCollector()
@@ -186,7 +190,10 @@ async def scan_market(request: ScanRequest):
             avg_volume=avg_volume,
             volume_ratio=round(volume_ratio, 2),
             score=result.total_score,
-            grade=result.grade
+            grade=result.grade,
+            entry_price=current_price,  # 실시간 가격을 진입가로 사용
+            target_price=int(current_price * 1.05) if current_price > 0 else None,
+            stop_loss=int(current_price * 0.97) if current_price > 0 else None
         ))
 
     # 브로드캐스트: 신호 업데이트 전송 (실시간 가격 포함)
@@ -256,17 +263,25 @@ async def get_signals(
             signal_repo = DaytradingSignalRepository(db)
             price_repo = DailyPriceRepository(db)
 
-            # 필터에 따라 조회
+            # 필터에 따라 조회 (SQLAlchemy 2.0 스타일)
+            from sqlalchemy import select, and_, desc
+
             if min_score > 0 and market:
                 # 점수와 시장 필터 모두 적용
-                db_signals = (
-                    db.query(signal_repo.model)
-                    .filter_by(status="OPEN", market=market)
-                    .filter(signal_repo.model.score >= min_score)
-                    .order_by(signal_repo.model.score.desc())
+                query = (
+                    select(signal_repo.model)
+                    .where(
+                        and_(
+                            signal_repo.model.status == "OPEN",
+                            signal_repo.model.market == market,
+                            signal_repo.model.score >= min_score
+                        )
+                    )
+                    .order_by(desc(signal_repo.model.score))
                     .limit(limit)
-                    .all()
                 )
+                result = db.execute(query)
+                db_signals = list(result.scalars().all())
             elif min_score > 0:
                 # 점수 필터만
                 db_signals = signal_repo.get_by_min_score(min_score, limit)
@@ -341,15 +356,10 @@ async def get_signals(
 
     except Exception as e:
         logger.error(f"Error fetching daytrading signals: {e}", exc_info=True)
-        # 에러 발생 시 빈 결과 반환 (서비스 중단 방지)
-        data = SignalsResponseData(
-            signals=[],
-            count=0,
-            generated_at=datetime.now().isoformat()
-        )
-        return SignalsResponse(
-            success=True,
-            data=data
+        # 에러 발생 시 에러 응답 반환 (클라이언트가 실패를 인지하도록)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch daytrading signals: {str(e)}"
         )
 
 

@@ -4,7 +4,7 @@ Market Status Repository
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from sqlalchemy import select, desc
@@ -94,7 +94,7 @@ class MarketRepository:
             existing.gate_score = gate_score
             existing.gate_reasons = gate_reasons
             existing.sector_scores = sector_scores
-            existing.created_at = datetime.utcnow()
+            existing.created_at = datetime.now(timezone.utc)
 
             self.session.commit()
             self.session.refresh(existing)

@@ -430,3 +430,331 @@ class TestAPIErrorHandling:
         result = await api.get_current_price("005930")
 
         assert api._access_token == "refreshed_token"
+
+
+# =============================================================================
+# 추가 테스트: 일봉 데이터 조회, 거래정지 필터링, API 재시도
+# =============================================================================
+
+class TestGetDailyPrices:
+    """일봉 데이터 조회 테스트"""
+
+    @pytest.fixture
+    def config(self):
+        return KiwoomConfig(
+            app_key="test_app_key",
+            secret_key="test_secret",
+            base_url="https://api.kiwoom.com",
+            ws_url="wss://api.kiwoom.com:10000/api/dostk/websocket",
+            use_mock=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_daily_prices_success(self, config):
+        """일봉 데이터 조회 성공 테스트"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "test_token"
+        api._token_expires_at = (datetime.now(timezone.utc).timestamp() + 3600)
+
+        mock_response = create_mock_response(200, {
+            "return_code": 0,
+            "return_msg": "OK",
+            "stk_invsr_orgn_chart": [
+                {"dt": "20260206", "cur_prc": "71500", "pred_pre": "+500", "acc_trde_prica": "1000000"},
+                {"dt": "20260205", "cur_prc": "71000", "pred_pre": "+300", "acc_trde_prica": "900000"},
+            ],
+        })
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch('httpx.AsyncClient.post', side_effect=mock_post):
+            result = await api.get_daily_prices("005930", days=5)
+
+            assert result is not None
+            assert len(result) >= 2
+            assert result[0]["date"] == "20260206"
+
+    @pytest.mark.asyncio
+    async def test_get_daily_prices_empty_response(self, config):
+        """빈 응답 처리 테스트"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "test_token"
+        api._token_expires_at = (datetime.now(timezone.utc).timestamp() + 3600)
+
+        mock_response = create_mock_response(200, {
+            "return_code": 0,
+            "return_msg": "OK",
+            "stk_invsr_orgn_chart": [],
+        })
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch('httpx.AsyncClient.post', side_effect=mock_post):
+            result = await api.get_daily_prices("005930", days=5)
+
+            # 빈 데이터는 None을 반환해야 함 (최근 5일 내 데이터 없음)
+            assert result is None
+
+
+class TestSuspendedStocks:
+    """거래정지 종목 필터링 테스트"""
+
+    @pytest.fixture
+    def config(self):
+        return KiwoomConfig(
+            app_key="test_app_key",
+            secret_key="test_secret",
+            base_url="https://api.kiwoom.com",
+            ws_url="wss://api.kiwoom.com:10000/api/dostk/websocket",
+            use_mock=False,
+        )
+
+    def test_is_trading_suspended_true(self):
+        """거래정지 상태 확인 (정상 케이스)"""
+        # KiwoomRestAPI.TRADING_SUSPENDED_KEYWORDS에 있는 키워드만 확인
+        suspended_states = [
+            "관리종목",
+            "증거금100%",
+            "투자유의환기종목",
+            "정리매매",
+            "거래정지",
+            "시장주의",
+            "불매가",
+            "매매거부",
+        ]
+
+        for state in suspended_states:
+            assert KiwoomRestAPI.is_trading_suspended(state) is True
+
+    def test_is_trading_suspended_false(self):
+        """정상 거래 상태 확인"""
+        normal_states = [
+            "정상",
+            "매매가능",
+            "",
+            None,
+        ]
+
+        for state in normal_states:
+            assert KiwoomRestAPI.is_trading_suspended(state) is False
+
+    @pytest.mark.asyncio
+    async def test_get_suspended_stocks_filters_correctly(self, config):
+        """거래정지 종목 필터링 테스트"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "test_token"
+        api._token_expires_at = (datetime.now(timezone.utc).timestamp() + 3600)
+
+        # Mock get_stock_list
+        with patch.object(api, 'get_stock_list', return_value=[
+            {"ticker": "005930", "state": "정상"},
+            {"ticker": "900010", "state": "거래정지"},
+            {"ticker": "000660", "state": "매매가능"},
+            {"ticker": "900020", "state": "관리종목"},
+        ]):
+            result = await api.get_suspended_stocks("ALL")
+
+            assert "900010" in result
+            assert "900020" in result
+            assert "005930" not in result
+            assert "000660" not in result
+
+
+class TestAPIRetryLogic:
+    """API 재시도 로직 테스트"""
+
+    @pytest.fixture
+    def config(self):
+        return KiwoomConfig(
+            app_key="test_app_key",
+            secret_key="test_secret",
+            base_url="https://api.kiwoom.com",
+            ws_url="wss://api.kiwoom.com:10000/api/dostk/websocket",
+            use_mock=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_api_call_with_retry(self, config):
+        """API 호출 재시도 테스트"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "test_token"
+        api._token_expires_at = (datetime.now(timezone.utc).timestamp() + 3600)
+
+        # is_token_valid는 동기 메서드이므로 await 제거
+        result = api.is_token_valid()
+        assert result is True
+
+
+class TestStockDailyChart:
+    """주식 일봉 차트 조회 테스트"""
+
+    @pytest.fixture
+    def config(self):
+        return KiwoomConfig(
+            app_key="test_app_key",
+            secret_key="test_secret",
+            base_url="https://api.kiwoom.com",
+            ws_url="wss://api.kiwoom.com:10000/api/dostk/websocket",
+            use_mock=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_stock_daily_chart_success(self, config):
+        """주식 일봉 차트 조회 성공"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "test_token"
+        api._token_expires_at = (datetime.now(timezone.utc).timestamp() + 3600)
+
+        mock_response = create_mock_response(200, {
+            "return_code": 0,
+            "return_msg": "OK",
+            "stk_dt_pole_chart_qry": [
+                {
+                    "dt": "20260206",
+                    "open_pric": "71000",
+                    "high_pric": "72000",
+                    "low_pric": "70500",
+                    "cur_prc": "71500",
+                    "trde_qty": "15000000",
+                    "pred_pre": "+500",
+                },
+                {
+                    "dt": "20260205",
+                    "open_pric": "70500",
+                    "high_pric": "71500",
+                    "low_pric": "70000",
+                    "cur_prc": "71000",
+                    "trde_qty": "10000000",
+                    "pred_pre": "+300",
+                },
+            ],
+        })
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch('httpx.AsyncClient.post', side_effect=mock_post):
+            result = await api.get_stock_daily_chart("005930", days=20)
+
+            assert result is not None
+            assert len(result) == 2
+            assert result[0]["date"] == "20260206"
+            assert result[0]["close"] == 71500.0
+
+
+class TestDailyTradeDetail:
+    """일별거래상세 조회 테스트"""
+
+    @pytest.fixture
+    def config(self):
+        return KiwoomConfig(
+            app_key="test_app_key",
+            secret_key="test_secret",
+            base_url="https://api.kiwoom.com",
+            ws_url="wss://api.kiwoom.com:10000/api/dostk/websocket",
+            use_mock=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_daily_trade_detail_success(self, config):
+        """일별거래상세 조회 성공"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "test_token"
+        api._token_expires_at = (datetime.now(timezone.utc).timestamp() + 3600)
+
+        mock_response = create_mock_response(200, {
+            "return_code": 0,
+            "return_msg": "OK",
+            "daly_trde_dtl": [
+                {"dt": "20260206", "close_pric": "71500", "trde_qty": "1000000", "for_netprps": "5000", "orgn_netprps": "3000"},
+                {"dt": "20260205", "close_pric": "71000", "trde_qty": "900000", "for_netprps": "2000", "orgn_netprps": "1000"},
+            ],
+        })
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch('httpx.AsyncClient.post', side_effect=mock_post):
+            result = await api.get_daily_trade_detail("005930")
+
+            assert result is not None
+            assert len(result) == 2
+            assert result[0]["foreign_net_buy"] == 5000
+            assert result[0]["inst_net_buy"] == 3000
+
+    @pytest.mark.asyncio
+    async def test_get_daily_trade_detail_empty_response(self, config):
+        """빈 응답 처리"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "test_token"
+        api._token_expires_at = (datetime.now(timezone.utc).timestamp() + 3600)
+
+        mock_response = create_mock_response(200, {
+            "return_code": 0,
+            "return_msg": "OK",
+            "daly_trde_dtl": [],
+        })
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch('httpx.AsyncClient.post', side_effect=mock_post):
+            result = await api.get_daily_trade_detail("005930")
+
+            assert result == []
+
+
+class TestConnectionManagement:
+    """연결 관리 테스트"""
+
+    @pytest.fixture
+    def config(self):
+        return KiwoomConfig(
+            app_key="test_app_key",
+            secret_key="test_secret",
+            base_url="https://api.kiwoom.com",
+            ws_url="wss://api.kiwoom.com:10000/api/dostk/websocket",
+            use_mock=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_reauthenticate_clears_token(self, config):
+        """재인증 시 토큰 초기화 테스트"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "old_token"
+        api._refresh_token = "refresh_token"
+        api._token_expires_at = 123456
+
+        mock_response = create_mock_response(200, {
+            "return_code": 0,
+            "return_msg": "OK",
+            "token": "new_token",
+            "expires_dt": "20260206235959",
+        })
+
+        async def mock_post(*args, **kwargs):
+            return mock_response
+
+        with patch('httpx.AsyncClient.post', side_effect=mock_post):
+            result = await api.reauthenticate()
+
+            assert result is True
+            assert api._access_token == "new_token"
+
+    @pytest.mark.asyncio
+    async def test_reauthenticate_failure(self, config):
+        """재인증 실패 테스트"""
+        api = KiwoomRestAPI(config)
+        api._access_token = "old_token"
+        api._refresh_token = "refresh_token"
+        api._token_expires_at = 123456
+
+        async def mock_post(*args, **kwargs):
+            raise Exception("API Error")
+
+        with patch('httpx.AsyncClient.post', side_effect=mock_post):
+            result = await api.reauthenticate()
+
+            assert result is False

@@ -12,9 +12,8 @@ services:
     restart: unless-stopped
     ports:
       - "5111:5111"
-    env_file:
-      - .env
     environment:
+      TZ: Asia/Seoul
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
@@ -28,7 +27,10 @@ services:
       KIWOOM_SECRET_KEY: ${KIWOOM_SECRET_KEY}
       KIWOOM_BASE_URL: ${KIWOOM_BASE_URL:-https://api.kiwoom.com}
       KIWOOM_WS_URL: ${KIWOOM_WS_URL:-wss://api.kiwoom.com:10000/api/dostk/websocket}
-      USE_KIWOOM_REST: "true"
+      # Mock API 사용 안 함 (실제 Kiwoom API 사용)
+      KIWOOM_API_URL: ""
+      # Kiwoom REST API 사용 안 함 - DB에서 데이터 가져오기
+      USE_KIWOOM_REST: "false"
       # PYTHONPATH for src module imports
       PYTHONPATH: /app:/app/services/api_gateway
     depends_on:
@@ -38,6 +40,7 @@ services:
         condition: service_started
       db-init:
         condition: service_completed_successfully
+    command: ["uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "5111", "--reload"]
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:5111/health').raise_for_status()"]
       interval: 30s

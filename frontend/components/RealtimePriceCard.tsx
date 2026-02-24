@@ -9,8 +9,12 @@
 "use client";
 
 import { useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { RealtimePrice } from "@/hooks/useWebSocket";
 import { formatPrice, formatPercent, formatNumber, cn } from "@/lib/utils";
+import { apiClient } from "@/lib/api-client";
+import type { StockPrice } from "@/types";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 interface RealtimePriceCardProps {
   ticker: string;
@@ -249,9 +253,9 @@ export function RealtimePriceCard({
  * 상위 컴포넌트에서 데이터를 받아 자식에게 전달하며,
  * WebSocket 연결이 없을 때 폴링을 수행합니다.
  */
-import { useEffect, useState, useCallback } from "react";
-import { apiClient } from "@/lib/api-client";
-import type { StockPrice } from "@/types";
+
+// 폴링 간격 상수 (ms)
+const POLLING_INTERVAL = 15000;
 
 interface RealtimePriceGridProps {
   stocks: Array<{ ticker: string; name: string }>;
@@ -315,7 +319,7 @@ export function RealtimePriceGrid({
     fetchAllPrices();
 
     // 15초마다 폴링
-    const interval = setInterval(fetchAllPrices, 15000);
+    const interval = setInterval(fetchAllPrices, POLLING_INTERVAL);
 
     return () => clearInterval(interval);
   }, [stocks, connected]);
@@ -351,8 +355,6 @@ export function RealtimePriceGrid({
  * - 접근성 (aria-label)
  * - 부드러운 전환 애니메이션
  */
-import { useWebSocket } from "@/hooks/useWebSocket";
-
 export function WebSocketStatus() {
   const { connected, connecting, error, clientId, reconnectCount, lastError, connectionState } = useWebSocket({});
 

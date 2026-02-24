@@ -8,9 +8,14 @@ from sqlalchemy import (
     Date, Text, ForeignKey, Index, BigInteger, JSON
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.database.session import Base
+
+
+def _now_utc():
+    """UTC 현재 시간 반환 (KST 표준화)"""
+    return datetime.now(timezone.utc)
 
 
 class Stock(Base):
@@ -28,8 +33,8 @@ class Stock(Base):
     is_spac = Column(Boolean, default=False)  # 스팩(SPAC) 종목
     is_bond = Column(Boolean, default=False)  # 회사채/채권 종목
     is_excluded_etf = Column(Boolean, default=False)  # 제외할 ETF/ETN (TIGER, SOL, ACE, KIWOOM, KODEX, 인버스, TOP10, ETN 등)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_now_utc)
+    updated_at = Column(DateTime, default=_now_utc, onupdate=_now_utc)
 
     # Relationships
     daily_prices = relationship("DailyPrice", back_populates="stock", cascade="all, delete-orphan")
@@ -76,7 +81,7 @@ class Signal(Base):
     inst_trend = Column(String(20))
 
     signal_date = Column(Date, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_now_utc)
 
     # Relationships
     stock = relationship("Stock", back_populates="signals")
@@ -118,7 +123,7 @@ class DailyPrice(Base):
     # 거래대금
     trading_value = Column(BigInteger, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_now_utc)
 
     # Relationships
     stock = relationship("Stock", back_populates="daily_prices")
@@ -160,7 +165,7 @@ class InstitutionalFlow(Base):
     # 매집 신호
     is_double_buy = Column(Boolean, default=False)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_now_utc)
 
     def __repr__(self):
         return f"<InstitutionalFlow(ticker={self.ticker}, date={self.date}, score={self.supply_demand_score})>"
@@ -191,7 +196,7 @@ class MarketStatus(Base):
     # 섹터 점수 (JSON으로 저장)
     sector_scores = Column(JSON, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_now_utc)
 
     def __repr__(self):
         return f"<MarketStatus(date={self.date}, gate={self.gate}, score={self.gate_score})>"
@@ -221,7 +226,7 @@ class BacktestResult(Base):
     # 추가 메타데이터
     extra_metadata = Column(JSON, nullable=True)  # 추가 정보 (JSON)
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=_now_utc, index=True)
 
     # Indexes
     __table_args__ = (
@@ -258,8 +263,8 @@ class AIAnalysis(Base):
     news_count = Column(Integer, default=0)  # 분석한 뉴스 수
     model_version = Column(String(50), default="v1.0")  # 모델 버전
 
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_now_utc, index=True)
+    updated_at = Column(DateTime, default=_now_utc, onupdate=_now_utc)
 
     # Indexes
     __table_args__ = (

@@ -5,7 +5,7 @@ API Key 발급, 조회, 삭제
 """
 import logging
 from typing import List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -59,7 +59,7 @@ async def create_api_key(
             key=APIKey.generate_key(),
             name=name,
             scope=scope,
-            expires_at=datetime.utcnow() + timedelta(days=expires_days),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=expires_days),
             created_by=created_by,
             description=description,
         )

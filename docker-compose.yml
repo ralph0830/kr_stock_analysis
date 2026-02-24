@@ -33,6 +33,8 @@ include:
   - docker/compose/profiles/dev.yml
   - docker/compose/profiles/prod.yml
   - docker/compose/profiles/test.yml
+  # Mock 서비스 (테스트용) - test profile에서만 include
+  # - docker/compose/services/mock-services.yml
 
 # Application services with profiles
 services:
@@ -81,3 +83,14 @@ services:
 
   frontend:
     profiles: [dev, prod]
+
+  # Mock 서비스 (테스트용)
+  mock-kiwoom-api:
+    profiles: [test]
+    env_file:
+      - .env
+
+  mock-websocket:
+    profiles: [test]
+    env_file:
+      - .env

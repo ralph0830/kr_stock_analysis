@@ -87,17 +87,16 @@ class RealtimeDataCollector:
                         text("""
                             INSERT INTO daily_prices (
                                 ticker, date, open_price, high_price, low_price,
-                                close_price, volume, updated_at
+                                close_price, volume
                             ) VALUES (
-                                :ticker, :date, :open, :high, :low, :close, :volume, NOW()
+                                :ticker, :date, :open, :high, :low, :close, :volume
                             )
                             ON CONFLICT (ticker, date) DO UPDATE SET
                                 open_price = EXCLUDED.open_price,
                                 high_price = EXCLUDED.high_price,
                                 low_price = EXCLUDED.low_price,
                                 close_price = EXCLUDED.close_price,
-                                volume = EXCLUDED.volume,
-                                updated_at = NOW()
+                                volume = EXCLUDED.volume
                         """),
                         {
                             "ticker": ticker,
@@ -207,28 +206,93 @@ class RealtimeDataCollector:
         """
         다중 종목 현재가 수집
 
+        Redis에서 실시간 가격을 우선 조회하고, 없으면 Kiwoom API를 사용합니다.
+
         Args:
             tickers: 종목 코드 리스트
 
         Returns:
             종목별 현재가 정보 딕셔너리
         """
-        results = {}
+        # 먼저 Redis에서 실시간 가격 조회
+        results = await self._get_prices_from_redis(tickers)
 
-        for ticker in tickers:
-            try:
-                price_data = await self.collect_current_price(ticker)
-                results[ticker] = price_data
+        # Redis에서 가져오지 못한 종목은 Kiwoom API로 조회
+        missing_tickers = [t for t in tickers if t not in results or results[t] is None]
+        if missing_tickers:
+            logger.info(f"Redis에 없는 종목 {len(missing_tickers)}개를 Kiwoom API로 조회")
+            for ticker in missing_tickers:
+                try:
+                    price_data = await self.collect_current_price(ticker)
+                    results[ticker] = price_data
 
-                # Rate Limiting 방지
-                import asyncio
-                await asyncio.sleep(0.05)
+                    # Rate Limiting 방지
+                    import asyncio
+                    await asyncio.sleep(0.05)
 
-            except Exception as e:
-                logger.error(f"Error collecting current price for {ticker}: {e}")
-                results[ticker] = None
+                except Exception as e:
+                    logger.error(f"Error collecting current price for {ticker}: {e}")
+                    results[ticker] = None
 
         return results
+
+    async def _get_prices_from_redis(
+        self,
+        tickers: List[str],
+    ) -> Dict[str, Optional[Dict[str, Any]]]:
+        """
+        API Gateway 내부 엔드포인트에서 실시간 가격 조회
+
+        API Gateway의 PriceUpdateBroadcaster가 캐시한 가격 데이터를 읽어옵니다.
+
+        Args:
+            tickers: 종목 코드 리스트
+
+        Returns:
+            종목별 현재가 정보 딕셔너리
+        """
+        try:
+            import httpx
+            import os
+
+            # API Gateway 내부 엔드포인트 URL
+            api_gateway_url = os.getenv("API_GATEWAY_URL", "http://api-gateway:5111")
+            tickers_param = ",".join(tickers)
+
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    f"{api_gateway_url}/internal/prices",
+                    params={"tickers": tickers_param}
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success"):
+                        cached_prices = data.get("data", {})
+
+                        # 결과 변환
+                        results = {}
+                        for ticker in tickers:
+                            if ticker in cached_prices:
+                                price_data = cached_prices[ticker]
+                                results[ticker] = {
+                                    "price": price_data.get("price", 0),
+                                    "change": price_data.get("change", 0),
+                                    "change_rate": price_data.get("change_rate", 0.0),
+                                    "volume": price_data.get("volume", 0),
+                                    "timestamp": price_data.get("timestamp"),
+                                }
+                                logger.debug(f"API Gateway에서 {ticker} 가격 조회: {price_data.get('price')}")
+                            else:
+                                results[ticker] = None
+
+                        logger.info(f"API Gateway에서 {len([r for r in results.values() if r is not None])}/{len(tickers)} 종목 가격 조회")
+                        return results
+
+        except Exception as e:
+            logger.warning(f"API Gateway 가격 조회 실패: {e}, Kiwoom API fallback 예정")
+
+        return {ticker: None for ticker in tickers}
 
     async def collect_and_broadcast_prices(
         self,

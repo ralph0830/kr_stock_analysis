@@ -15,6 +15,9 @@ from src.database.models.models import (
     BacktestResult,
 )
 
+# daytrading_signal.py에서 DaytradingSignal import
+from src.database.models.daytrading_signal import DaytradingSignal
+
 __all__ = [
     "Base",
     "Stock",
@@ -24,4 +27,5 @@ __all__ = [
     "InstitutionalFlow",
     "AIAnalysis",
     "BacktestResult",
+    "DaytradingSignal",
 ]

@@ -1,0 +1,104 @@
+# Prometheus 설정
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'ralph-stock'
+    environment: 'production'
+
+# AlertManager 관리
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# 알림 규칙 로드
+rule_files:
+  - 'alerts/*.yml'
+
+# 메트릭 수집 대상
+scrape_configs:
+  # Prometheus 자체 메트릭
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # API Gateway
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:5111']
+        labels:
+          service: 'api-gateway'
+          tier: 'backend'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # VCP Scanner
+  - job_name: 'vcp-scanner'
+    static_configs:
+      - targets: ['vcp-scanner:5112']
+        labels:
+          service: 'vcp-scanner'
+          tier: 'scanner'
+    metrics_path: '/metrics'
+
+  # Signal Engine
+  - job_name: 'signal-engine'
+    static_configs:
+      - targets: ['signal-engine:5113']
+        labels:
+          service: 'signal-engine'
+          tier: 'engine'
+    metrics_path: '/metrics'
+
+  # Daytrading Scanner
+  - job_name: 'daytrading-scanner'
+    static_configs:
+      - targets: ['daytrading-scanner:5115']
+        labels:
+          service: 'daytrading-scanner'
+          tier: 'scanner'
+    metrics_path: '/metrics'
+
+  # Chatbot
+  - job_name: 'chatbot'
+    static_configs:
+      - targets: ['chatbot:5114']
+        labels:
+          service: 'chatbot'
+          tier: 'ai'
+    metrics_path: '/metrics'
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+          tier: 'database'
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          tier: 'cache'
+
+  # Node Exporter (시스템)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          tier: 'infrastructure'
+
+  # cAdvisor (컨테이너)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+          tier: 'infrastructure'

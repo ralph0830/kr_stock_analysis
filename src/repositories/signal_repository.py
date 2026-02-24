@@ -4,7 +4,7 @@ VCP/종가베팅 시그널 데이터 접근 계층
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, desc
 from src.repositories.base import BaseRepository
@@ -110,7 +110,7 @@ class SignalRepository(BaseRepository[Signal]):
             return None
 
         signal.status = new_status
-        signal.exit_time = datetime.utcnow()
+        signal.exit_time = datetime.now(timezone.utc)
 
         if exit_price is not None:
             signal.exit_price = exit_price

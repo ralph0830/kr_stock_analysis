@@ -203,37 +203,26 @@ class RealTimePriceService:
 
         while self._is_running:
             try:
-                # 가격 데이터 조회
-                if self.use_real_data:
-                    # DB 조회는 동기 함수이므로 await 사용 안 함
-                    prices = self.price_provider.get_latest_prices(self.tickers)
+                # DB에서 가격 데이터 조회
+                prices = self.price_provider.get_latest_prices(self.tickers)
 
-                    # DB에 데이터가 없으면 Mock 데이터로 fallback
-                    if not prices:
-                        logger.warning("No price data in DB, falling back to mock data")
-                        prices = self._generate_mock_prices()
-                    else:
-                        # 일부 종목만 데이터가 있는 경우 나머지는 Mock 데이터 채움
-                        for ticker in self.tickers:
-                            if ticker not in prices:
-                                logger.warning(f"No price data for {ticker}, using mock")
-                                prices[ticker] = self._generate_mock_price_for_ticker(ticker)
+                # 데이터가 없으면 스킵 (Mock 데이터 사용 안 함)
+                if not prices:
+                    logger.warning("No price data in DB, skipping broadcast")
                 else:
-                    prices = self._generate_mock_prices()
+                    # 브로드캐스트
+                    for ticker, data in prices.items():
+                        await connection_manager.broadcast(
+                            {
+                                "type": "price_update",
+                                "ticker": ticker,
+                                "data": data,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            },
+                            topic=f"price:{ticker}",
+                        )
 
-                # 브로드캐스트
-                for ticker, data in prices.items():
-                    await connection_manager.broadcast(
-                        {
-                            "type": "price_update",
-                            "ticker": ticker,
-                            "data": data,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        },
-                        topic=f"price:{ticker}",
-                    )
-
-                logger.debug(f"Broadcasted prices for {len(prices)} tickers")
+                    logger.debug(f"Broadcasted prices for {len(prices)} tickers")
 
             except Exception as e:
                 logger.error(f"Error in broadcast loop: {e}")

@@ -48,6 +48,10 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres-test:5432/ralph_stock_test
       - REDIS_URL=redis://redis-test:6379/0
+      - KIWOOM_API_URL=http://mock-kiwoom-api:5116
+      - KIWOOM_APP_KEY=test_mock_key
+      - KIWOOM_SECRET_KEY=test_mock_secret
+      - USE_KIWOOM_REST=false
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
     depends_on:
@@ -55,3 +59,14 @@ services:
         condition: service_healthy
       redis-test:
         condition: service_healthy
+
+  # Mock Kiwoom API - Test
+  mock-kiwoom-api:
+    environment:
+      - MOCK_API_LOG_LEVEL=INFO
+
+  # Mock WebSocket - Test
+  mock-websocket:
+    environment:
+      - MOCK_WS_LOG_LEVEL=INFO
+      - MOCK_WS_BROADCAST_INTERVAL=2.0

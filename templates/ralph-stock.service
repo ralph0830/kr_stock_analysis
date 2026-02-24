@@ -1,0 +1,23 @@
+[Unit]
+Description=Ralph Stock Analysis Services
+Requires=docker.service
+After=docker.service network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ralph/work/python/kr_stock_analysis
+ExecStartPre=/bin/bash -c 'docker network ls | grep -q ralph-network || docker network create ralph-network'
+ExecStart=/usr/bin/docker compose --profile prod up -d
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose --profile prod up -d --force-recreate
+TimeoutStartSec=300
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=10
+
+# NPM 네트워크 연결 (ExecStart 후 실행)
+ExecStartPost=/bin/bash -c 'sleep 10 && docker ps --filter name=npm -q | xargs -r docker network connect ralph-network 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

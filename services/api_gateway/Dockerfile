@@ -44,8 +44,11 @@ RUN pip install --no-cache-dir -e .[dev]
 # Set Python path
 ENV PYTHONPATH=/app:/app/services/api_gateway:$PYTHONPATH
 
+# Workdir을 /app으로 변경 후 main 모듈 import
+WORKDIR /app
+
 # Default command
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5111", "--reload"]
+CMD ["uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "5111", "--reload"]
 
 # Stage 3: Production
 FROM python:3.11-slim AS production

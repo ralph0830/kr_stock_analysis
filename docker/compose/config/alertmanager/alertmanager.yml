@@ -1,0 +1,117 @@
+# AlertManager 설정
+
+global:
+  resolve_timeout: 5m
+
+# 알림 라우팅
+route:
+  group_by: ['alertname', 'cluster', 'service', 'component']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+
+  routes:
+    # Critical 알림 (즉시)
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 0s
+      repeat_interval: 5m
+
+    # Warning 알림 (5분 대기)
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 5m
+      repeat_interval: 1h
+
+    # Info 알림 (1시간 대기)
+    - match:
+        severity: info
+      receiver: 'info-alerts'
+      group_wait: 1h
+      repeat_interval: 24h
+
+# 수신자 설정
+receivers:
+  - name: 'default'
+    slack_configs:
+      - channel: '#alerts'
+        send_resolved: true
+        title: '🚨 {{ .GroupLabels.alertname }}'
+        text: |
+          *Summary*: {{ .CommonAnnotations.summary }}
+          *Description*: {{ .CommonAnnotations.description }}
+          *Severity*: {{ .CommonLabels.severity }}
+          *Service*: {{ .CommonLabels.service }}
+          {% if .CommonAnnotations.runbook %}*Runbook*: {{ .CommonAnnotations.runbook }}{% endif %}
+          * Grafana: https://grafana.ralphpark.com/d/default *
+
+  - name: 'critical-alerts'
+    slack_configs:
+      - channel: '#alerts-critical'
+        send_resolved: true
+        title: '🔴 CRITICAL: {{ .GroupLabels.alertname }}'
+        color: 'danger'
+        text: |
+          *Summary*: {{ .CommonAnnotations.summary }}
+          *Description*: {{ .CommonAnnotations.description }}
+          *Severity*: {{ .CommonLabels.severity }}
+          *Service*: {{ .CommonLabels.service }}
+          *Instance*: {{ .CommonLabels.instance }}
+          {% if .CommonAnnotations.runbook %}*Runbook*: {{ .CommonAnnotations.runboard }}{% endif %}
+        actions:
+          - type: button
+            text: 'View in Grafana'
+            url: 'https://grafana.ralphpark.com/d/default'
+          - type: button
+            text: 'Silence'
+            url: '{{ .ExternalURL }}/#/silences/new?filter=%7B'
+
+    # Email 알림 (선택사항 - SMTP 설정 필요)
+    # email_configs:
+    #   - to: 'admin@ralphpark.com'
+    #     from: 'alertmanager@ralphpark.com'
+    #     smarthost: 'smtp.gmail.com:587'
+    #     auth_username: 'your-email@gmail.com'
+    #     auth_password: 'your-app-password'
+    #     send_resolved: true
+
+  - name: 'warning-alerts'
+    slack_configs:
+      - channel: '#alerts-warning'
+        send_resolved: true
+        title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+        color: 'warning'
+        text: |
+          *Summary*: {{ .CommonAnnotations.summary }}
+          *Description*: {{ .CommonAnnotations.description }}
+          *Severity*: {{ .CommonLabels.severity }}
+          *Service*: {{ .CommonLabels.service }}
+
+  - name: 'info-alerts'
+    slack_configs:
+      - channel: '#alerts-info'
+        send_resolved: true
+        title: 'ℹ️ INFO: {{ .GroupLabels.alertname }}'
+        color: 'good'
+        text: |
+          *Summary*: {{ .CommonAnnotations.summary }}
+          *Description*: {{ .CommonAnnotations.description }}
+
+# 억제 규칙 (중복 알림 방지)
+inhibit_rules:
+  # Critical이 발생하면 related warning 억제
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance', 'service']
+
+  # ServiceDown이 발생하면 related errors 억제
+  - source_match:
+      alertname: 'ServiceDown'
+    target_match_re:
+      alertname: '.*Error.*|.*Failed.*'
+    equal: ['instance']

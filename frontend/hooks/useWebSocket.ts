@@ -16,7 +16,9 @@ import {
   MarketGateUpdateMessage,
   SignalUpdateMessage,
   createWebSocketClient,
+  getWebSocketUrl,
 } from "@/lib/websocket";
+import { useToast } from "@/hooks/use-toast";
 
 // 실시간 가격 데이터 상태
 export interface RealtimePrice {
@@ -128,30 +130,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
   // 컴포넌트 마운트 시 클라이언트 초기화
   useEffect(() => {
-    // WebSocket URL (환경 변수 또는 현재 도메인 기반)
-    const defaultUrl = typeof window !== "undefined"
-      ? (() => {
-          const protocol = window.location.protocol;
-          const hostname = window.location.hostname;
-
-          // 로컬 개발 환경: 포트 5111 직접 연결
-          const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
-
-          // HTTP → ws, HTTPS → wss
-          const wsProtocol = protocol.replace("http", "ws");
-
-          if (isLocal) {
-            // 로컬 개발: ws://localhost:5111/ws
-            return `${wsProtocol}//${hostname}:5111/ws`;
-          }
-
-          // 외부 도메인 (예: stock.ralphpark.com, ralphpark.com)
-          // NPM 리버스 프록시 경로 사용: /ws → 5111 포트로 포워딩
-          // SSL 종료는 NPM에서 처리되므로 포트 번호 불필요
-          return `${wsProtocol}//${hostname}/ws`;
-        })()
-      : "ws://localhost:5111/ws";
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || defaultUrl;
+    // WebSocket URL (공통 유틸리티 사용)
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || getWebSocketUrl();
 
     // 디버깅용 URL 로깅 (개발 환경 전용)
     if (process.env.NODE_ENV === "development") {
@@ -368,6 +348,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, []);
 
   /**
+   * 재연결 시도 (재연결 상태 리셋 후 연결)
+   */
+  const reconnect = useCallback(() => {
+    if (clientRef.current) {
+      // 재연결 상태 리셋
+      clientRef.current.resetReconnectState();
+      // 연결 시도
+      clientRef.current.connect();
+    }
+  }, []);
+
+  /**
    * 연결 종료
    */
   const disconnect = useCallback(() => {
@@ -430,21 +422,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     ping,
     connect,
     disconnect,
+    reconnect,
   };
 }
 
 /**
  * 실시간 가격 데이터만 사용하는 간단한 훅
  *
+ * WebSocket 연결 실패 시 API 폴링으로 자동 전환됩니다.
+ *
  * Usage:
  * ```tsx
- * const { prices, getPrice, connected, error } = useRealtimePrices(["005930", "000660"]);
+ * const { prices, getPrice, connected, error, dataSource } = useRealtimePrices(["005930", "000660"]);
  * ```
  */
 export function useRealtimePrices(tickers: string[]) {
   const [prices, setPrices] = useState<Map<string, RealtimePrice>>(new Map());
+  const [usePolling, setUsePolling] = useState(false); // WebSocket 실패 시 폴링 사용
+  const [loading, setLoading] = useState(false);
 
-  const { connected, subscribe, unsubscribe, error, connecting } = useWebSocket({
+  const { connected, subscribe, unsubscribe, error, connecting, reconnect } = useWebSocket({
     autoConnect: true,
     onPriceUpdate: (price) => {
       setPrices((prev) => {
@@ -454,6 +451,38 @@ export function useRealtimePrices(tickers: string[]) {
       });
     },
   });
+
+  // 가격 데이터 fetch 함수 (폴링용)
+  const fetchPrices = useCallback(async (): Promise<void> => {
+    if (tickers.length === 0) return;
+
+    setLoading(true);
+    try {
+      const priceData = await apiClient.getRealtimePrices(tickers);
+
+      setPrices((prev) => {
+        const next = new Map(prev);
+        // API 응답 데이터를 RealtimePrice 형식으로 변환
+        Object.entries(priceData).forEach(([ticker, data]) => {
+          next.set(ticker, {
+            ticker,
+            price: data.price,
+            change: data.change,
+            change_rate: data.change_percent,
+            volume: data.volume,
+            timestamp: data.timestamp || new Date().toISOString(),
+          });
+        });
+        return next;
+      });
+    } catch (err) {
+      if (process.env.NODE_ENV === "development") {
+        console.error("[useRealtimePrices] Failed to fetch prices:", err);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [tickers]);
 
   // 종목들 자동 구독 (연결 상태 확인 후 구독)
   useEffect(() => {
@@ -473,12 +502,52 @@ export function useRealtimePrices(tickers: string[]) {
       subscribe(`price:${ticker}`);
     });
 
+    // WebSocket 연결 성공 시 폴링 중지
+    setUsePolling(false);
+
     return () => {
       tickers.forEach((ticker) => {
         unsubscribe(`price:${ticker}`);
       });
     };
   }, [tickers.join(","), subscribe, unsubscribe, connected]);
+
+  // 초기 데이터 로드
+  useEffect(() => {
+    if (prices.size === 0 && !connected) {
+      fetchPrices();
+    }
+  }, [prices.size, connected, fetchPrices]);
+
+  // WebSocket 연결 실패 시 주기적 API 폴링 폴백
+  useEffect(() => {
+    if (usePolling) {
+      const interval = setInterval(() => {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[useRealtimePrices] Polling API (WebSocket unavailable)");
+        }
+        fetchPrices();
+      }, 15000); // 15초마다 폴링
+
+      return () => clearInterval(interval);
+    }
+  }, [usePolling, fetchPrices]);
+
+  // WebSocket 연결 실패 감지 시 폴링 모드 전환
+  useEffect(() => {
+    // 연결 시도 후 5초 동안 연결되지 않으면 폴링 모드 전환
+    if (!connected && !connecting && prices.size === 0) {
+      const timer = setTimeout(() => {
+        if (!connected && !usePolling) {
+          setUsePolling(true);
+          if (process.env.NODE_ENV === "development") {
+            console.log("[useRealtimePrices] WebSocket not available, switching to polling mode");
+          }
+        }
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [connected, connecting, prices.size, usePolling]);
 
   /**
    * 특정 종목의 실시간 가격 조회
@@ -496,6 +565,10 @@ export function useRealtimePrices(tickers: string[]) {
     connected,
     error,
     connecting,
+    loading,
+    usePolling,
+    reconnect,
+    fetchPrices,
   };
 }
 
@@ -716,30 +789,25 @@ export function useSignals() {
     }
 
     // 메시지 리스너 등록을 위해 WebSocket 클라이언트에 직접 접근
-    const wsUrl = typeof window !== "undefined"
-      ? (() => {
-          const protocol = window.location.protocol;
-          const hostname = window.location.hostname;
-          const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
-          const wsProtocol = protocol.replace("http", "ws");
-          return isLocal
-            ? `${wsProtocol}//${hostname}:5111/ws`
-            : `${wsProtocol}//${hostname}/ws`;
-        })()
-      : "ws://localhost:5111/ws";
-
+    const wsUrl = getWebSocketUrl();
     const client = createWebSocketClient(wsUrl);
 
     // 메시지 핸들러
     const unsubscribeMessage = client.onMessage((message: WSMessage) => {
       if (message.type === "signal_update") {
         const signalMsg = message as SignalUpdateMessage;
-        if (process.env.NODE_ENV === "development") {
-          console.log("[useSignals] Received signal update:", signalMsg.data.count, "signals");
+        // VCP 시그널인지 확인 (checks 필드가 없으면 VCP)
+        const data = signalMsg.data as any;
+        if (data.signals && data.signals.length > 0) {
+          // VCP 시그널 (checks 필드가 없는 것으로 확인)
+          const vcpSignals = data.signals as Signal[];
+          if (process.env.NODE_ENV === "development") {
+            console.log("[useSignals] Received signal update:", vcpSignals.length, "signals");
+          }
+          setSignals(vcpSignals);
+          setIsRealtime(true);
+          setLastUpdate(new Date(data.timestamp));
         }
-        setSignals(signalMsg.data.signals);
-        setIsRealtime(true);
-        setLastUpdate(new Date(signalMsg.data.timestamp));
       }
     });
 
@@ -812,18 +880,7 @@ export function useDaytradingSignals() {
     }
 
     // 메시지 리스너 등록을 위해 WebSocket 클라이언트에 직접 접근
-    const wsUrl = typeof window !== "undefined"
-      ? (() => {
-          const protocol = window.location.protocol;
-          const hostname = window.location.hostname;
-          const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
-          const wsProtocol = protocol.replace("http", "ws");
-          return isLocal
-            ? `${wsProtocol}//${hostname}:5111/ws`
-            : `${wsProtocol}//${hostname}/ws`;
-        })()
-      : "ws://localhost:5111/ws";
-
+    const wsUrl = getWebSocketUrl();
     const client = createWebSocketClient(wsUrl);
 
     // 메시지 핸들러
@@ -831,13 +888,18 @@ export function useDaytradingSignals() {
       if (message.type === "signal_update") {
         const signalMsg = message as SignalUpdateMessage;
         // daytrading_signals인지 확인 (데이터 구조로 구분)
-        const data = signalMsg.data as any;
-        if (data.signals && data.signals.length > 0 && "checks" in data.signals[0]) {
-          // Daytrading 시그널 (checks 필드가 있음)
+        const data = signalMsg.data;
+        // Daytrading 시그널인지 확인 (checks 필드 존재 여부)
+        const firstSignal = data.signals?.[0];
+        const isDaytradingSignal = firstSignal && "checks" in firstSignal && Array.isArray(firstSignal.checks);
+
+        if (isDaytradingSignal) {
+          // Daytrading 시그널 타입으로 캐스팅
+          const daytradingSignals = data.signals as IDaytradingSignal[];
           if (process.env.NODE_ENV === "development") {
-            console.log("[useDaytradingSignals] Received daytrading signal update:", data.signals.length, "signals");
+            console.log("[useDaytradingSignals] Received daytrading signal update:", daytradingSignals.length, "signals");
           }
-          setSignals(data.signals);
+          setSignals(daytradingSignals);
           setIsRealtime(true);
           setLastUpdate(new Date(data.timestamp));
         }
@@ -861,10 +923,12 @@ export function useDaytradingSignals() {
       // API에서 초기 데이터 로드
       apiClient.getDaytradingSignals()
         .then((response) => {
+          // API 응답 구조: {signals: [], count: number, generated_at: string}
+          const signalsData = response.signals || [];
           if (process.env.NODE_ENV === "development") {
-            console.log("[useDaytradingSignals] Loaded initial signals:", response.data.signals.length);
+            console.log("[useDaytradingSignals] Loaded initial signals:", signalsData.length);
           }
-          setSignals(response.data.signals);
+          setSignals(signalsData);
         })
         .catch((error) => {
           console.error("[useDaytradingSignals] Failed to load initial signals:", error);

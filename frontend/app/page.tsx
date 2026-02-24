@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/store";
-import { useMarketGate, useRealtimePrices } from "@/hooks/useWebSocket";
+import { useMarketGate, useRealtimePrices, useWebSocket } from "@/hooks/useWebSocket";
+import { useWebSocketToast } from "@/hooks/useWebSocketToast";
 import { formatPrice, formatPercent, getMarketGateColor, cn } from "@/lib/utils";
 import { RealtimePriceGrid, WebSocketStatus } from "@/components/RealtimePriceCard";
 import { Watchlist } from "@/components/Watchlist";
@@ -19,6 +20,17 @@ export default function HomePage() {
     loadingSignals,
     fetchSignals,
   } = useStore();
+
+  // 전역 WebSocket 연결 상태 확인 (Toast 알림용)
+  const ws = useWebSocket({ autoConnect: true });
+  const { connected: wsConnected, connecting: wsConnecting, error: wsError } = ws;
+
+  // WebSocket 연결 상태 Toast 알림
+  useWebSocketToast({
+    connected: wsConnected,
+    connecting: wsConnecting,
+    error: wsError,
+  });
 
   // Market Gate 실시간 WebSocket Hook 사용
   const { marketGate, isRealtime, connected, lastUpdate, loading: marketGateLoading, error: marketGateError, refetch: refetchMarketGate } = useMarketGate();

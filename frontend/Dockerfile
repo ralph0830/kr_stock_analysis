@@ -19,7 +19,7 @@ ENV PATH="/app/node_modules/.bin:${PATH}"
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./frontend/
 WORKDIR /app/frontend
-EXPOSE 3000
+EXPOSE 5110
 CMD ["npm", "run", "dev"]
 
 # Production stage (build required)

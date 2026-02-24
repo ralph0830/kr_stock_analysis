@@ -17,6 +17,7 @@ dependencies = [
     "uvicorn[standard]>=0.23.0",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
+    "httpx>=0.24.0",  # Kiwoom REST API 호출용
     # ralph-stock-lib는 Docker에서 로컬 경로로 설치됨
 ]
 

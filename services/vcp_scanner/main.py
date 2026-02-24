@@ -173,6 +173,9 @@ def save_vcp_signals_to_db(results: List[Any], signal_date: Optional[date] = Non
 
     Returns:
         저장된 시그널 수
+
+    Raises:
+        Exception: DB 저장 실패 시
     """
     if not results:
         return 0
@@ -238,8 +241,8 @@ def save_vcp_signals_to_db(results: List[Any], signal_date: Optional[date] = Non
 
         except Exception as e:
             db.rollback()
-            logging.error(f"VCP 시그널 DB 저장 실패: {e}")
-            raise
+            logging.error(f"VCP 시그널 DB 저장 실패: {e}", exc_info=True)
+            raise  # 예외 재전파
 
     return saved_count
 

@@ -1,0 +1,81 @@
+# Mock Services for Testing
+# =============================================================================
+# 테스트용 Mock 서비스 정의
+# - Mock Kiwoom REST API 서버
+# - Mock WebSocket 서버
+# =============================================================================
+
+services:
+  # Mock Kiwoom REST API Server
+  mock-kiwoom-api:
+    build:
+      context: ../../../
+      dockerfile: tests/mock_servers/Dockerfile.kiwoom-mock
+    container_name: mock-kiwoom-api
+    restart: unless-stopped
+    ports:
+      - "5116:5116"
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - MOCK_API_PORT=5116
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5116/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - ralph-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+  # Mock WebSocket Server
+  mock-websocket:
+    build:
+      context: ../../../
+      dockerfile: tests/mock_servers/Dockerfile.websocket-mock
+    container_name: mock-websocket
+    restart: unless-stopped
+    ports:
+      - "5117:5117"
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - MOCK_WS_PORT=5117
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5117/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - ralph-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+
+volumes:
+  mock-data:
+    name: ralph-mock-data

@@ -4,15 +4,17 @@
 services:
   frontend:
     build:
-      context: ../../../
+      context: .
       dockerfile: frontend/Dockerfile
       target: development
     image: frontend:dev
     container_name: frontend
     restart: unless-stopped
     command: ["npm", "run", "dev"]
-    ports:
-      - "5110:5110"
+    environment:
+      TZ: Asia/Seoul
+    # 포트는 profiles/*.yml에서 설정 (기본값 없음)
+    ports: []
     # 핫 리로드를 위한 볼륨 마운트 (개발 환경)
     volumes:
       - ../../../frontend:/app/frontend:delegated

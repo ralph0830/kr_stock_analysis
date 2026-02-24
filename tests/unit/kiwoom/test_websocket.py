@@ -1,5 +1,5 @@
 """
-키움 WebSocket 클라이언트 테스트
+키움 WebSocket 클라이언트 테스트 (성능 최적화 버전)
 
 실제 구현과 일치하도록 수정
 """
@@ -10,26 +10,18 @@ import json
 from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timezone
 
-from src.kiwoom.base import KiwoomEventType, RealtimePrice, KiwoomConfig
+from src.kiwoom.base import KiwoomEventType, RealtimePrice
+from src.kiwoom.test_config import KiwoomTestConfig
 
 
+@pytest.mark.fast
 class TestKiwoomWebSocket:
-    """KiwoomWebSocket 클래스 테스트"""
+    """KiwoomWebSocket 클래스 테스트 (성능 최적화)"""
 
     @pytest.fixture
-    def config(self):
-        """테스트용 설정"""
-        return KiwoomConfig(
-            app_key="test_app_key",
-            secret_key="test_secret",
-            base_url="https://api.kiwoom.com",
-            ws_url="wss://mockapi.kiwoom.com:10000/api/dostk/websocket",
-            use_mock=False,
-            debug_mode=True,
-            ws_ping_interval=30,
-            ws_ping_timeout=10,
-            ws_recv_timeout=60
-        )
+    def config(self, kiwoom_test_config):
+        """테스트용 설정 (최적화된 타임아웃)"""
+        return kiwoom_test_config.to_kiwoom_config()
 
     @pytest.mark.asyncio
     async def test_websocket_initialization(self, config):
@@ -100,7 +92,6 @@ class TestKiwoomWebSocket:
     async def test_websocket_disconnect(self, config):
         """WebSocket 연결 해제 테스트"""
         from src.kiwoom.websocket import KiwoomWebSocket
-        import asyncio
 
         ws = KiwoomWebSocket(config)
 
@@ -408,23 +399,14 @@ class TestKiwoomWebSocket:
         assert price is None
 
 
+@pytest.mark.fast
 class TestWebSocketReconnect:
-    """WebSocket 자동 재연결 테스트"""
+    """WebSocket 자동 재연결 테스트 (성능 최적화)"""
 
     @pytest.fixture
-    def config(self):
-        """테스트용 설정"""
-        return KiwoomConfig(
-            app_key="test_app_key",
-            secret_key="test_secret",
-            base_url="https://api.kiwoom.com",
-            ws_url="wss://mockapi.kiwoom.com:10000/api/dostk/websocket",
-            use_mock=False,
-            debug_mode=True,
-            ws_ping_interval=30,
-            ws_ping_timeout=10,
-            ws_recv_timeout=60
-        )
+    def config(self, kiwoom_test_config):
+        """테스트용 설정 (최적화된 타임아웃)"""
+        return kiwoom_test_config.to_kiwoom_config()
 
     @pytest.mark.asyncio
     async def test_auto_reconnect_on_connection_loss(self, config):
@@ -476,8 +458,8 @@ class TestWebSocketReconnect:
 
             mock_connect.side_effect = failing_connect
 
-            # 재연결 시도 (최대 3회)
-            result = await ws._reconnect(max_attempts=3)
+            # 재연결 시도 (최대 2회 - 테스트 최적화)
+            result = await ws._reconnect(max_attempts=2)
 
             assert result is False
 
@@ -534,20 +516,14 @@ class TestWebSocketReconnect:
                 await ws.disconnect()
 
 
+@pytest.mark.fast
 class TestWebSocketMessageFormat:
     """WebSocket 메시지 포맷 테스트"""
 
     @pytest.fixture
-    def config(self):
-        """테스트용 설정"""
-        return KiwoomConfig(
-            app_key="test_app_key",
-            secret_key="test_secret",
-            base_url="https://api.kiwoom.com",
-            ws_url="wss://mockapi.kiwoom.com:10000/api/dostk/websocket",
-            use_mock=False,
-            debug_mode=True
-        )
+    def config(self, kiwoom_test_config):
+        """테스트용 설정 (최적화된 타임아웃)"""
+        return kiwoom_test_config.to_kiwoom_config()
 
     def test_login_request_format(self, config):
         """로그인 요청 포맷 테스트 (실제 구현 확인)"""

@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from contextlib import asynccontextmanager
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 import httpx
 from dotenv import load_dotenv
@@ -37,6 +37,12 @@ try:
     from api_gateway.service_registry import get_registry
 except ImportError:
     from services.api_gateway.service_registry import get_registry
+
+# 실시간 가격 캐시
+try:
+    from api_gateway.realtime_cache import get_realtime_price_cache
+except ImportError:
+    from services.api_gateway.realtime_cache import get_realtime_price_cache
 
 try:
     from src.database.session import get_db_session, get_db_session_sync
@@ -116,6 +122,7 @@ try:
         BacktestKPIResponse,
         NewsItem,
         NewsListResponse,
+        RealtimePriceResponse,
     )
 except ImportError:
     from services.api_gateway.schemas import (
@@ -135,6 +142,7 @@ except ImportError:
         BacktestKPIResponse,
         NewsItem,
         NewsListResponse,
+        RealtimePriceResponse,
     )
 
 
@@ -295,12 +303,17 @@ async def lifespan(app: FastAPI):
 
     # Daytrading Price Broadcaster 시작 (실시간 가격 브로드캐스트)
     print("📡 Starting Daytrading Price Broadcaster...")
-    from services.daytrading_scanner.price_broadcaster import get_daytrading_price_broadcaster
-    global daytrading_price_broadcaster
-    daytrading_price_broadcaster = get_daytrading_price_broadcaster()
-    daytrading_price_broadcaster.set_connection_manager(connection_manager)
-    await daytrading_price_broadcaster.start()
-    print("✅ Daytrading Price Broadcaster started")
+    try:
+        from services.daytrading_scanner.price_broadcaster import get_daytrading_price_broadcaster
+        global daytrading_price_broadcaster
+        daytrading_price_broadcaster = get_daytrading_price_broadcaster()
+        daytrading_price_broadcaster.set_connection_manager(connection_manager)
+        await daytrading_price_broadcaster.start()
+        print("✅ Daytrading Price Broadcaster started")
+    except ImportError as e:
+        print(f"⚠️ Daytrading Price Broadcaster skipped (module not found): {e}")
+    except Exception as e:
+        print(f"⚠️ Daytrading Price Broadcaster skipped: {e}")
 
     # Phase 3: 하트비트 관리자 시작
     if WEBSOCKET_AVAILABLE and connection_manager:
@@ -319,6 +332,13 @@ async def lifespan(app: FastAPI):
         print("✅ Redis Pub/Sub Subscriber started")
     else:
         print("⚠️ WebSocket not available - Redis subscriber skipped")
+
+    # 실시간 가격 캐시 cleanup task 시작
+    print("💾 Starting Realtime Price Cache...")
+    import asyncio
+    realtime_cache = get_realtime_price_cache()
+    cache_cleanup_task = asyncio.create_task(realtime_cache.cleanup_task(interval_seconds=60))
+    print("✅ Realtime Price Cache started (60s cleanup interval)")
 
     yield
 
@@ -1254,7 +1274,11 @@ async def get_stock_detail(ticker: str, db: Session = Depends(get_db_session)):
     """
     종목 상세 정보 조회
 
-    데이터베이스에서 종목 기본 정보와 최신 가격을 반환합니다.
+    실시간 가격 캐시를 우선 조회하고, 없으면 DB에서 최신 가격을 반환합니다.
+
+    ## 데이터 소스 우선순위
+    1. 실시간 가격 캐시 (WebSocket Kiwoom REST API)
+    2. DB 최신 일봉 데이터 (fallback)
 
     - **ticker**: 종목 코드 (6자리)
     """
@@ -1268,14 +1292,54 @@ async def get_stock_detail(ticker: str, db: Session = Depends(get_db_session)):
             detail=f"종목을 찾을 수 없습니다: {ticker}"
         )
 
-    # 최신 가격 정보 조회
-    latest_price = db.execute(
-        select(DailyPrice)
-        .where(DailyPrice.ticker == ticker)
-        .order_by(desc(DailyPrice.date))
-        .limit(1)
-    ).scalar_one_or_none()
+    # 실시간 가격 캐시 우선 조회 (WebSocket과 동일한 데이터 소스)
+    realtime_cache = get_realtime_price_cache()
+    cached_price = realtime_cache.get_dict(ticker)
 
+    current_price = None
+    price_change = None
+    price_change_pct = None
+    volume = None
+    updated_at = None
+    price_source = "db"
+
+    if cached_price:
+        # 캐시된 실시간 가격 사용 (WebSocket과 동일한 데이터)
+        current_price = cached_price.get("price")
+        price_change = cached_price.get("change")
+        price_change_pct = cached_price.get("change_rate")
+        volume = cached_price.get("volume")
+        updated_at = cached_price.get("timestamp")
+        price_source = cached_price.get("source", "cache")
+        logger.info(f"Using cached realtime price for {ticker}: {current_price} ({price_source})")
+    else:
+        # 캐시 미스 시 DB에서 조회 (fallback)
+        logger.info(f"Cache miss for {ticker}, falling back to DB")
+        latest_price = db.execute(
+            select(DailyPrice)
+            .where(DailyPrice.ticker == ticker)
+            .order_by(desc(DailyPrice.date))
+            .limit(1)
+        ).scalar_one_or_none()
+
+        if latest_price:
+            # 전일 종가 기준 등락 계산 (DB 데이터)
+            current_price = latest_price.close_price
+            volume = latest_price.volume
+
+            # 전일 대비 등락률 계산 (전일 데이터 조회 필요)
+            prev_price_query = select(DailyPrice)\
+                .where(DailyPrice.ticker == ticker)\
+                .order_by(desc(DailyPrice.date))\
+                .offset(1)\
+                .limit(1)
+            prev_price_result = db.execute(prev_price_query).scalar_one_or_none()
+
+            if prev_price_result and prev_price_result.close_price:
+                price_change = current_price - prev_price_result.close_price
+                price_change_pct = (price_change / prev_price_result.close_price * 100) if prev_price_result.close_price > 0 else 0
+
+            updated_at = latest_price.date.isoformat() if latest_price.date else None
 
     # 응답 생성
     return StockDetailResponse(
@@ -1283,11 +1347,11 @@ async def get_stock_detail(ticker: str, db: Session = Depends(get_db_session)):
         name=stock.name,
         market=stock.market,
         sector=stock.sector,
-        current_price=latest_price.close_price if latest_price else None,
-        price_change=None,  # TODO: Calculate from previous day
-        price_change_pct=None,  # TODO: Calculate from previous day
-        volume=latest_price.volume if latest_price else None,
-        updated_at=latest_price.date if latest_price else None,
+        current_price=current_price,
+        price_change=price_change,
+        price_change_pct=price_change_pct,
+        volume=volume,
+        updated_at=updated_at,
     )
 
 
@@ -1399,9 +1463,23 @@ async def get_stock_chart(
     }
     days = period_days.get(period, 180)
 
-    cutoff_date = datetime.now().date() - timedelta(days=days)
+    # 최신 데이터 날짜를 기준으로 cutoff_date 계산 (서버 시계 오류 방지)
+    latest_price_query = select(DailyPrice.date)\
+        .where(DailyPrice.ticker == ticker)\
+        .order_by(DailyPrice.date.desc())\
+        .limit(1)
+    latest_date_result = db.execute(latest_price_query).scalar_one_or_none()
 
-    # 차트 데이터 조회
+    if latest_date_result:
+        # 데이터의 최신 날짜를 기준으로 계산
+        base_date = latest_date_result
+    else:
+        # 데이터가 없으면 현재 날짜 사용
+        base_date = datetime.now().date()
+
+    cutoff_date = base_date - timedelta(days=days)
+
+    # 차트 데이터 조회 (최신 데이터 기준으로 지정된 기간만큼)
     chart_data = db.execute(
         select(DailyPrice)
         .where(DailyPrice.ticker == ticker)
@@ -1486,7 +1564,7 @@ async def get_kr_realtime_prices(request: RealtimePricesRequest):
                         "change": change,
                         "change_rate": change_rate,
                         "volume": daily_price.volume,
-                        "timestamp": daily_price.date.isoformat() if daily_price.date else datetime.utcnow().isoformat(),
+                        "timestamp": daily_price.date.isoformat() if daily_price.date else datetime.now(timezone.utc).isoformat(),
                     }
                     logger.debug(f"[RealtimePrices] {ticker}: {daily_price.close_price}")
                 else:
@@ -1544,44 +1622,70 @@ async def get_kr_realtime_prices_get(
 
     prices = {}
 
-    # Context Manager로 사용 가능한 get_db_session_sync() 사용
-    with get_db_session_sync() as db:
-        for ticker in ticker_list:
-            try:
-                # 최신 일봉 데이터 조회 (DB 직접 쿼리)
-                query = (
-                    select(DailyPrice)
-                    .where(DailyPrice.ticker == ticker)
-                    .order_by(desc(DailyPrice.date))
-                    .limit(1)
-                )
-                result = db.execute(query)
-                daily_price = result.scalar_one_or_none()
+    # 실시간 가격 캐시 우선 조회 (WebSocket과 동일한 데이터 소스)
+    realtime_cache = get_realtime_price_cache()
 
-                if daily_price:
-                    # 전일 대비 등락률 계산
-                    change = daily_price.close_price - daily_price.open_price
-                    change_rate = 0.0
-                    if daily_price.open_price and daily_price.open_price > 0:
-                        change_rate = (change / daily_price.open_price) * 100
+    # 캐시에서 조회된 종목 추적
+    cache_hits = set()
 
-                    prices[ticker] = {
-                        "ticker": ticker,
-                        "price": daily_price.close_price,
-                        "change": change,
-                        "change_rate": change_rate,
-                        "volume": daily_price.volume,
-                        "timestamp": daily_price.date.isoformat() if daily_price.date else datetime.utcnow().isoformat(),
-                    }
-                    logger.debug(f"[RealtimePrices GET] {ticker}: {daily_price.close_price}")
-                else:
-                    # 데이터가 없는 경우 로그만 남기고 skip
-                    logger.warning(f"[RealtimePrices GET] No price data found for {ticker}")
+    for ticker in ticker_list:
+        cached_data = realtime_cache.get_dict(ticker)
+        if cached_data:
+            prices[ticker] = {
+                "ticker": ticker,
+                "price": cached_data.get("price"),
+                "change": cached_data.get("change"),
+                "change_rate": cached_data.get("change_rate"),
+                "volume": cached_data.get("volume"),
+                "timestamp": cached_data.get("timestamp"),
+                "source": cached_data.get("source", "cache"),
+            }
+            cache_hits.add(ticker)
+            logger.debug(f"[RealtimePrices GET] Cache hit for {ticker}: {cached_data.get('price')}")
 
-            except Exception as e:
-                logger.error(f"[RealtimePrices GET] Error fetching price for {ticker}: {e}")
-                # 에러가 발생해도 다른 종목은 계속 처리
-                continue
+    # 캐시에 없는 종목만 DB에서 조회 (fallback)
+    db_tickers = [t for t in ticker_list if t not in cache_hits]
+
+    if db_tickers:
+        logger.info(f"[RealtimePrices GET] Cache misses for {db_tickers}, querying DB")
+        with get_db_session_sync() as db:
+            for ticker in db_tickers:
+                try:
+                    # 최신 일봉 데이터 조회 (DB 직접 쿼리)
+                    query = (
+                        select(DailyPrice)
+                        .where(DailyPrice.ticker == ticker)
+                        .order_by(desc(DailyPrice.date))
+                        .limit(1)
+                    )
+                    result = db.execute(query)
+                    daily_price = result.scalar_one_or_none()
+
+                    if daily_price:
+                        # 전일 대비 등락률 계산
+                        change = daily_price.close_price - daily_price.open_price
+                        change_rate = 0.0
+                        if daily_price.open_price and daily_price.open_price > 0:
+                            change_rate = (change / daily_price.open_price) * 100
+
+                        prices[ticker] = {
+                            "ticker": ticker,
+                            "price": daily_price.close_price,
+                            "change": change,
+                            "change_rate": change_rate,
+                            "volume": daily_price.volume,
+                            "timestamp": daily_price.date.isoformat() if daily_price.date else datetime.now(timezone.utc).isoformat(),
+                            "source": "db",
+                        }
+                        logger.debug(f"[RealtimePrices GET] DB data for {ticker}: {daily_price.close_price}")
+                    else:
+                        # 데이터가 없는 경우 로그만 남기고 skip
+                        logger.warning(f"[RealtimePrices GET] No price data found for {ticker}")
+
+                except Exception as e:
+                    logger.error(f"[RealtimePrices GET] Error fetching price for {ticker}: {e}")
+                    # 에러가 발생해도 다른 종목은 계속 처리
+                    continue
 
     return {"prices": prices}
 
@@ -1610,6 +1714,220 @@ async def get_ralph_stock_chart(ticker: str, period: str = "6mo"):
     """
     # TODO: Data Service 또는 VCP Scanner로 프록시
     return {"ticker": ticker, "data": []}
+
+
+@app.get(
+    "/api/kr/stocks/{ticker}/realtime-price",
+    tags=["stocks"],
+    response_model=RealtimePriceResponse,
+    responses={
+        200: {
+            "description": "실시간 가격 반환 성공",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "ticker": "005930",
+                        "name": "삼성전자",
+                        "price": 75300,
+                        "change": 500,
+                        "change_percent": 0.67,
+                        "volume": 1234567,
+                        "bid_price": 75200,
+                        "ask_price": 75300,
+                        "timestamp": "2026-02-07T07:50:00Z",
+                        "source": "cache"
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "잘못된 종목 코드 형식",
+        },
+        404: {
+            "description": "종목을 찾을 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "error",
+                        "code": 404,
+                        "detail": "Stock not found: 999999",
+                        "path": "/api/kr/stocks/999999/realtime-price"
+                    }
+                }
+            }
+        }
+    },
+)
+async def get_realtime_price_stock(ticker: str):
+    """
+    단일 종목 실시간 가격 조회
+
+    ## 설명
+    특정 종목의 실시간 가격 정보를 조회합니다.
+    3계층 아키텍처로 데이터를 제공합니다:
+    1. **캐시**: RealtimePriceCache의 실시간 가격 캐시 (WebSocket 데이터)
+    2. **Kiwoom REST API**: 실시간 현재가 조회 (캐시 미스 시)
+    3. **데이터베이스**: 일봉 종가 폴백
+
+    ## Parameters
+    - **ticker**: 종목 코드 (6자리, 예: 005930)
+
+    ## Returns
+    - **ticker**: 종목 코드
+    - **name**: 종목명 (DB 조회 시)
+    - **price**: 현재가
+    - **change**: 전일대비
+    - **change_percent**: 전일대비 등락률 (%)
+    - **volume**: 거래량
+    - **bid_price**: 매수호가
+    - **ask_price**: 매도호가
+    - **timestamp**: 응답 시간 (ISO format)
+    - **source**: 데이터 소스 (cache, kiwoom, database)
+
+    ## Example
+    ```bash
+    curl "https://stock.ralphpark.com/api/kr/stocks/005930/realtime-price"
+    ```
+    """
+    import os
+    from datetime import datetime, timezone, timezone
+
+    # 종목 코드 유효성 검증 (6자리 숫자)
+    ticker = ticker.strip()
+    if len(ticker) != 6 or not ticker.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid ticker format: {ticker}. Ticker must be 6 digits."
+        )
+
+    stock_name = None
+
+    # 레이어 1: 캐시 확인 (RealtimePriceCache)
+    realtime_cache = get_realtime_price_cache()
+    cached_price = realtime_cache.get(ticker)
+    if cached_price:
+        logger.info(f"Realtime price from cache for {ticker}: {cached_price.price}")
+        # 종목명 조회 (DB에서)
+        try:
+            with get_db_session_sync() as db:
+                stock_repo = StockRepository(db)
+                stock = stock_repo.get_by_ticker(ticker)
+                if stock:
+                    stock_name = stock.name
+        except Exception:
+            pass
+
+        return RealtimePriceResponse(
+            ticker=ticker,
+            name=stock_name,
+            price=cached_price.price,
+            change=cached_price.change,
+            change_percent=cached_price.change_rate,
+            volume=cached_price.volume,
+            bid_price=cached_price.bid_price,
+            ask_price=cached_price.ask_price,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            source=cached_price.source
+        )
+
+    # 레이어 2: Kiwoom REST API 호출 (캐시 미스 시)
+    use_kiwoom_rest = os.getenv("USE_KIWOOM_REST", "false").lower() == "true"
+    has_api_keys = bool(os.getenv("KIWOOM_APP_KEY") and os.getenv("KIWOOM_SECRET_KEY"))
+
+    if use_kiwoom_rest and has_api_keys:
+        try:
+            from src.kiwoom.rest_api import KiwoomRestAPI
+
+            api = KiwoomRestAPI.from_env()
+
+            # get_current_price()로 실시간 가격 조회
+            price_data = await api.get_current_price(ticker)
+
+            if price_data:
+                logger.info(f"Realtime price from Kiwoom API for {ticker}: {price_data.price}")
+                # 종목명 조회
+                try:
+                    with get_db_session_sync() as db:
+                        stock_repo = StockRepository(db)
+                        stock = stock_repo.get_by_ticker(ticker)
+                        if stock:
+                            stock_name = stock.name
+                except Exception:
+                    pass
+
+                return RealtimePriceResponse(
+                    ticker=ticker,
+                    name=stock_name,
+                    price=price_data.price,
+                    change=price_data.change,
+                    change_percent=price_data.change_rate,
+                    volume=price_data.volume,
+                    bid_price=price_data.bid_price,
+                    ask_price=price_data.ask_price,
+                    timestamp=price_data.timestamp,
+                    source="kiwoom"
+                )
+        except Exception as e:
+            logger.warning(f"Kiwoom API call failed for {ticker}: {e}")
+
+    # 레이어 3: DB 폴백 (일봉 종가)
+    try:
+        with get_db_session_sync() as db:
+            # 종목 정보 조회
+            stock_repo = StockRepository(db)
+            stock = stock_repo.get_by_ticker(ticker)
+
+            if not stock:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Stock not found: {ticker}"
+                )
+
+            stock_name = stock.name
+
+            # 최신 일봉 데이터 조회
+            latest_price = db.execute(
+                select(DailyPrice)
+                .where(DailyPrice.ticker == ticker)
+                .order_by(desc(DailyPrice.date))
+                .limit(1)
+            ).scalar_one_or_none()
+
+            if latest_price:
+                # 전일 대비 등락률 계산
+                close_price = latest_price.close_price
+                prev_close = latest_price.open_price  # 시가를 기준가로 사용
+                change = close_price - prev_close if prev_close else 0
+                change_percent = (change / prev_close * 100) if prev_close and prev_close > 0 else 0
+
+                logger.info(f"Realtime price from DB for {ticker}: {close_price}")
+                return RealtimePriceResponse(
+                    ticker=ticker,
+                    name=stock_name,
+                    price=close_price,
+                    change=change,
+                    change_percent=change_percent,
+                    volume=latest_price.volume or 0,
+                    bid_price=close_price,  # 일봉에는 호가 없음
+                    ask_price=close_price,
+                    timestamp=latest_price.date.isoformat() if latest_price.date else datetime.now(timezone.utc).isoformat(),
+                    source="database"
+                )
+            else:
+                # 일봉 데이터도 없는 경우
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Price data not found for ticker: {ticker}"
+                )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching realtime price for {ticker}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch realtime price: {str(e)}"
+        )
 
 
 @app.get(
@@ -1916,16 +2234,133 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """일반 예외 처리"""
+    """
+    일반 예외 처리
+
+    프로덕션 환경에서는 내부 에러 메시지를 노출하지 않습니다.
+    """
+    import os
+    is_dev = os.getenv("ENVIRONMENT", "development") == "development"
+
+    # 상세 에러 로깅 (서버 로그에만 기록)
+    logger.error(
+        f"Unhandled exception on {request.url.path}: {exc}",
+        exc_info=True,
+        extra={
+            "path": str(request.url.path),
+            "method": request.method,
+        }
+    )
+
+    # 개발 환경에서는 상세 메시지, 프로덕션에서는 일반 메시지
+    detail = str(exc) if is_dev else "Internal server error"
+
     return JSONResponse(
         status_code=500,
         content={
             "status": "error",
             "code": 500,
-            "detail": str(exc),
+            "detail": detail,
             "path": str(request.url.path),
         }
     )
+
+
+# ============================================================================
+# Internal Endpoints (서비스 간 통신용)
+# ============================================================================
+
+@app.get(
+    "/internal/prices",
+    tags=["internal"],
+    summary="실시간 가격 캐시 조회",
+    description="PriceUpdateBroadcaster가 수집한 실시간 가격을 반환합니다 (Daytrading Scanner 내부용)"
+)
+async def get_realtime_prices(
+    tickers: str = Query(..., description="종목 코드 리스트 (콤마 구분)"),
+):
+    """
+    실시간 가격 캐시 조회 (내부용)
+
+    PriceUpdateBroadcaster가 수집한 최신 가격을 반환합니다.
+    """
+    try:
+        from src.websocket.server import price_broadcaster
+
+        # ticker 리스트 파싱
+        ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+
+        # 캐시에서 가격 조회
+        cached_prices = price_broadcaster.get_cached_prices()
+
+        # 요청한 종목만 필터링
+        result = {}
+        for ticker in ticker_list:
+            if ticker in cached_prices:
+                result[ticker] = cached_prices[ticker]
+
+        return {
+            "success": True,
+            "data": result,
+            "count": len(result),
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting realtime prices: {e}")
+        return {
+            "success": False,
+            "data": {},
+            "count": 0,
+        }
+
+
+@app.get(
+    "/internal/price/{ticker}",
+    tags=["internal"],
+    summary="단일 종목 실시간 가격 조회",
+    description="특정 종목의 실시간 가격을 반환합니다 (API Gateway 캐시 우선)"
+)
+async def get_realtime_price(ticker: str):
+    """
+    단일 종목 실시간 가격 조회 (내부용)
+
+    데이터 소스 우선순위:
+    1. API Gateway 실시간 가격 캐시 (WebSocket Kiwoom REST API)
+    2. PriceUpdateBroadcaster 캐시 (fallback)
+    """
+    # API Gateway 캐시 우선 조회
+    realtime_cache = get_realtime_price_cache()
+    cached_data = realtime_cache.get_dict(ticker)
+
+    if cached_data:
+        return {
+            "success": True,
+            "ticker": ticker,
+            "data": cached_data,
+            "source": "api_gateway_cache",
+        }
+
+    # fallback: PriceUpdateBroadcaster 캐시 조회
+    try:
+        from src.websocket.server import price_broadcaster
+        price_data = price_broadcaster.get_cached_price(ticker)
+
+        if price_data:
+            return {
+                "success": True,
+                "ticker": ticker,
+                "data": price_data,
+                "source": "price_broadcaster_cache",
+            }
+    except Exception as e:
+        logger.error(f"Error getting realtime price for {ticker}: {e}")
+
+    return {
+        "success": False,
+        "ticker": ticker,
+        "data": None,
+        "source": "none",
+    }
 
 
 if __name__ == "__main__":

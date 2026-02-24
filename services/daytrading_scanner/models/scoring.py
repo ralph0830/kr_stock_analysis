@@ -544,12 +544,23 @@ def calculate_daytrading_score(stock, prices, flow, db: Session = None) -> Daytr
     # 등급 부여
     grade = get_grade_from_score(total_score)
 
+    # 매매 기준가 계산
+    # entry_price: 현재가 (진입가)
+    # target_price: +5% (목표가)
+    # stop_loss: -3% (손절가)
+    entry_price = int(current_price) if current_price else None
+    target_price = int(current_price * 1.05) if current_price else None
+    stop_loss = int(current_price * 0.97) if current_price else None
+
     return DaytradingScoreResult(
         ticker=stock.ticker,
         name=stock.name,
         total_score=total_score,
         grade=grade,
-        checks=checks
+        checks=checks,
+        entry_price=entry_price,
+        target_price=target_price,
+        stop_loss=stop_loss
     )
 
 

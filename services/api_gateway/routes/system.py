@@ -4,7 +4,7 @@ System Routes
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text, select
@@ -309,7 +309,7 @@ def get_system_health(
     return SystemHealthResponse(
         status=overall_status,
         services=services,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         uptime_seconds=get_uptime_seconds(),
         database_status=db_status,
         redis_status=redis_status,

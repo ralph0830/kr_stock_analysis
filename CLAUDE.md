@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Ralph Stock Analysis System - Quick Start Guide for Claude Code
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ---
 
@@ -11,9 +11,11 @@ Microservices-based Korean stock analysis platform built with Python (FastAPI) a
 **Key Features:**
 - VCP (Volatility Contraction Pattern) scanner
 - 종가베팅 V2 signal engine with 12-point scoring
+- **Daytrading Scanner** - 단타 매수 신호 7개 체크리스트 (거래량, 모멘텀, 박스권, 5일선, 기관, 낙폭, 섹터)
 - Real-time market data via Kiwoom REST API
 - SmartMoney flow analysis (foreign/institutional investors)
 - AI chatbot with Gemini integration
+- Custom Recommendation - 실시간 가격 연동 종목 추천
 
 ---
 
@@ -33,7 +35,7 @@ make logs    # 로그 확인
 **Profiles:**
 - `dev`: 개발용 (핫 리로드, 소스 마운트)
 - `prod`: 운영용 (최적화, 리소스 제한)
-- `test`: 테스트용 (테스트 DB)
+- `test`: 테스트용 (테스트 DB + Mock 서비스)
 
 ### 로컬 개발
 
@@ -52,6 +54,9 @@ uv run uvicorn services.signal_engine.main:app --port 5113 --reload
 
 # Chatbot (Port: 5114)
 uv run uvicorn services.chatbot.main:app --port 5114 --reload
+
+# Daytrading Scanner (Port: 5115)
+uv run uvicorn services.daytrading_scanner.main:app --port 5115 --reload
 
 # Frontend (Port: 5110)
 cd frontend && npm run dev
@@ -73,11 +78,16 @@ celery -A tasks.celery_app beat --loglevel=info
 | 5113 | Signal Engine | Signal generation |
 | 5114 | Chatbot | AI chatbot service |
 | 5115 | Daytrading Scanner | Daytrading signal scanner |
+| 5116 | Mock Kiwoom API | 키움 API Mock (테스트용) |
+| 5117 | Mock WebSocket | WebSocket Mock (테스트용) |
 | 5433 | PostgreSQL | Database (dev) |
+| 5434 | PostgreSQL Test | Database (test) |
 | 6380 | Redis | Cache/message broker (dev) |
+| 6381 | Redis Test | Cache/message broker (test) |
 | 5555 | Flower | Celery monitoring |
 
 > **규칙:** 모든 서비스는 `511x` 포트 범위 사용
+> **Mock 서비스:** 테스트 환경에서만 사용 (`make test-up`)
 
 ---
 
@@ -100,6 +110,7 @@ CELERY_RESULT_BACKEND=redis://localhost:6380/2
 VCP_SCANNER_URL=http://localhost:5112
 SIGNAL_ENGINE_URL=http://localhost:5113
 CHATBOT_SERVICE_URL=http://localhost:5114
+DAYTRADING_SCANNER_URL=http://localhost:5115
 
 # Kiwoom REST API
 KIWOOM_APP_KEY=your_app_key
@@ -134,13 +145,14 @@ docker compose run --rm db-init
 ```
 
 **생성되는 테이블:**
-- `stocks` - 종목 기본 정보
+- `stocks` - 종목 기본 정보 (관리종목, SPAC, 채권, 제외ETF 플래그 포함)
 - `signals` - VCP/종가베팅 시그널
 - `daily_prices` - 일봉 데이터 (TimescaleDB 하이퍼테이블)
 - `institutional_flows` - 기관 수급 데이터 (TimescaleDB 하이퍼테이블)
 - `market_status` - Market Gate 상태
 - `ai_analyses` - AI 분석 결과
 - `backtest_results` - 백테스트 결과
+- `daytrading_signals` - 단타 매수 신호 (7개 체크리스트 점수)
 
 ### Nginx Proxy Manager (NPM) - Reverse Proxy 설정
 
@@ -197,6 +209,7 @@ add_header Pragma "no-cache";
 |------|------|------|
 | **Docker Compose** | `docs/DOCKER_COMPOSE.md` | **Profiles 기반 통합 설정** ⭐ |
 | Docker Compose 통합 | `docs/DOCKER_COMPOSE_UNIFICATION.md` | 통합 계획 및 완료 보고서 ✅ |
+| **Mock 서비스** | `docs/TEST_MOCK_SERVICES.md` | **테스트용 Mock 서비스 구축** ⭐ |
 | **Open Architecture** | `docs/OPEN_ARCHITECTURE.md` | **마이크로서비스 구조** ⭐ |
 | **WebSocket 설정** | `docs/WEBSOCKET.md` | WebSocket 연결, CORS |
 | **실시간 OHLC 수집** | `docs/OHLC_COLLECTOR.md` | Kiwoom OHLC 수집기 |
@@ -211,6 +224,47 @@ add_header Pragma "no-cache";
 
 ---
 
+## Testing
+
+### Python (pytest)
+
+```bash
+# 전체 테스트
+uv run pytest tests/ -v
+
+# 빠른 단위 테스트만
+uv run pytest -m fast -v
+
+# 통합 테스트 제외
+uv run pytest -m "not integration" -v
+
+# 개별 파일
+uv run pytest tests/unit/kiwoom/test_websocket.py -v
+
+# 커버리지 포함
+uv run pytest --cov=src --cov-report=term
+
+# 병렬 실행
+uv run pytest -n 4 -v
+```
+
+### Frontend (Vitest + Playwright)
+
+```bash
+cd frontend
+
+# 단위 테스트
+npm run test
+
+# E2E 테스트
+npm run test:e2e
+
+# 커버리지
+npm run test:coverage
+```
+
+---
+
 ## Critical Notes
 
 ### Kiwoom REST API
@@ -221,7 +275,19 @@ add_header Pragma "no-cache";
 ### Frontend Development
 - Port 5110 conflicts: `sudo lsof -ti:5110 | xargs -r sudo kill -9`
 - Build permission issues: `sudo chown -R ralph:ralph frontend/.next`
-- ESLint errors: Set `eslint: { ignoreDuringBuilds: true }` in next.config.js
+- ESLint errors: Set `eslint: { ignoreDuringBuilds: true }` in next.config.mjs
+
+### Linting & Formatting
+
+```bash
+# Python (ruff)
+make lint      # 코드 검사
+make format    # 코드 포맷
+
+# 직접 실행
+uv run ruff check .
+uv run ruff format .
+```
 
 ### Sleep Command
 - **Always use full path**: `/home/ralph/bin/sleep` (not `sleep`)
@@ -292,12 +358,13 @@ ralph_stock_analysis/
 │   ├── api_gateway/       # Main gateway (5111)
 │   ├── vcp_scanner/       # VCP scanner (5112)
 │   ├── signal_engine/     # Signal generation (5113)
+│   ├── daytrading_scanner/ # Daytrading scanner (5115)
 │   └── chatbot/           # AI chatbot (5114)
-├── src/                   # Core Python modules
-├── frontend/              # Next.js 14 App Router
+├── src/                   # Core Python modules (db, kiwoom, websocket, etc.)
+├── frontend/              # Next.js 15 App Router
 ├── tasks/                 # Celery background tasks
-├── tests/                 # pytest tests
-└── docker/                # Docker 설정
+├── tests/                 # pytest tests (unit, integration, e2e)
+└── docker/                # Docker Compose 설정
 ```
 
 ---
@@ -309,10 +376,10 @@ ralph_stock_analysis/
 | Migration | 7/7 Phases Complete (100%) ✅ |
 | Modularization | 7/7 Phases Complete (100%) ✅ |
 | Docker Compose | 통합 완료 (100%) ✅ |
-| Tests | 622 passed, 20 skipped |
+| Tests | 842 passed, 20 skipped |
 
-**2026-02-05:** Docker Compose 통합 완료 (Profiles 기반, 중복 파일 정리)
+**2026-02-23:** 일봉 데이터 수집 서비스, Daytrading Scanner 서비스, Custom Recommendation 실시간 연동 구현
 
 ---
 
-*Last updated: 2026-02-05*
+*Last updated: 2026-02-23*

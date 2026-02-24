@@ -6,14 +6,24 @@ Celery Collection Tasks
 from datetime import date, timedelta
 from typing import Optional
 import logging
+import asyncio
 from celery import shared_task
 from sqlalchemy import text
 
 from src.database.session import SessionLocal
 from src.repositories.stock_repository import StockRepository
 from src.collectors.krx_collector import KRXCollector
+from src.kiwoom.rest_api import KiwoomRestAPI
+from src.kiwoom.base import KiwoomConfig
+import os
 
 logger = logging.getLogger(__name__)
+
+
+def _get_kiwoom_api() -> KiwoomRestAPI:
+    """Kiwoom API 인스턴스 생성"""
+    config = KiwoomConfig.from_env()
+    return KiwoomRestAPI(config)
 
 
 @shared_task(name="tasks.collect_stock_list")
@@ -187,51 +197,141 @@ def collect_supply_demand(
 @shared_task(name="tasks.sync_all_data")
 def sync_all_data() -> dict:
     """
-    전체 데이터 동기화 태스크
+    전체 데이터 동기화 태스크 (Kiwoom API 사용)
 
-    1. 종목 마스터 수집
-    2. 전 종목 일봉 데이터 수집 (최근 30일)
-    3. 전 종목 수급 데이터 수집 (최근 30일)
+    1. 종목 마스터 수집 (DB 기존 데이터 사용)
+    2. 전 종목 일봉 데이터 수집 (Kiwoom API ka10081)
+    3. 수급 데이터는 별도 처리
 
     Returns:
         수집 결과 통계
     """
-    logger.info("🚀 전체 데이터 동기화 시작...")
+    logger.info("🚀 전체 데이터 동기화 시작 (Kiwoom API)...")
 
     results = {
         "stocks": 0,
         "daily_prices": 0,
         "supply_demand": 0,
+        "errors": 0,
     }
 
-    # 1. 종목 마스터 수집
-    results["stocks"] += collect_stock_list("KOSPI")
-    results["stocks"] += collect_stock_list("KOSDAQ")
+    # Kiwoom API 초기화
+    try:
+        api = _get_kiwoom_api()
+    except Exception as e:
+        logger.error(f"❌ Kiwoom API 초기화 실패: {e}")
+        return results
 
-    # 2. 일봉/수급 데이터 수집
-    end_date = date.today()
-    start_date = end_date - timedelta(days=30)
-
+    # 1. DB에서 전체 종목 조회
     with SessionLocal() as session:
-        # 전체 종목 조회
         tickers = session.execute(
-            text("SELECT ticker FROM stocks ORDER BY market")
+            text("SELECT ticker, name FROM stocks ORDER BY ticker")
         ).fetchall()
 
-    for (ticker,) in tickers:
+    logger.info(f"📋 {len(tickers)}개 종목 일봉 데이터 수집 시작...")
+
+    # 2. 각 종목별로 Kiwoom API에서 일봉 데이터 수집
+    for ticker, name in tickers:
         try:
-            results["daily_prices"] += collect_daily_prices(
-                ticker,
-                start_date.isoformat(),
-                end_date.isoformat(),
-            )
-            results["supply_demand"] += collect_supply_demand(
-                ticker,
-                start_date.isoformat(),
-                end_date.isoformat(),
-            )
+            # Kiwoom API 호출 (새로운 event loop 사용)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                chart_data = loop.run_until_complete(_fetch_chart_data(api, ticker))
+            finally:
+                loop.close()
+
+            if not chart_data:
+                logger.warning(f"⚠️ {ticker} ({name}) 일봉 데이터 없음")
+                continue
+
+            # DB에 저장
+            count = _save_daily_prices(ticker, chart_data)
+            results["daily_prices"] += count
+
+            # Rate limiting (Kiwoom API 제한)
+            import time
+            time.sleep(0.3)
+
         except Exception as e:
-            logger.error(f"❌ {ticker} 데이터 수집 실패: {e}")
+            logger.error(f"❌ {ticker} ({name}) 일봉 수집 실패: {e}")
+            results["errors"] += 1
+
+    # API 연결 종료
+    try:
+        asyncio.run(api.close())
+    except:
+        pass
 
     logger.info(f"✅ 전체 데이터 동기화 완료: {results}")
     return results
+
+
+async def _fetch_chart_data(api: KiwoomRestAPI, ticker: str) -> list:
+    """Kiwoom API에서 일봉 데이터 조회"""
+    try:
+        data = await api.get_stock_daily_chart(
+            ticker=ticker,
+            days=30,
+            adjusted_price=True
+        )
+        return data or []
+    except Exception as e:
+        logger.error(f"Kiwoom API 오류 {ticker}: {e}")
+        return []
+
+
+def _save_daily_prices(ticker: str, chart_data: list) -> int:
+    """일봉 데이터를 DB에 저장"""
+    if not chart_data:
+        return 0
+
+    count = 0
+    with SessionLocal() as session:
+        for item in chart_data:
+            try:
+                # 날짜 형식 변환 (정수 또는 문자열 모두 처리)
+                date_val = item.get("date", "")
+                date_str = str(date_val) if date_val else ""
+
+                if len(date_str) == 8:
+                    formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                elif len(date_str) == 10 and "-" in date_str:
+                    formatted_date = date_str  # 이미 YYYY-MM-DD 형식
+                else:
+                    logger.warning(f"잘못된 날짜 형식 {ticker}: {date_str}")
+                    continue
+
+                session.execute(
+                    text("""
+                        INSERT INTO daily_prices (
+                            ticker, date, open_price, high_price, low_price,
+                            close_price, volume
+                        ) VALUES (
+                            :ticker, :date, :open, :high, :low, :close, :volume
+                        )
+                        ON CONFLICT (ticker, date) DO UPDATE SET
+                            open_price = EXCLUDED.open_price,
+                            high_price = EXCLUDED.high_price,
+                            low_price = EXCLUDED.low_price,
+                            close_price = EXCLUDED.close_price,
+                            volume = EXCLUDED.volume
+                    """),
+                    {
+                        "ticker": ticker,
+                        "date": formatted_date,
+                        "open": item.get("open") or item.get("open_pric"),
+                        "high": item.get("high") or item.get("high_pric"),
+                        "low": item.get("low") or item.get("low_pric"),
+                        "close": item.get("close") or item.get("cur_prc"),
+                        "volume": item.get("volume") or item.get("trde_qty"),
+                    },
+                )
+                count += 1
+            except Exception as e:
+                logger.error(f"❌ 일봉 저장 실패 {ticker} {item.get('date')}: {e}")
+
+        session.commit()
+
+    logger.info(f"✅ {ticker} 일봉 {count}개 저장 완료")
+    return count

@@ -8,6 +8,7 @@ import type {
   IDaytradingAnalyzeRequest,
 } from "@/types"
 import { apiClient } from "@/lib/api-client"
+import { normalizeDaytradingSignals } from "./utils/daytradingNormalizer"
 
 interface IDaytradingState {
   // 상태
@@ -54,8 +55,11 @@ export const useDaytradingStore = create<IDaytradingState>((set, get) => ({
         limit: filters.limit,
       })
 
+      // API 응답 구조: {success: true, data: {signals: [...], count: N}}
+      const signals = response.data?.data?.signals ?? response.data?.signals ?? []
+
       set({
-        signals: response.data.signals,
+        signals,
         loading: false,
       })
     } catch (error) {
@@ -76,8 +80,14 @@ export const useDaytradingStore = create<IDaytradingState>((set, get) => ({
         limit: get().filters.limit,
       })
 
+      // API 응답 구조: {success: true, data: {signals: [...], count: N}}
+      const responseData = response.data?.data ?? response.data
+
+      // 정규화 함수로 응답 데이터 변환
+      const normalizedSignals = normalizeDaytradingSignals(responseData)
+
       set({
-        signals: response.data.signals,
+        signals: normalizedSignals,
         loading: false,
       })
     } catch (error) {
@@ -95,8 +105,14 @@ export const useDaytradingStore = create<IDaytradingState>((set, get) => ({
     try {
       const response = await apiClient.analyzeDaytradingStocks(request)
 
+      // API 응답 구조: {success: true, data: {signals: [...], count: N}}
+      const responseData = response.data?.data ?? response.data
+
+      // 정규화 함수로 응답 데이터 변환
+      const normalizedSignals = normalizeDaytradingSignals(responseData)
+
       set({
-        signals: response.data.signals,
+        signals: normalizedSignals,
         loading: false,
       })
     } catch (error) {

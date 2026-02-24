@@ -84,7 +84,7 @@ services:
   # Frontend - Production
   frontend:
     ports:
-      - "5110:3000"
+      - "5110:5110"
     # 빈 값으로 전달하여 코드에서 동적 결정
     environment:
       - NEXT_PUBLIC_API_URL=
@@ -94,10 +94,17 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 256M
+          memory: 1G
         reservations:
           cpus: '0.25'
-          memory: 128M
+          memory: 512M
+    # Health check for production
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5110"]
+      interval: 60s
+      timeout: 30s
+      start_period: 120s
+      retries: 3
     # No volumes for production
 
   # Celery Worker - Production

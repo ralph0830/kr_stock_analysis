@@ -335,6 +335,9 @@ class PriceUpdateBroadcaster:
         # Kiwoom API 토큰 초기화 플래그
         self._token_initialized = False
 
+        # 실시간 가격 캐시 (Daytrading Scanner에서 사용)
+        self._price_cache: Dict[str, dict] = {}  # ticker -> price_data
+
     def add_ticker(self, ticker: str) -> None:
         """
         종목 구독 추가
@@ -467,6 +470,27 @@ class PriceUpdateBroadcaster:
         print(f"[FETCH DB] Returning {len(result)} prices from database")
         return result
 
+    def get_cached_prices(self) -> Dict[str, dict]:
+        """
+        캐시된 실시간 가격 반환 (Daytrading Scanner에서 사용)
+
+        Returns:
+            ticker -> price_data 매핑
+        """
+        return self._price_cache.copy()
+
+    def get_cached_price(self, ticker: str) -> Optional[dict]:
+        """
+        단일 종목 캐시 가격 반환
+
+        Args:
+            ticker: 종목 코드
+
+        Returns:
+            가격 데이터 또는 None
+        """
+        return self._price_cache.get(ticker)
+
     async def _broadcast_loop(self):
         """브로드캐스트 루프"""
         print(f"[BROADCASTER LOOP] Entered, _is_running={self._is_running}")
@@ -499,16 +523,40 @@ class PriceUpdateBroadcaster:
                         await asyncio.sleep(self.interval_seconds)
                         continue
 
-                # 브로드캐스트
+                # 가격 캐시 업데이트 (Daytrading Scanner에서 사용)
+                self._price_cache.update(price_updates)
+
+                # 브로드캐스트 및 API Gateway 캐시 업데이트
                 for ticker, data in price_updates.items():
                     print(f"[BROADCAST] Sending price update for {ticker}: {data}")
-                    await connection_manager.broadcast(
-                        {
-                            "type": "price_update",
-                            "ticker": ticker,
-                            "data": data,
+                    message = {
+                        "type": "price_update",
+                        "ticker": ticker,
+                        "data": data,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "source": "kiwoom_rest" if os.getenv("USE_KIWOOM_REST", "false").lower() == "true" else "db",
+                    }
+
+                    # API Gateway 실시간 가격 캐시 업데이트
+                    try:
+                        from src.websocket.routes import realtime_price_cache
+                        # 메시지 데이터를 캐시 형식으로 변환
+                        cache_data = {
+                            "price": data.get("price"),
+                            "change": data.get("change"),
+                            "change_rate": data.get("change_rate"),
+                            "volume": data.get("volume"),
+                            "bid_price": data.get("bid_price"),
+                            "ask_price": data.get("ask_price"),
                             "timestamp": datetime.now(timezone.utc).isoformat(),
-                        },
+                        }
+                        realtime_price_cache.update(ticker, cache_data)
+                        logger.debug(f"[Cache] Updated API cache for {ticker}")
+                    except ImportError as e:
+                        logger.debug(f"[Cache] Could not update API cache: {e}")
+
+                    await connection_manager.broadcast(
+                        message,
                         topic=f"price:{ticker}",
                     )
 

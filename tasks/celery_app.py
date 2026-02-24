@@ -22,6 +22,7 @@ celery_app = Celery(
         "tasks.news_tasks",  # 뉴스 태스크 추가
         "tasks.sync_tasks",  # 종목 동기화 태스크 추가
         "tasks.ohlc_tasks",  # OHLC 수집 태스크 추가
+        "src.tasks.collection_tasks",  # 일봉/수급 데이터 수집 태스크 추가
     ]
 )
 
@@ -125,7 +126,7 @@ celery_app.conf.update(
 
         # 전 종목 일별 시세 수집 - 매일 오후 4시 (장 마감 후)
         "collect-daily-prices-daily": {
-            "task": "src.tasks.collection_tasks.sync_all_data",
+            "task": "tasks.sync_all_data",  # src.tasks.collection_tasks에서 @shared_task로 등록됨
             "schedule": 60 * 60,  # 테스트용: 1시간 간격
             # "schedule": crontab(hour=16, minute=0),  # 운영: 매일 16:00
         },

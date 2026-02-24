@@ -1,157 +1,263 @@
 """
-Test Suite: Repository Pattern (GREEN Phase)
-작성 목적: PostgreSQL + TimescaleDB Repository 구현 후 테스트 통과
-예상 결과: PASS - Repository가 구현되어 테스트 통과
+Stock Repository 단위 테스트
+
+종목 관련 데이터 접근 계층을 테스트합니다.
+CRUD 작업, 쿼리 로직을 검증합니다.
 """
 
 import pytest
+from unittest.mock import Mock, MagicMock
+from datetime import date, timedelta
 
+from src.repositories.stock_repository import StockRepository
 from src.database.models import Stock
 
 
-@pytest.fixture(scope="module")
-def db_session():
-    """테스트용 DB 세션"""
-    # 테스트용 인메모리리 DB 사용 (실제 DB는 연결 필요 없음)
-    # TODO: 실제 DB 연결 후 테스트
-    # init_db()
-    # session = SessionLocal()
-    # yield session
-    # session.close()
-    yield None
+# =============================================================================
+# Test Fixtures
+# =============================================================================
+
+@pytest.fixture
+def mock_session():
+    """Mock DB 세션"""
+    session = MagicMock()
+    return session
 
 
-class TestStockRepository:
-    """Stock Repository 단위 테스트"""
+@pytest.fixture
+def stock_repository(mock_session):
+    """StockRepository 인스턴스"""
+    return StockRepository(mock_session)
 
-    @pytest.fixture
-    def repo(self, db_session):
-        """Repository Fixture"""
-        # TODO: DB 연결 후 활성화
-        # return StockRepository(db_session)
-        return None
 
-    def test_create_stock(self, repo):
-        """종목 생성 테스트"""
-        if repo is None:
-            pytest.skip("Database not connected - skipping test")
+@pytest.fixture
+def sample_stock():
+    """샘플 Stock 객체"""
+    stock = Stock()
+    stock.id = 1
+    stock.ticker = "005930"
+    stock.name = "삼성전자"
+    stock.market = "KOSPI"
+    stock.sector = "전기전자"
+    stock.market_cap = 500000000000000
+    stock.is_etf = False
+    stock.is_admin = False
+    return stock
 
+
+# =============================================================================
+# 1. CRUD 기본 테스트
+# =============================================================================
+
+class TestStockRepositoryCRUD:
+    """StockRepository CRUD 테스트"""
+
+    def test_get_by_ticker_found(self, stock_repository, mock_session, sample_stock):
+        """
+        GIVEN: 존재하는 종목코드
+        WHEN: get_by_ticker()를 호출하면
+        THEN: 해당 종목을 반환해야 함
+        """
         # Arrange
-        stock_data = {
-            "ticker": "005930",
-            "name": "삼성전자",
-            "market": "KOSPI",
-            "sector": "반도체",
-            "market_cap": 500_000_000_000_000,
-        }
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = sample_stock
+        mock_session.execute.return_value = mock_result
 
         # Act
-        stock = repo.create(**stock_data)
+        result = stock_repository.get_by_ticker("005930")
 
         # Assert
-        assert stock.ticker == "005930"
-        assert stock.name == "삼성전자"
-        assert stock.market == "KOSPI"
+        assert result is not None
+        assert result.ticker == "005930"
+        assert result.name == "삼성전자"
 
-    def test_get_by_ticker(self, repo):
-        """종목 코드로 조회 테스트"""
-        if repo is None:
-            pytest.skip("Database not connected - skipping test")
+    def test_get_by_ticker_not_found(self, stock_repository, mock_session):
+        """
+        GIVEN: 존재하지 않는 종목코드
+        WHEN: get_by_ticker()를 호출하면
+        THEN: None을 반환해야 함
+        """
+        # Arrange
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
 
-        # Arrange - 먼저 데이터 생성
-        repo.create(
-            ticker="005930",
-            name="삼성전자",
-            market="KOSPI",
-            sector="반도체"
+        # Act
+        result = stock_repository.get_by_ticker("999999")
+
+        # Assert
+        assert result is None
+
+    def test_list_all_no_filters(self, stock_repository, mock_session, sample_stock):
+        """
+        GIVEN: 필터 없는 요청
+        WHEN: list_all()를 호출하면
+        THEN: 전체 종목 목록을 반환해야 함
+        """
+        # Arrange
+        mock_result = Mock()
+        mock_result.scalars.return_value.all.return_value = [sample_stock]
+        mock_session.execute.return_value = mock_result
+
+        # Act
+        result = stock_repository.list_all()
+
+        # Assert
+        assert len(result) == 1
+        assert result[0].ticker == "005930"
+
+    def test_list_all_with_market_filter(self, stock_repository, mock_session, sample_stock):
+        """
+        GIVEN: 시장 필터
+        WHEN: list_all(market="KOSPI")를 호출하면
+        THEN: KOSPI 종목만 반환해야 함
+        """
+        # Arrange
+        mock_result = Mock()
+        mock_result.scalars.return_value.all.return_value = [sample_stock]
+        mock_session.execute.return_value = mock_result
+
+        # Act
+        result = stock_repository.list_all(market="KOSPI")
+
+        # Assert
+        assert len(result) == 1
+        assert result[0].market == "KOSPI"
+
+
+# =============================================================================
+# 2. 검색 기능 테스트
+# =============================================================================
+
+class TestStockRepositorySearch:
+    """StockRepository 검색 기능 테스트"""
+
+    def test_search_by_name(self, stock_repository, mock_session, sample_stock):
+        """
+        GIVEN: 종목명 키워드
+        WHEN: search()를 호출하면
+        THEN: 이름에 키워드가 포함된 종목을 반환해야 함
+        """
+        # Arrange
+        mock_result = Mock()
+        mock_result.scalars.return_value.all.return_value = [sample_stock]
+        mock_session.execute.return_value = mock_result
+
+        # Act
+        result = stock_repository.search("삼성")
+
+        # Assert
+        assert len(result) == 1
+        assert "삼성" in result[0].name
+
+    def test_search_by_ticker(self, stock_repository, mock_session, sample_stock):
+        """
+        GIVEN: 종목코드 키워드
+        WHEN: search()를 호출하면
+        THEN: 티커에 키워드가 포함된 종목을 반환해야 함
+        """
+        # Arrange
+        mock_result = Mock()
+        mock_result.scalars.return_value.all.return_value = [sample_stock]
+        mock_session.execute.return_value = mock_result
+
+        # Act
+        result = stock_repository.search("005930")
+
+        # Assert
+        assert len(result) == 1
+        assert result[0].ticker == "005930"
+
+    def test_search_empty_result(self, stock_repository, mock_session):
+        """
+        GIVEN: 없는 키워드
+        WHEN: search()를 호출하면
+        THEN: 빈 리스트를 반환해야 함
+        """
+        # Arrange
+        mock_result = Mock()
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
+
+        # Act
+        result = stock_repository.search("없는종목")
+
+        # Assert
+        assert len(result) == 0
+
+
+# =============================================================================
+# 3. 생성 및 업데이트 테스트
+# =============================================================================
+
+class TestStockRepositoryCreateUpdate:
+    """StockRepository 생성/업데이트 테스트"""
+
+    def test_create_if_not_exists_new_stock(self, stock_repository, mock_session):
+        """
+        GIVEN: 존재하지 않는 종목
+        WHEN: create_if_not_exists()를 호출하면
+        THEN: 새 종목이 생성되어야 함
+        """
+        # Arrange
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+
+        new_stock = Stock()
+        new_stock.ticker = "000660"
+        new_stock.name = "SK하이닉스"
+        new_stock.market = "KOSPI"
+
+        stock_repository.create = Mock(return_value=new_stock)
+
+        # Act
+        result = stock_repository.create_if_not_exists(
+            ticker="000660",
+            name="SK하이닉스",
+            market="KOSPI"
         )
 
-        # Act
-        stock = repo.get_by_ticker("005930")
-
         # Assert
-        assert stock is not None
-        assert stock.ticker == "005930"
+        assert result is not None
+        assert result.ticker == "000660"
 
-    def test_list_all_stocks(self, repo):
-        """전체 종목 목록 조회 테스트"""
-        if repo is None:
-            pytest.skip(" Database not connected - skipping test")
-
+    def test_create_if_not_exists_existing_stock(self, stock_repository, mock_session, sample_stock):
+        """
+        GIVEN: 이미 존재하는 종목
+        WHEN: create_if_not_exists()를 호출하면
+        THEN: 기존 종목을 반환해야 함
+        """
         # Arrange
-        repo.create(ticker="005930", name="삼성전자", market="KOSPI")
-        repo.create(ticker="000660", name="SK하이닉스", market="KOSPI")
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = sample_stock
+        mock_session.execute.return_value = mock_result
 
         # Act
-        stocks = repo.list_all(limit=10)
-
-        # Assert
-        assert len(stocks) >= 2
-        assert all(isinstance(s, Stock) for s in stocks)
-
-    def test_update_stock(self, repo):
-        """종목 정보 업데이트 테스트"""
-        if repo is None:
-            pytest.skip("Database not connected - skipping test")
-
-        # Arrange
-        stock = repo.create(
+        result = stock_repository.create_if_not_exists(
             ticker="005930",
             name="삼성전자",
-            market="KOSPI",
-            market_cap=400_000_000_000_000
+            market="KOSPI"
         )
-        new_cap = 600_000_000_000_000
-
-        # Act
-        updated = repo.update(stock.id, market_cap=new_cap)
 
         # Assert
-        assert updated.market_cap == 600_000_000_000_000
+        assert result is not None
+        assert result.ticker == "005930"
 
-    def test_delete_stock(self, repo):
-        """종목 삭제 테스트"""
-        if repo is None:
-            pytest.skip("Database not connected - skipping test")
-
+    def test_update_market_cap(self, stock_repository, mock_session, sample_stock):
+        """
+        GIVEN: 존재하는 종목
+        WHEN: update_market_cap()를 호출하면
+        THEN: 시가총액이 업데이트되어야 함
+        """
         # Arrange
-        stock = repo.create(ticker="005930", name="삼성전자", market="KOSPI")
-        stock_id = stock.id
+        mock_result = Mock()
+        mock_result.scalar_one_or_none.return_value = sample_stock
+        mock_session.execute.return_value = mock_result
 
         # Act
-        result = repo.delete(stock_id)
+        result = stock_repository.update_market_cap("005930", 600000000000000)
 
         # Assert
-        assert result is True
-        assert repo.get_by_id(stock_id) is None
-
-
-class TestSignalRepository:
-    """Signal Repository 단위 테스트"""
-
-    @pytest.fixture
-    def repo(self, db_session):
-        """Repository Fixture"""
-        # TODO: DB 연결 후 활성화
-        return None
-
-    def test_create_signal(self, repo):
-        """시그널 생성 테스트"""
-        if repo is None:
-            pytest.skip("Database not connected - skipping test")
-
-        pytest.fail("TODO: Implement signal creation test with DB connection")
-
-    def test_get_active_signals(self, repo):
-        """활성 시그널 조회 테스트"""
-        if repo is None:
-            pytest.skip("Database not connected - skipping test")
-
-        pytest.fail("TODO: Implement active signals test with DB connection")
-
-    def test_update_signal_status(self, repo):
-        """시그널 상태 업데이트 테스트"""
-        if repo is None:
-            pytest.skip("Database not connected - skipping test")
-
-        pytest.fail("TODO: Implement status update test with DB connection")
+        assert result is not None
+        mock_session.commit.assert_called_once()

@@ -1,7 +1,7 @@
 # WebSocket 설정 가이드
 
-**버전:** 1.0.0
-**최종 수정:** 2026-02-03
+**버전:** 1.1.0
+**최종 수정:** 2026-02-23
 
 ---
 
@@ -85,7 +85,7 @@ export type WSMessageType =
   | "price_update"        // 가격 업데이트
   | "index_update"        // 지수 업데이트
   | "market_gate_update"  // Market Gate 업데이트
-  | "signal_update"       // VCP 시그널 업데이트
+  | "signal_update"       // VCP/Daytrading 시그널 업데이트
   | "error"               // 에러
   | "ping"                // 핑
   | "pong"                // 퐁;
@@ -98,6 +98,8 @@ export type WSMessageType =
 | `price:{ticker}` | 종목 가격 | `price:005930` |
 | `market:{name}` | 지수 | `market:kospi`, `market:kosdaq` |
 | `market-gate` | Market Gate 상태 | - |
+| `signal:vcp` | VCP 시그널 | - |
+| `signal:daytrading` | Daytrading 시그널 | - |
 
 ---
 

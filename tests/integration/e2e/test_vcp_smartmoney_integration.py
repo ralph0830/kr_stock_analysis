@@ -11,10 +11,45 @@ from src.analysis.vcp_analyzer_improved import (
 )
 from src.analysis.smartmoney_analyzer import (
     analyze_smartmoney,
-    create_mock_flow_data,
     FlowData,
     Trend,
 )
+
+# 테스트용 헬퍼 함수
+def create_mock_flow_data(days=10, foreign_trend="neutral", inst_trend="neutral"):
+    """테스트용 수급 데이터 생성"""
+    from datetime import timedelta
+    flow_data = []
+    base_date = date.today() - timedelta(days=days)
+
+    foreign_values = {
+        "strong_buy": [300000, 250000, 200000, 280000, 320000],
+        "buy": [100000, 150000, 200000, 180000, 220000],
+        "sell": [-100000, -150000, -200000, -180000, -220000],
+        "strong_sell": [-300000, -250000, -200000, -280000, -320000],
+        "neutral": [0, 50000, -50000, 30000, -30000],
+    }
+
+    inst_values = {
+        "strong_buy": [250000, 200000, 180000, 220000, 280000],
+        "buy": [80000, 120000, 160000, 140000, 180000],
+        "sell": [-80000, -120000, -160000, -140000, -180000],
+        "strong_sell": [-250000, -200000, -180000, -220000, -280000],
+        "neutral": [0, 40000, -40000, 20000, -20000],
+    }
+
+    for i in range(days):
+        f_idx = i % 5
+        i_idx = i % 5
+        flow_data.append(FlowData(
+            date=base_date + timedelta(days=i),
+            foreign_net_buy=foreign_values[foreign_trend][f_idx],
+            inst_net_buy=inst_values[inst_trend][i_idx],
+            pension_net_buy=0,
+            foreign_ownership=50.0,
+        ))
+
+    return flow_data
 
 
 class TestVCPSmartMoneyIntegration:

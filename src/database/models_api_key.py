@@ -3,11 +3,16 @@ API Key Model
 
 API 인증을 위한 키 관리
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import Column, String, DateTime, Integer, Text, Boolean
 from sqlalchemy.orm import relationship
 
 from src.database.models import Base
+
+
+def _now_utc():
+    """UTC 현재 시간 반환 (KST 표준화)"""
+    return datetime.now(timezone.utc)
 
 
 class APIKey(Base):
@@ -32,7 +37,7 @@ class APIKey(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     expires_at = Column(DateTime, nullable=True)
     last_used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=_now_utc, nullable=False)
     created_by = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
 
@@ -44,14 +49,14 @@ class APIKey(Base):
         if not self.is_active:
             return False
 
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < _now_utc():
             return False
 
         return True
 
     def update_last_used(self) -> None:
         """마지막 사용 시간 업데이트"""
-        self.last_used_at = datetime.utcnow()
+        self.last_used_at = _now_utc()
 
     @staticmethod
     def generate_key() -> str:

@@ -7,18 +7,16 @@ import { useState, useEffect } from "react";
 import { FullStockChart, MiniChart, PriceChange, PriceData } from "@/components/StockChart";
 import { apiClient } from "@/lib/api-client";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useWebSocket } from "@/hooks/useWebSocket";
+import {
+  ChartRealtimePrice,
+  ChartRealtimePriceHeader,
+  type IStockInfo,
+} from "@/components/realtime/ChartRealtimePrice";
 
-// 인기 종목 목록
+// 인기 종목 목록 (데이터가 있는 종목만)
 const POPULAR_STOCKS = [
   { ticker: "005930", name: "삼성전자" },
-  { ticker: "000660", name: "SK하이닉스" },
-  { ticker: "035420", name: "NAVER" },
-  { ticker: "005380", name: "현대차" },
-  { ticker: "028260", name: "삼성물산" },
-  { ticker: "006400", name: "LG전자" },
-  { ticker: "068270", name: "Celltrion" },
-  { ticker: "105560", name: "KB금융" },
+  { ticker: "000020", name: "동서" },
 ];
 
 // 에러 메시지 타입
@@ -37,21 +35,17 @@ export default function ChartPage() {
   const [miniChartsReady, setMiniChartsReady] = useState(false);
   const [error, setError] = useState<ErrorMessage | null>(null);
 
-  // WebSocket 연결 상태 확인
-  const { connected: wsConnected } = useWebSocket({
-    autoConnect: true,
-  });
+  // 선택된 종목 정보 조회
+  const selectedStockInfo = POPULAR_STOCKS.find((s) => s.ticker === selectedTicker);
 
   // 미니 차트 데이터 상태
   const [miniChartData, setMiniChartData] = useState<Record<string, PriceData[]>>({});
   const [miniChartsLoading, setMiniChartsLoading] = useState(true);
 
-  // 미니 차트용 종목 목록
+  // 미니 차트용 종목 목록 (데이터가 있는 종목만)
   const MINI_CHART_STOCKS = [
     { ticker: "005930", name: "삼성전자" },
-    { ticker: "000660", name: "SK하이닉스" },
-    { ticker: "035420", name: "NAVER" },
-    { ticker: "005380", name: "현대차" }
+    { ticker: "000020", name: "동서" },
   ];
 
   // 클라이언트 마운트 후 미니 차트 렌더링
@@ -68,7 +62,7 @@ export default function ChartPage() {
       // 각 종목별로 병렬 조회
       const promises = MINI_CHART_STOCKS.map(async (stock) => {
         try {
-          const stockChart = await apiClient.getStockChart(stock.ticker, "1mo"); // 1개월 데이터
+          const stockChart = await apiClient.getStockChart(stock.ticker, "6mo"); // 6개월 데이터 (데이터 부족 대응)
           const chartData: PriceData[] = (stockChart.data || []).map((item) => {
             const dateStr = item.date;
             const formattedDate = dateStr.length === 8
@@ -107,7 +101,8 @@ export default function ChartPage() {
       setError(null);
       try {
         // DB 기반 차트 데이터 가져오기
-        const stockChart = await apiClient.getStockChart(selectedTicker, "6mo");
+        // 데이터 부족 문제로 1년 데이터를 기본으로 사용
+        const stockChart = await apiClient.getStockChart(selectedTicker, "1y");
 
         // DB 응답 (YYYY-MM-DD 형식)을 차트 데이터 형식으로 변환
         const chartData: PriceData[] = (stockChart.data || []).map((item) => {
@@ -133,8 +128,8 @@ export default function ChartPage() {
         // 데이터가 비있으면 안내 메시지 표시
         if (chartData.length === 0) {
           setError({
-            title: "데이터가 없습니다",
-            message: "선택한 종목의 차트 데이터가 아직 수집되지 않았습니다. 데이터 수집 작업이 필요합니다.",
+            title: "차트 데이터가 없습니다",
+            message: "일봉 데이터는 매일 장 마감 후 자동으로 수집됩니다. 잠시 후 다시 확인해 주세요.",
             canRetry: true,
           });
         }
@@ -190,22 +185,18 @@ export default function ChartPage() {
       </header>
 
       <div className="container mx-auto px-4 py-8">
+        {/* 실시간 가격 헤더 - 선택된 종목 상세 표시 */}
+        {selectedStockInfo && (
+          <section className="mb-8">
+            <ChartRealtimePriceHeader
+              ticker={selectedStockInfo.ticker}
+              name={selectedStockInfo.name}
+            />
+          </section>
+        )}
+
         {/* 종목 선택 및 검색 */}
         <section className="mb-8">
-          {/* 데이터 출처 표시 */}
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                wsConnected
-                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                  : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-              }`}>
-                <span className={`w-2 h-2 rounded-full mr-2 ${wsConnected ? "bg-green-500 animate-pulse" : "bg-gray-400"}`}></span>
-                {wsConnected ? "Kiwoom 실시간 데이터 연동됨" : "연결 대기 중..."}
-              </span>
-            </div>
-          </div>
-
           <div className="flex flex-wrap items-center gap-4">
             {/* 검색 입력 */}
             <div className="relative flex-1 min-w-[200px] max-w-md">
@@ -246,20 +237,9 @@ export default function ChartPage() {
               )}
             </div>
 
-            {/* 현재 선택된 종목 표시 */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 dark:text-gray-400">
-                선택:
-              </span>
-              <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-lg text-sm font-medium">
-                {POPULAR_STOCKS.find((s) => s.ticker === selectedTicker)?.name || selectedTicker}
-                ({selectedTicker})
-              </span>
-            </div>
-
             {/* 빠른 선택 버튼 */}
             <div className="flex gap-2">
-              {POPULAR_STOCKS.slice(0, 4).map((stock) => (
+              {POPULAR_STOCKS.map((stock) => (
                 <button
                   key={stock.ticker}
                   onClick={() => setSelectedTicker(stock.ticker)}
@@ -281,6 +261,16 @@ export default function ChartPage() {
           </div>
         </section>
 
+        {/* 실시간 가격 그리드 - 모든 종목 */}
+        <section className="mb-8">
+          <ChartRealtimePrice
+            stocks={POPULAR_STOCKS}
+            selectedTicker={selectedTicker}
+            onStockSelect={setSelectedTicker}
+            compact={false}
+          />
+        </section>
+
         {/* 미니 차트 그리드 - 클라이언트에서만 렌더링 */}
         {miniChartsReady && (
           <section className="mb-8">
@@ -288,8 +278,8 @@ export default function ChartPage() {
               미니 차트
             </h2>
             {miniChartsLoading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {[...Array(4)].map((_, i) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                {[...Array(2)].map((_, i) => (
                   <div key={i} className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow animate-pulse">
                     <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4"></div>
                     <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
@@ -298,7 +288,7 @@ export default function ChartPage() {
                 ))}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
                 {MINI_CHART_STOCKS.map((item) => {
                   const data = miniChartData[item.ticker] || [];
                   // 데이터는 시간 순서대로 정렬됨 (오래된 데이터 first, 최신 데이터 last)

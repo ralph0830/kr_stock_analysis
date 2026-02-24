@@ -6,9 +6,12 @@
 # 사용법: make [명령어]
 # ============================================================================
 
-.PHONY: help dev prod stop restart logs status build clean test lint format \
+.PHONY: help dev prod test stop restart logs status build clean test lint format \
         up down up-infra logs-api logs-vcp logs-signal logs-db logs-celery logs-frontend \
-        shell db-shell redis-shell
+        shell db-shell redis-shell \
+        monitoring monitoring-stop monitoring-status monitoring-logs \
+        prometheus grafana alertmanager \
+        test-up test-down test-logs test-status
 
 # 기본 타겟: 도움말
 help:
@@ -48,6 +51,20 @@ help:
 	@echo "  make test        - 테스트 실행"
 	@echo "  make lint        - 코드 검사"
 	@echo "  make format      - 코드 포맷"
+	@echo ""
+	@echo "모니터링:"
+	@echo "  make monitoring      - 모니터링 스택 시작"
+	@echo "  make monitoring-stop - 모니터링 스택 중지"
+	@echo "  make monitoring-status - 모니터링 상태"
+	@echo "  make prometheus      - Prometheus 접속"
+	@echo "  make grafana         - Grafana 접속"
+	@echo "  make alertmanager    - AlertManager 접속"
+	@echo ""
+	@echo "테스트 환경:"
+	@echo "  make test-up     - 테스트 환경 시작 (Mock 서비스 포함)"
+	@echo "  make test-down   - 테스트 환경 중지"
+	@echo "  make test-logs   - 테스트 로그 보기"
+	@echo "  make test-status - 테스트 환경 상태 확인"
 	@echo ""
 
 # ============================================================================
@@ -184,3 +201,94 @@ lint:
 format:
 	@echo "✨ 코드 포맷..."
 	uv run ruff format .
+
+# ============================================================================
+# 모니터링 스택
+# ============================================================================
+
+# 모니터링 스택 시작
+monitoring:
+	@echo "📊 모니터링 스택 시작..."
+	docker compose -f docker/compose/infra.yml -f docker/compose/services/monitoring.yml up -d
+	@echo ""
+	@echo "✅ 모니터링 스택 시작 완료!"
+	@echo ""
+	@echo "📱 접속 URL:"
+	@echo "   Prometheus:   http://localhost:9090"
+	@echo "   Grafana:      http://localhost:3000 (admin/admin)"
+	@echo "   AlertManager: http://localhost:9093"
+	@echo ""
+	@echo "📋 로그 보기: make monitoring-logs"
+
+# 모니터링 스택 중지
+monitoring-stop:
+	@echo "🛑 모니터링 스택 중지..."
+	docker compose -f docker/compose/infra.yml -f docker/compose/services/monitoring.yml down
+	@echo "✅ 중지 완료"
+
+# 모니터링 스택 상태
+monitoring-status:
+	@echo "📊 모니터링 스택 상태:"
+	@docker compose -f docker/compose/infra.yml -f docker/compose/services/monitoring.yml ps
+
+# 모니터링 로그
+monitoring-logs:
+	docker compose -f docker/compose/infra.yml -f docker/compose/services/monitoring.yml logs -f --tail=100
+
+# Prometheus 접속
+prometheus:
+	@echo "🔗 Prometheus 열기: http://localhost:9090"
+	@xdg-open http://localhost:9090 2>/dev/null || echo "브라우저에서 http://localhost:9090 접속"
+
+# Grafana 접속
+grafana:
+	@echo "🔗 Grafana 열기: http://localhost:3000"
+	@xdg-open http://localhost:3000 2>/dev/null || echo "브라우저에서 http://localhost:3000 접속"
+
+# AlertManager 접속
+alertmanager:
+	@echo "🔗 AlertManager 열기: http://localhost:9093"
+	@xdg-open http://localhost:9093 2>/dev/null || echo "브라우저에서 http://localhost:9093 접속"
+
+# ============================================================================
+# 테스트 환경
+# ============================================================================
+
+# 테스트 환경 시작 (test profile + mock services)
+test-up:
+	@echo "🧪 테스트 환경 시작 (test profile + Mock 서비스)..."
+	docker compose --profile test up -d
+	@echo ""
+	@echo "✅ 테스트 환경 시작 완료!"
+	@echo ""
+	@echo "📱 접속 URL:"
+	@echo "   Mock Kiwoom API:   http://localhost:5116"
+	@echo "   Mock WebSocket:    http://localhost:5117"
+	@echo "   Test DB (Postgres): localhost:5434"
+	@echo "   Test Redis:        localhost:6381"
+	@echo ""
+	@echo "📋 로그 보기: make test-logs"
+	@echo "📋 상태 확인: make test-status"
+
+# 테스트 환경 중지
+test-down:
+	@echo "🛑 테스트 환경 중지..."
+	docker compose --profile test down
+	@echo "✅ 중지 완료"
+
+# 테스트 로그 보기
+test-logs:
+	@echo "📋 테스트 환경 로그:"
+	docker compose --profile test logs -f --tail=100
+
+# 테스트 환경 상태 확인
+test-status:
+	@echo "📊 테스트 환경 상태:"
+	@docker compose --profile test ps
+	@echo ""
+	@echo "📊 Mock 서비스 헬스 체크:"
+	@echo "   Mock Kiwoom API:"
+	@wget -q -O- http://localhost:5116/ 2>/dev/null || echo "   ❌ 접속 실패"
+	@echo "   Mock WebSocket:"
+	@wget -q -O- http://localhost:5117/health 2>/dev/null || echo "   ❌ 접속 실패"
+

@@ -4,7 +4,7 @@ VCP/Signal 스캔 트리거 API
 """
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -188,7 +188,7 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
     Returns:
         스캔 결과
     """
-    started_at = datetime.utcnow().isoformat()
+    started_at = datetime.now(timezone.utc).isoformat()
 
     try:
         update_scan_state(
@@ -225,7 +225,7 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
             vcp_scan_status="completed",
             current_operation=None,
             progress_percentage=100.0,
-            last_vcp_scan=datetime.utcnow().isoformat(),
+            last_vcp_scan=datetime.now(timezone.utc).isoformat(),
         )
 
         # 결과 파싱 - VCP Scanner 응답 형식에 맞춤 변환
@@ -250,7 +250,7 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
                 contraction_ratio=r.get("vcp_score", 0) / 100 if r.get("vcp_score") else None,
                 foreign_5d=r.get("foreign_net_5d", 0) or 0,
                 inst_5d=r.get("inst_net_5d", 0) or 0,
-                created_at=datetime.utcnow().isoformat(),
+                created_at=datetime.now(timezone.utc).isoformat(),
             )
             # Pydantic 모델을 dict로 변환
             signal_items.append(item.model_dump())
@@ -260,7 +260,7 @@ async def run_vcp_scan(options: VCPScanOptions) -> dict:
             scanned_count=len(results),
             found_signals=len(signal_items),
             started_at=started_at,
-            completed_at=datetime.utcnow().isoformat(),
+            completed_at=datetime.now(timezone.utc).isoformat(),
             signals=signal_items,
         )
 
@@ -317,7 +317,7 @@ async def run_signal_generation(options: SignalGenerationOptions) -> dict:
             signal_generation_status="completed",
             current_operation=None,
             progress_percentage=100.0,
-            last_signal_generation=datetime.utcnow().isoformat(),
+            last_signal_generation=datetime.now(timezone.utc).isoformat(),
         )
 
         return result
@@ -386,7 +386,7 @@ async def trigger_vcp_scan(
         sync_stocks=sync_stocks,
     )
 
-    started_at = datetime.utcnow().isoformat()
+    started_at = datetime.now(timezone.utc).isoformat()
 
     # 동기 실행
     try:
@@ -400,7 +400,7 @@ async def trigger_vcp_scan(
             scanned_count=0,
             found_signals=0,
             started_at=started_at,
-            completed_at=datetime.utcnow().isoformat(),
+            completed_at=datetime.now(timezone.utc).isoformat(),
             error_message=f"VCP Scanner service unavailable: {str(e)}",
         )
 
@@ -436,7 +436,7 @@ async def trigger_signal_generation(
 
     options = SignalGenerationOptions(tickers=tickers)
 
-    started_at = datetime.utcnow().isoformat()
+    started_at = datetime.now(timezone.utc).isoformat()
 
     # 동기 실행 (테스트용)
     try:
@@ -446,7 +446,7 @@ async def trigger_signal_generation(
             status="completed",
             generated_count=result.get("generated_count", 0),
             started_at=started_at,
-            completed_at=datetime.utcnow().isoformat(),
+            completed_at=datetime.now(timezone.utc).isoformat(),
         )
 
     except httpx.HTTPError as e:
@@ -455,7 +455,7 @@ async def trigger_signal_generation(
             status="error",
             generated_count=0,
             started_at=started_at,
-            completed_at=datetime.utcnow().isoformat(),
+            completed_at=datetime.now(timezone.utc).isoformat(),
             error_message=f"Signal Engine service unavailable: {str(e)}",
         )
 
@@ -508,7 +508,7 @@ async def sync_stocks(
     Returns:
         종목 동기화 응답
     """
-    started_at = datetime.utcnow().isoformat()
+    started_at = datetime.now(timezone.utc).isoformat()
 
     try:
         # 동기 실행 (Celery 태스크로 변경 가능)
@@ -521,7 +521,7 @@ async def sync_stocks(
             kosdaq_count=result.get("kosdaq_count", 0),
             konex_count=result.get("konex_count", 0),
             started_at=started_at,
-            completed_at=datetime.utcnow().isoformat(),
+            completed_at=datetime.now(timezone.utc).isoformat(),
         )
 
     except Exception as e:
@@ -530,7 +530,7 @@ async def sync_stocks(
             status="error",
             synced=0,
             started_at=started_at,
-            completed_at=datetime.utcnow().isoformat(),
+            completed_at=datetime.now(timezone.utc).isoformat(),
             error_message=str(e),
         )
 

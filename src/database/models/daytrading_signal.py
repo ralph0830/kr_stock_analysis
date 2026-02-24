@@ -4,9 +4,14 @@ DaytradingSignal Database Model
 """
 
 from sqlalchemy import Column, String, Integer, Date, DateTime, JSON, Index
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.database.session import Base
+
+
+def _now_utc():
+    """UTC 현재 시간 반환 (KST 표준화)"""
+    return datetime.now(timezone.utc)
 
 
 class DaytradingSignal(Base):
@@ -48,8 +53,8 @@ class DaytradingSignal(Base):
     exit_time = Column(DateTime, nullable=True)  # 청산 시간
     exit_reason = Column(String(50), nullable=True)  # 청산 사유
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=_now_utc)
+    updated_at = Column(DateTime, default=_now_utc, onupdate=_now_utc)
 
     # Indexes
     __table_args__ = (

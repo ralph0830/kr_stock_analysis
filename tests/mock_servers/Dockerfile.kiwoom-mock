@@ -1,0 +1,24 @@
+# Mock Kiwoom REST API Server Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 시스템 의존성 설치
+RUN apt-get update && apt-get install -y \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 의존성 복사
+COPY pyproject.toml uv.lock ./
+
+# uv 설치 및 의존성 설치
+RUN pip install --no-cache-dir uv
+RUN uv sync --no-dev --no-editable
+
+# Mock 서버 코드 복사
+COPY tests/mock_servers/ ./tests/mock_servers/
+
+# Mock 서버 실행
+EXPOSE 5116
+
+CMD ["uv", "run", "python", "tests/mock_servers/kiwoom_mock_server.py"]

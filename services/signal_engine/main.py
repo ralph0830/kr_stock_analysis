@@ -41,6 +41,9 @@ def save_jongga_signals_to_db(signals: List, signal_date: Optional[date] = None)
 
     Returns:
         저장된 시그널 수
+
+    Raises:
+        Exception: DB 저장 실패 시 (예외 재전파)
     """
     from src.database.session import get_db_session_sync
     from src.database.models import Signal
@@ -51,69 +54,56 @@ def save_jongga_signals_to_db(signals: List, signal_date: Optional[date] = None)
 
     saved_count = 0
 
-    # 유연한 import
-    try:
-        from ralph_stock_lib.database.session import SessionLocal
-        db = SessionLocal()
-    except ImportError:
-        from src.database.session import get_db_session_sync
-        db_context = get_db_session_sync()
-        db = db_context.__enter__()
-
-    try:
-        # 기존 JONGGA_V2 시그널 삭제 (갱신)
-        db.execute(
-            delete(Signal).where(
-                Signal.signal_type == "JONGGA_V2",
-                Signal.signal_date == signal_date
-            )
-        )
-
-        # 새 시그널 저장
-        for signal in signals:
-            # ScoreDetail에서 개별 점수 추출
-            score_obj = signal.score
-            news_score = getattr(score_obj, 'news', 0)
-            volume_score = getattr(score_obj, 'volume', 0)
-            chart_score = getattr(score_obj, 'chart', 0)
-            candle_score = getattr(score_obj, 'candle', 0)
-            period_score = getattr(score_obj, 'period', 0)
-            supply_score = getattr(score_obj, 'flow', 0)
-
-            # Signal 레코드 생성
-            db_signal = Signal(
-                ticker=signal.ticker,
-                signal_type="JONGGA_V2",
-                status="OPEN",
-                score=score_obj.total,
-                grade=signal.grade.value,
-                news_score=news_score,
-                volume_score=volume_score,
-                chart_score=chart_score,
-                candle_score=candle_score,
-                period_score=period_score,
-                supply_score=supply_score,
-                signal_date=signal_date,
-                entry_price=signal.entry_price,
-                target_price=signal.target_price,
-                stop_price=signal.stop_loss,
-            )
-            db.add(db_signal)
-            saved_count += 1
-
-        db.commit()
-        logger.info(f"종가베팅 V2 시그널 {saved_count}개 DB 저장 완료")
-
-    except Exception as e:
-        db.rollback()
-        logger.error(f"종가베팅 V2 시그널 DB 저장 실패: {e}")
-        raise
-    finally:
-        # 컨텍스트 매니저가 아닌 경우만 close
+    # Context Manager로 세션 관리 (리소스 누수 방지)
+    with get_db_session_sync() as db:
         try:
-            db.close()
-        except:
-            pass
+            # 기존 JONGGA_V2 시그널 삭제 (갱신)
+            db.execute(
+                delete(Signal).where(
+                    Signal.signal_type == "JONGGA_V2",
+                    Signal.signal_date == signal_date
+                )
+            )
+
+            # 새 시그널 저장
+            for signal in signals:
+                # ScoreDetail에서 개별 점수 추출
+                score_obj = signal.score
+                news_score = getattr(score_obj, 'news', 0)
+                volume_score = getattr(score_obj, 'volume', 0)
+                chart_score = getattr(score_obj, 'chart', 0)
+                candle_score = getattr(score_obj, 'candle', 0)
+                period_score = getattr(score_obj, 'period', 0)
+                supply_score = getattr(score_obj, 'flow', 0)
+
+                # Signal 레코드 생성
+                db_signal = Signal(
+                    ticker=signal.ticker,
+                    signal_type="JONGGA_V2",
+                    status="OPEN",
+                    score=score_obj.total,
+                    grade=signal.grade.value,
+                    news_score=news_score,
+                    volume_score=volume_score,
+                    chart_score=chart_score,
+                    candle_score=candle_score,
+                    period_score=period_score,
+                    supply_score=supply_score,
+                    signal_date=signal_date,
+                    entry_price=signal.entry_price,
+                    target_price=signal.target_price,
+                    stop_price=signal.stop_loss,
+                )
+                db.add(db_signal)
+                saved_count += 1
+
+            db.commit()
+            logger.info(f"종가베팅 V2 시그널 {saved_count}개 DB 저장 완료")
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"종가베팅 V2 시그널 DB 저장 실패: {e}", exc_info=True)
+            raise  # 예외 재전파로 호출자가 실패를 인지하도록 함
 
     return saved_count
 

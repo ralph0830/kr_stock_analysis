@@ -9,9 +9,8 @@ services:
     image: db-init:dev
     container_name: ralph-db-init
     restart: "no"  # 일회성 실행
-    env_file:
-      - .env
     environment:
+      TZ: Asia/Seoul
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/ralph_stock
       PYTHONPATH: /app
     command: >

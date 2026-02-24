@@ -65,14 +65,13 @@ class KiwoomRestAPI:
     """
 
     # API 엔드포인트
-    TOKEN_URL = "/oauth2/token"           # 토큰 발급/갱신
-    PRICE_URL = "/api/dostk/ka10001"      # 현재가 조회
-    STOCK_LIST_URL = "/api/dostk/stkinfo" # 종목정보 리스트 조회 (ka10099)
+    TOKEN_URL = "/oauth2/token"                    # 토큰 발급/갱신
+    MARKET_CONDITION_URL = "/api/dostk/mrkcond"    # 시세조건검색 (ka10004 호가요청)
+    STOCK_LIST_URL = "/api/dostk/stkinfo"          # 종목정보 리스트 조회 (ka10099)
     ORDER_URL = "/api/dostk/t1102"        # 주문
     BALANCE_URL = "/api/dostk/t0424"      # 잔고 조회
     DEPOSIT_URL = "/api/dostk/t0425"      # 예수금 조회
-    CHART_URL = "/api/dostk/chart"        # 종목별투자자기관별차트 (ka10060)
-    DAILY_CHART_URL = "/api/dostk/ka10081"  # 주식일봉차트조회 (지수 포함)
+    CHART_URL = "/api/dostk/chart"        # 차트 조회 (ka10060 기관별, ka10081 일봉 등)
 
     # 주문 유형
     ORDER_BUY = "001"       # 매수
@@ -399,17 +398,20 @@ class KiwoomRestAPI:
 
         raise KiwoomAPIError(f"Request failed after {retry_count} retries") from last_error
 
-    # ==================== 현재가 조회 ====================
+    # ==================== 현재가/호가 조회 ====================
 
     async def get_current_price(self, ticker: str) -> Optional[RealtimePrice]:
         """
-        현재가 조회 (ka10001)
+        현재가 조회 (ka10004 주식호가요청)
+
+        키움 OpenAPI 가이드에 따르면 ka10001(현재가 조회) API는 REST로 제공되지 않음.
+        대신 ka10004(주식호가요청) API를 사용하여 호가 정보를 조회.
 
         Args:
             ticker: 종목코드 (6자리)
 
         Returns:
-            현재가 정보 또는 None
+            현재가 정보 또는 None (호가 기반 추정)
         """
         try:
             # 토큰 유효성 확인
@@ -417,28 +419,22 @@ class KiwoomRestAPI:
 
             client = await self._get_client()
 
-            # JSON-RPC 2.0 요청
-            request_data = {
-                "jsonrpc": "2.0",
-                "method": "t0414",  # 현재가 TR 코드
-                "params": {
-                    "t0414InBlock": {
-                        "shcode": ticker,  # 종목코드
-                    }
-                },
-                "id": 1,
-            }
-
+            # 키움 API 요청 (POST /api/dostk/mrkcond)
             # 헤더에 api-id 포함 (필수!)
             headers = {
                 "Authorization": f"Bearer {self._access_token}",
-                "api-id": "ka10001",  # 현재가 API ID
+                "api-id": "ka10004",  # 주식호가요청 API ID
                 "Content-Type": "application/json;charset=UTF-8",
             }
 
+            # 요청 바디
+            request_body = {
+                "stk_cd": ticker,
+            }
+
             response = await client.post(
-                self.PRICE_URL,
-                json=request_data,
+                self.MARKET_CONDITION_URL,
+                json=request_body,
                 headers=headers,
             )
 
@@ -451,22 +447,40 @@ class KiwoomRestAPI:
                 logger.warning(f"Current price API returned code {return_code}: {result.get('return_msg')}")
                 return None
 
-            # 응답 파싱
-            result_data = result.get("result", {})
-            t0414 = result_data.get("t0414", [])
+            # 응답 파싱 (ka10004 응답 필드)
+            # buy_fpr_bid: 매수최우선호가, sel_fpr_bid: 매도최우선호가
+            buy_price = result.get("buy_fpr_bid", "0")
+            sell_price = result.get("sel_fpr_bid", "0")
+            buy_qty = result.get("buy_fpr_req", "0")
+            sell_qty = result.get("sel_fpr_req", "0")
 
-            if not t0414 or len(t0414) < 8:
-                logger.warning(f"Invalid current price response for {ticker}: {t0414}")
+            # 문자열에서 +/- 제거 후 숫자로 변환
+            def parse_price(price_str: str) -> float:
+                """가격 문자열 파싱 (+/- 제거)"""
+                if not price_str or price_str == "0":
+                    return 0.0
+                return float(str(price_str).replace("+", "").replace("-", "").replace(",", ""))
+
+            buy_price_val = parse_price(buy_price)
+            sell_price_val = parse_price(sell_price)
+
+            # 현재가 추정: 매수호가와 매도호가의 중간값 또는 매수호가 사용
+            # 장 종료 후에는 매수호가=0, 매도호가=0일 수 있음
+            if buy_price_val == 0 and sell_price_val == 0:
+                logger.warning(f"No price data available for {ticker} (market closed)")
                 return None
 
+            # 현재가 = 매수최우선호가 (일반적으로 체결 가능한 가격)
+            current_price = buy_price_val if buy_price_val > 0 else sell_price_val
+
             return RealtimePrice(
-                ticker=t0414[0],
-                price=float(t0414[2]),
-                change=float(t0414[3]),
-                change_rate=float(t0414[4]),
-                volume=int(t0414[7]) if len(t0414) > 7 else 0,
-                bid_price=float(t0414[5]) if len(t0414) > 5 else 0.0,
-                ask_price=float(t0414[6]) if len(t0414) > 6 else 0.0,
+                ticker=ticker,
+                price=current_price,
+                change=0.0,  # ka10004에서는 전일대비 제공 안 함
+                change_rate=0.0,  # ka10004에서는 등락률 제공 안 함
+                volume=0,  # ka10004에서는 거래량 제공 안 함
+                bid_price=buy_price_val,
+                ask_price=sell_price_val,
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -621,9 +635,10 @@ class KiwoomRestAPI:
 
             price_data = []
 
-            # 최근 days일간 데이터 수집 (오늘 포함)
+            # 최근 days일간 데이터 수집 (오늘부터 과거 순으로)
+            # i=0: 오늘, i=1: 어제, ..., i=days-1: days-1일 전
             for i in range(days):
-                date = datetime.now() - timedelta(days=days - 1 - i)
+                date = datetime.now() - timedelta(days=i)
                 date_str = date.strftime("%Y%m%d")
 
                 # 주말 제외 (월~금만 조회)
@@ -1428,3 +1443,250 @@ class KiwoomRestAPI:
         except Exception as e:
             logger.error(f"Get stock list error: {e}")
             return []
+
+    # ==================== 일별거래상세 조회 (ka10015) ====================
+
+    async def get_daily_trade_detail(
+        self,
+        ticker: str,
+        start_date: Optional[str] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        일별거래상세 조회 (ka10015)
+
+        외국인/기관 순매수 데이터 조회를 위한 API입니다.
+
+        Args:
+            ticker: 종목코드 (6자리)
+            start_date: 시작일 (YYYYMMDD, None이면 30일 전)
+
+        Returns:
+            일별거래상세 데이터 리스트
+            - for_netprps: 외국인 순매수
+            - orgn_netprps: 기관 순매수
+            - trde_qty: 거래량
+        """
+        try:
+            await self.ensure_token_valid()
+
+            client = await self._get_client()
+
+            # 시작일 설정 (기본 30일 전)
+            from datetime import datetime, timedelta
+
+            if start_date is None:
+                start_date = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
+
+            # 요청 파라미터
+            request_data = {
+                "stk_cd": ticker,
+                "strt_dt": start_date,
+            }
+
+            # 헤더 설정
+            headers = {
+                "Authorization": f"Bearer {self._access_token}",
+                "api-id": "ka10015",
+                "Content-Type": "application/json;charset=UTF-8",
+            }
+
+            # ka10015 엔드포인트
+            url = f"{self._config.base_url}/api/dostk/stkinfo"
+
+            response = await client.post(
+                url,
+                json=request_data,
+                headers=headers,
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            # return_code 확인
+            return_code = result.get("return_code", -1)
+            if return_code != 0:
+                logger.warning(f"Daily trade detail API returned code {return_code}: {result.get('return_msg')}")
+                return None
+
+            # 응답 파싱 (daly_trde_dtl 배열에 일별거래상세 데이터)
+            trade_data = result.get("daly_trde_dtl", [])
+            if not trade_data:
+                logger.warning(f"No trade detail data in response for {ticker}")
+                return []
+
+            # 변환된 데이터 반환
+            parsed_data = []
+            for item in trade_data:
+                parsed_data.append({
+                    "date": item.get("dt", ""),                # 날짜 (YYYYMMDD)
+                    "close_price": int(item.get("close_pric", "0") or "0"),  # 종가
+                    "volume": int(item.get("trde_qty", "0") or "0"),        # 거래량
+                    "foreign_net_buy": int(item.get("for_netprps", "0") or "0"),  # 외국인 순매수
+                    "inst_net_buy": int(item.get("orgn_netprps", "0") or "0"),    # 기관 순매수
+                })
+
+            logger.info(f"Retrieved {len(parsed_data)} daily trade detail records for {ticker}")
+
+            return parsed_data
+
+        except HTTPStatusError as e:
+            logger.error(f"Get daily trade detail failed: {e.response.status_code}, response: {e.response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"Get daily trade detail error: {e}")
+            return None
+
+    # ==================== 업종일봉 조회 (ka20006) ====================
+
+    async def get_sector_daily_chart(
+        self,
+        sector_code: str,
+        base_date: Optional[str] = None,
+        days: int = 20,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        업종 일봉 차트 조회 (ka20006)
+
+        섹터 모멘텀 계산을 위한 업종 지수 데이터 조회
+
+        Args:
+            sector_code: 업종코드 (예: "001" - 코스피 종합)
+            base_date: 기준일자 (YYYYMMDD, None이면 오늘)
+            days: 조회 일수
+
+        Returns:
+            업종 일봉 데이터 리스트
+            - cur_prc: 현재 지수
+            - strt_pric: 시작 지수
+            - high_pric: 고가 지수
+            - low_pric: 저가 지수
+        """
+        try:
+            await self.ensure_token_valid()
+
+            client = await self._get_client()
+
+            # 기준일자 설정
+            from datetime import datetime
+
+            if base_date is None:
+                base_date = datetime.now().strftime("%Y%m%d")
+
+            # 요청 파라미터
+            request_data = {
+                "inds_cd": sector_code,
+                "base_dt": base_date,
+            }
+
+            # 헤더 설정
+            headers = {
+                "Authorization": f"Bearer {self._access_token}",
+                "api-id": "ka20006",
+                "Content-Type": "application/json;charset=UTF-8",
+            }
+
+            # ka20006 엔드포인트
+            url = f"{self._config.base_url}/api/dostk/chart"
+
+            response = await client.post(
+                url,
+                json=request_data,
+                headers=headers,
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            # return_code 확인
+            return_code = result.get("return_code", -1)
+            if return_code != 0:
+                logger.warning(f"Sector chart API returned code {return_code}: {result.get('return_msg')}")
+                return None
+
+            # 응답 파싱 (inds_dt_pole_qry 배열에 업종일봉 데이터)
+            chart_data = result.get("inds_dt_pole_qry", [])
+            if not chart_data:
+                logger.warning(f"No sector chart data in response for {sector_code}")
+                return []
+
+            # 변환된 데이터 반환
+            parsed_data = []
+            for item in chart_data:
+                parsed_data.append({
+                    "date": item.get("dt", ""),                # 날짜 (YYYYMMDD)
+                    "open": float(item.get("strt_pric", "0") or "0"),   # 시작 지수
+                    "high": float(item.get("high_pric", "0") or "0"),   # 고가 지수
+                    "low": float(item.get("low_pric", "0") or "0"),    # 저가 지수
+                    "close": float(item.get("cur_prc", "0") or "0"),    # 현재 지수
+                    "volume": int(item.get("trde_qty", "0") or "0"),    # 거래량
+                })
+
+            logger.info(f"Retrieved {len(parsed_data)} sector chart data points for {sector_code}")
+
+            # days 만큼만 반환 (최근 데이터부터)
+            if len(parsed_data) > days:
+                parsed_data = parsed_data[-days:]
+
+            return parsed_data
+
+        except HTTPStatusError as e:
+            logger.error(f"Get sector chart failed: {e.response.status_code}, response: {e.response.text}")
+            return None
+        except Exception as e:
+            logger.error(f"Get sector chart error: {e}")
+            return None
+
+    # ==================== 거래정지 종목 필터링 ====================
+
+    # 거래정지 상태 키워드
+    TRADING_SUSPENDED_KEYWORDS = [
+        "관리종목",
+        "증거금100%",
+        "투자유의환기종목",
+        "정리매매",
+        "거래정지",
+        "시장주의",
+        "불매가",
+        "매매거부",
+    ]
+
+    @staticmethod
+    def is_trading_suspended(state: str) -> bool:
+        """
+        종목 상태가 거래정지인지 확인
+
+        Args:
+            state: 종목 상태 문자열
+
+        Returns:
+            거래정지 여부
+        """
+        if not state:
+            return False
+        return any(keyword in state for keyword in KiwoomRestAPI.TRADING_SUSPENDED_KEYWORDS)
+
+    async def get_suspended_stocks(
+        self,
+        market: str = "ALL"
+    ) -> Dict[str, str]:
+        """
+        거래정지 종목 목록 조회
+
+        Args:
+            market: 시장 구분 ("KOSPI", "KOSDAQ", "ALL")
+
+        Returns:
+            {종목코드: 종목상태} 딕셔너리
+        """
+        all_stocks = await self.get_stock_list(market)
+
+        suspended = {}
+        for stock in all_stocks:
+            state = stock.get("state", "")
+            if self.is_trading_suspended(state):
+                ticker = stock.get("ticker", "")
+                if ticker:
+                    suspended[ticker] = state
+
+        logger.info(f"거래정지 종목 {len(suspended)}개 확인됨: {list(suspended.keys())}")
+        return suspended

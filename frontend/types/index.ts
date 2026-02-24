@@ -156,11 +156,16 @@ export interface IWSMarketGateUpdateMessage {
 // 시그널 업데이트 메시지 (VCP 실시간 업데이트)
 export interface IWSSignalUpdateMessage {
   type: "signal_update";
-  data: {
-    signals: Signal[];
-    count: number;
-    timestamp: string;
-  };
+  data: ISignalUpdateData;
+}
+
+/**
+ * 시그널 업데이트 데이터 (VCP 또는 Daytrading)
+ */
+export interface ISignalUpdateData {
+  signals: Signal[] | IDaytradingSignal[];
+  count: number;
+  timestamp: string;
 }
 
 // 에러 메시지
@@ -787,11 +792,9 @@ export interface IDaytradingSignal {
  * 단타 시그널 응답
  */
 export interface IDaytradingSignalsResponse {
-  success: boolean;
-  data: {
-    signals: IDaytradingSignal[];
-    count: number;
-  };
+  signals: IDaytradingSignal[];
+  count: number;
+  generated_at?: string;
 }
 
 /**

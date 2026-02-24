@@ -5,7 +5,7 @@
  */
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { IDaytradingSignal } from "@/types"
 import type { RealtimePrice } from "@/hooks/useWebSocket"
 import { getGradeColor } from "@/lib/utils"
@@ -47,8 +47,10 @@ export function DaytradingSignalTable({
 }: DaytradingSignalTableProps) {
   // 가격 변경 하이라이트 상태 (Phase 3)
   const [flashTickers, setFlashTickers] = useState<Set<string>>(new Set())
+  // 이전 가격 저장 (Ref로 유지하여 리렌더링 방지)
+  const prevPricesRef = useRef<Record<string, number>>({})
 
-  // 실시간 가격 변경 감지
+  // 실시간 가격 변경 감지 (최적화: localStorage 제거, Ref 활용)
   useEffect(() => {
     if (!priceConnected || !getPrice) return
 
@@ -56,10 +58,11 @@ export function DaytradingSignalTable({
       signals.forEach((signal) => {
         const realtimePrice = getPrice(signal.ticker)
         if (realtimePrice) {
-          // 이전 가격과 비교하여 변경 감지 (localStorage에 임시 저장)
-          const prevPrice = localStorage.getItem(`price_${signal.ticker}`)
-          if (prevPrice && prevPrice !== realtimePrice.price.toString()) {
-            // 플래시 효과 트리거
+          const currentPrice = realtimePrice.price
+          const prevPrice = prevPricesRef.current[signal.ticker]
+
+          // 이전 가격과 다르면 플래시 효과 트리거
+          if (prevPrice !== undefined && prevPrice !== currentPrice) {
             setFlashTickers((prev) => new Set([...prev, signal.ticker]))
             setTimeout(() => {
               setFlashTickers((prev) => {
@@ -69,13 +72,14 @@ export function DaytradingSignalTable({
               })
             }, 1000) // 1초 후 플래시 제거
           }
-          localStorage.setItem(`price_${signal.ticker}`, realtimePrice.price.toString())
+          // 현재 가격 저장
+          prevPricesRef.current[signal.ticker] = currentPrice
         }
       })
     }, 1000) // 1초마다 체크
 
     return () => clearInterval(interval)
-  }, [signals, getPrice, priceConnected])
+  }, [getPrice, priceConnected]) // signals 의존성 제거: 실시간 가격은 getPrice로만 확인
 
   // 실시간 가격 데이터 병합 헬퍼
   const getSignalWithRealtimePrice = (signal: IDaytradingSignal) => {
@@ -243,33 +247,6 @@ export function DaytradingSignalTable({
                 ))}
               </div>
             </div>
-
-            {/* 매매 기준가 */}
-            {(signal.entry_price || signal.target_price || signal.stop_loss) && (
-              <div className="border-t pt-3">
-                <h4 className="text-sm font-medium mb-2">매매 기준가</h4>
-                <div className="flex gap-4 text-sm">
-                  {signal.entry_price && (
-                    <div>
-                      <span className="text-gray-500">진입: </span>
-                      <span className="font-medium">{signal.entry_price.toLocaleString()}원</span>
-                    </div>
-                  )}
-                  {signal.target_price && (
-                    <div>
-                      <span className="text-gray-500">목표: </span>
-                      <span className="font-medium text-green-600">{signal.target_price.toLocaleString()}원</span>
-                    </div>
-                  )}
-                  {signal.stop_loss && (
-                    <div>
-                      <span className="text-gray-500">손절: </span>
-                      <span className="font-medium text-red-600">{signal.stop_loss.toLocaleString()}원</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* 매매 기준가 */}
             {(signal.entry_price || signal.target_price || signal.stop_loss) && (

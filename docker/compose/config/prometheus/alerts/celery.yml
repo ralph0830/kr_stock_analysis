@@ -1,0 +1,99 @@
+# Celery Alert 규칙
+
+groups:
+  - name: celery
+    interval: 30s
+    rules:
+      # Celery Queue 밀림
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_length > 1000
+        for: 10m
+        labels:
+          severity: warning
+          component: task_queue
+        annotations:
+          summary: "Celery Queue 밀림"
+          description: "대기 중인 작업이 1000개 이상입니다 (현재: {{ $value }})"
+          runbook: "https://docs.ralphpark.com/runbooks/celery-backlog"
+
+      # Celery Queue 심각한 밀림
+      - alert: CeleryQueueSevereBacklog
+        expr: celery_queue_length > 5000
+        for: 5m
+        labels:
+          severity: critical
+          component: task_queue
+        annotations:
+          summary: "Celery Queue 심각한 밀림"
+          description: "대기 중인 작업이 5000개 이상입니다 (현재: {{ $value }})"
+          runbook: "https://docs.ralphpark.com/runbooks/celery-backlog"
+
+      # Celery Worker 다운
+      - alert: CeleryWorkerDown
+        expr: |
+          count(celery_worker_up) < 1
+        for: 2m
+        labels:
+          severity: critical
+          component: task_queue
+        annotations:
+          summary: "Celery Worker 다운"
+          description: "Celery Worker가 응답하지 않습니다."
+          runbook: "https://docs.ralphpark.com/runbooks/celery-worker-down"
+
+      # Celery Task 처리率 저하
+      - alert: CeleryLowTaskRate
+        expr: |
+          rate(celery_tasks_total[5m]) < 1
+        for: 15m
+        labels:
+          severity: warning
+          component: task_queue
+        annotations:
+          summary: "Celery Task 처리율 저하"
+          description: "Task 처리율이 1/5 미만입니다 (현재: {{ $value }}/s)"
+
+      # Celery Task 실패율 높음
+      - alert: CeleryHighTaskFailureRate
+        expr: |
+          (
+            sum(rate(celery_tasks_failed_total[5m])) by (worker)
+            /
+            sum(rate(celery_tasks_total[5m])) by (worker)
+          ) * 100 > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: task_queue
+        annotations:
+          summary: "Celery Task 실패율 높음"
+          description: "{{ $labels.worker }}의 실패율이 10% 이상입니다 (현재: {{ $value }}%)"
+          runbook: "https://docs.ralphpark.com/runbooks/celery-failures"
+
+      # Celery Task 실행 시간 길음
+      - alert: CeleryLongRunningTasks
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(celery_task_runtime_seconds_bucket[5m])) by (le, task_name)
+          ) > 300
+        for: 10m
+        labels:
+          severity: warning
+          component: task_queue
+        annotations:
+          summary: "Celery Task 실행 시간 길음"
+          description: "{{ $labels.task_name }}의 P95 실행 시간이 5분 이상입니다 (현재: {{ $value }}s)"
+          runbook: "https://docs.ralphpark.com/runbooks/long-tasks"
+
+      # Celery Broker 연결 실패
+      - alert: CeleryBrokerConnectionLost
+        expr: |
+          sum(rate(celery_broker_connection_errors_total[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: task_queue
+        annotations:
+          summary: "Celery Broker 연결 실패"
+          description: "Redis Broker 연결에 실패하고 있습니다."
+          runbook: "https://docs.ralphpark.com/runbooks/broker-connection"

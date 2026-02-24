@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { useStore } from "@/store";
 import { formatPrice, getGradeColor } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -144,8 +144,8 @@ export default function SignalsPage() {
                     const scoreDetail = getScoreDetail(signal);
                     const isExpanded = expandedRow === signal.ticker;
                     return (
-                      <>
-                        <tr key={signal.ticker} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <Fragment key={signal.ticker}>
+                        <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
                           <td className="px-4 py-4 whitespace-nowrap">
                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getGradeColor(signal.grade)}`}>
                               {signal.grade}
@@ -272,7 +272,7 @@ export default function SignalsPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>
