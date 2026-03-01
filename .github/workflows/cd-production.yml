@@ -187,7 +187,7 @@ jobs:
           EOF
 
       - name: 배포 아티팩트 업로드
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: production-manifest-${{ github.run_number }}
           path: production-manifest.yml
@@ -266,7 +266,7 @@ jobs:
           EOF
 
       - name: 롤백 정보 업로드
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: rollback-info-${{ github.run_number }}
           path: rollback-info.txt
